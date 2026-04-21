@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>채팅 - RAG Compare POC</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <span class="logo">⚡ RAG Compare POC</span>
+    <a href="/">홈</a>
+    <a href="/chat">채팅</a>
+    <a href="/compare">RAG 비교</a>
+  </nav>
+
+  <div class="page" style="height: calc(100vh - 49px);">
+    <div class="main">
+      <!-- SIDEBAR -->
+      <div class="sidebar">
+        <div class="sidebar-header">
+          <span>대화 세션</span>
+          <button class="btn btn-primary btn-sm" onclick="openNewSessionModal()">+ 새 세션</button>
+        </div>
+        <div class="session-list" id="sessionList"></div>
+        <div style="padding: 12px; border-top: 1px solid var(--border);">
+          <button class="btn btn-outline btn-sm" style="width:100%" onclick="openAgentModal()">🤖 AI 대화 생성</button>
+        </div>
+      </div>
+
+      <!-- CHAT AREA -->
+      <div class="chat-area">
+        <div class="chat-toolbar">
+          <span id="sessionTitle">세션을 선택하세요</span>
+          <button class="btn btn-sm btn-outline" id="btnIndex" onclick="indexSession()" style="display:none">📥 RAG 인덱싱</button>
+          <a id="btnCompare" href="#" class="btn btn-sm btn-primary" style="display:none">📊 비교 보기</a>
+        </div>
+        <div class="messages" id="messages">
+          <div style="text-align:center; color: var(--text-muted); margin: auto; font-size: 0.9rem;">
+            왼쪽에서 세션을 선택하거나 새 세션을 만드세요.
+          </div>
+        </div>
+        <div class="chat-input-row" id="inputRow" style="display:none">
+          <select id="speakerSelect"></select>
+          <input type="text" id="msgInput" placeholder="메시지 입력..." onkeydown="if(event.key==='Enter') sendMsg()">
+          <button class="btn btn-primary btn-sm" onclick="sendMsg()">전송</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW SESSION MODAL -->
+  <div class="modal-overlay" id="newSessionModal">
+    <div class="modal">
+      <h3>새 대화 세션</h3>
+      <div class="form-group">
+        <label>세션 제목</label>
+        <input type="text" id="newTitle" placeholder="예: 신입사원 온보딩 대화">
+      </div>
+      <div class="form-group">
+        <label>대화 유형</label>
+        <select id="newMode" onchange="updateSpeakerInputs()">
+          <option value="2person">2인 대화</option>
+          <option value="group">그룹 채팅</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>화자 이름 (쉼표로 구분)</label>
+        <input type="text" id="newSpeakers" placeholder="예: 김신입, 이멘토">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline btn-sm" onclick="closeModal('newSessionModal')">취소</button>
+        <button class="btn btn-primary btn-sm" onclick="createSession()">만들기</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- AGENT MODAL -->
+  <div class="modal-overlay" id="agentModal">
+    <div class="modal">
+      <h3>🤖 AI 에이전트 대화 생성</h3>
+      <div class="form-group">
+        <label>대화 주제</label>
+        <input type="text" id="agentTopic" placeholder="예: 신입사원 OJT 첫날 안내">
+      </div>
+      <div class="form-group">
+        <label>대화 유형</label>
+        <select id="agentMode">
+          <option value="2person">2인 대화</option>
+          <option value="group">그룹 대화</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label>화자 이름 (쉼표로 구분)</label>
+        <input type="text" id="agentSpeakers" placeholder="예: 김신입, 이멘토">
+      </div>
+      <div class="form-group">
+        <label>대화 턴 수: <span id="turnsVal">10</span></label>
+        <input type="range" id="agentTurns" min="4" max="30" value="10" oninput="document.getElementById('turnsVal').textContent=this.value">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-outline btn-sm" onclick="closeModal('agentModal')">취소</button>
+        <button class="btn btn-primary btn-sm" id="btnGenerate" onclick="generateConversation()">생성 시작</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    let currentSession = null;
+    let speakers = ['화자A', '화자B'];
+
+    async function loadSessions() {
+      const res = await fetch('/api/sessions');
+      const sessions = await res.json();
+      const list = document.getElementById('sessionList');
+      list.innerHTML = '';
+      sessions.forEach(s => {
+        const div = document.createElement('div');
+        div.className = 'session-item' + (currentSession?.id === s.id ? ' active' : '');
+        div.innerHTML = `
+          <div class="s-title">${s.title}</div>
+          <div class="s-meta">
+            ${s.mode === '2person' ? '2인' : '그룹'}
+            <span class="badge ${s.is_indexed ? 'badge-indexed' : 'badge-unindexed'}">
+              ${s.is_indexed ? '인덱싱됨' : '미인덱싱'}
+            </span>
+          </div>`;
+        div.onclick = () => selectSession(s);
+        list.appendChild(div);
+      });
+    }
+
+    async function selectSession(s) {
+      currentSession = s;
+      document.getElementById('sessionTitle').textContent = s.title;
+      document.getElementById('inputRow').style.display = 'flex';
+
+      const btnIndex = document.getElementById('btnIndex');
+      const btnCompare = document.getElementById('btnCompare');
+      btnIndex.style.display = s.is_indexed ? 'none' : 'inline-flex';
+      btnCompare.style.display = s.is_indexed ? 'inline-flex' : 'none';
+      btnCompare.href = `/compare?session=${s.id}`;
+
+      await loadMessages(s.id);
+      loadSessions();
+    }
+
+    async function loadMessages(sessionId) {
+      const res = await fetch(`/api/sessions/${sessionId}/messages`);
+      const msgs = await res.json();
+      const container = document.getElementById('messages');
+      container.innerHTML = '';
+
+      if (msgs.length === 0) {
+        container.innerHTML = '<div style="text-align:center;color:var(--text-muted);margin:auto;font-size:0.88rem;">아직 메시지가 없습니다.</div>';
+        return;
+      }
+
+      msgs.forEach((m, i) => {
+        const isRight = i % 2 === 1;
+        const div = document.createElement('div');
+        div.className = `msg ${isRight ? 'right' : 'left'}`;
+        div.innerHTML = `<div class="m-speaker">${m.speaker}</div>${escHtml(m.content)}`;
+        container.appendChild(div);
+      });
+      container.scrollTop = container.scrollHeight;
+
+      const spk = [...new Set(msgs.map(m => m.speaker))];
+      if (spk.length > 0) updateSpeakerSelect(spk);
+    }
+
+    function updateSpeakerSelect(spkList) {
+      const sel = document.getElementById('speakerSelect');
+      sel.innerHTML = spkList.map(s => `<option value="${s}">${s}</option>`).join('');
+    }
+
+    async function sendMsg() {
+      if (!currentSession) return;
+      const input = document.getElementById('msgInput');
+      const speaker = document.getElementById('speakerSelect').value;
+      const content = input.value.trim();
+      if (!content) return;
+      input.value = '';
+
+      await fetch(`/api/sessions/${currentSession.id}/messages`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ speaker, content }),
+      });
+      await loadMessages(currentSession.id);
+    }
+
+    async function indexSession() {
+      if (!currentSession) return;
+      const btn = document.getElementById('btnIndex');
+      btn.textContent = '⏳ 인덱싱 중...';
+      btn.disabled = true;
+      try {
+        const res = await fetch(`/api/sessions/${currentSession.id}/index`, { method: 'POST' });
+        if (res.ok) {
+          showToast('RAG 인덱싱 완료!', 'success');
+          currentSession.is_indexed = 1;
+          btn.style.display = 'none';
+          const btnCompare = document.getElementById('btnCompare');
+          btnCompare.style.display = 'inline-flex';
+          btnCompare.href = `/compare?session=${currentSession.id}`;
+          loadSessions();
+        } else {
+          const err = await res.json();
+          showToast(err.detail || '인덱싱 실패', 'error');
+        }
+      } finally {
+        btn.textContent = '📥 RAG 인덱싱';
+        btn.disabled = false;
+      }
+    }
+
+    async function createSession() {
+      const title = document.getElementById('newTitle').value.trim();
+      const mode = document.getElementById('newMode').value;
+      const spkRaw = document.getElementById('newSpeakers').value;
+      if (!title) { showToast('제목을 입력하세요', 'error'); return; }
+
+      const spkList = spkRaw ? spkRaw.split(',').map(s => s.trim()) : [];
+
+      const res = await fetch('/api/sessions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, mode }),
+      });
+      const sess = await res.json();
+
+      closeModal('newSessionModal');
+      showToast('세션이 생성되었습니다', 'success');
+
+      const defSpk = spkList.length >= 2 ? spkList : (mode === '2person' ? ['화자A', '화자B'] : ['참여자A', '참여자B', '참여자C']);
+      updateSpeakerSelect(defSpk);
+
+      await loadSessions();
+      selectSession({ ...sess, is_indexed: 0 });
+    }
+
+    async function generateConversation() {
+      const topic = document.getElementById('agentTopic').value.trim();
+      const mode = document.getElementById('agentMode').value;
+      const turns = parseInt(document.getElementById('agentTurns').value);
+      const spkRaw = document.getElementById('agentSpeakers').value;
+      const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()) : [];
+
+      if (!topic) { showToast('주제를 입력하세요', 'error'); return; }
+
+      const btn = document.getElementById('btnGenerate');
+      btn.textContent = '⏳ 생성 중...';
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('/api/agent/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode, topic, turns, speakers }),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          closeModal('agentModal');
+          showToast('AI 대화가 생성되었습니다!', 'success');
+          await loadSessions();
+          const allRes = await fetch('/api/sessions');
+          const all = await allRes.json();
+          const created = all.find(s => s.id === data.session_id);
+          if (created) selectSession(created);
+        } else {
+          const err = await res.json();
+          showToast(err.detail || '생성 실패', 'error');
+        }
+      } finally {
+        btn.textContent = '생성 시작';
+        btn.disabled = false;
+      }
+    }
+
+    function openNewSessionModal() { document.getElementById('newSessionModal').classList.add('open'); }
+    function openAgentModal() { document.getElementById('agentModal').classList.add('open'); }
+    function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+
+    function showToast(msg, type = '') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast ${type} show`;
+      setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    function escHtml(s) {
+      return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    loadSessions();
+  </script>
+</body>
+</html>

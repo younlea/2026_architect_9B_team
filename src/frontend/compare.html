@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RAG 비교 - RAG Compare POC</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+  <nav class="nav">
+    <span class="logo">⚡ RAG Compare POC</span>
+    <a href="/">홈</a>
+    <a href="/chat">채팅</a>
+    <a href="/compare">RAG 비교</a>
+  </nav>
+
+  <div style="display:flex; flex-direction:column; height: calc(100vh - 49px);">
+    <!-- TOOLBAR -->
+    <div class="compare-toolbar">
+      <select id="sessionSelect" onchange="onSessionChange()">
+        <option value="">-- 세션 선택 --</option>
+      </select>
+      <input type="text" id="queryInput" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter') runCompare()">
+      <button class="btn btn-primary btn-sm" id="btnRun" onclick="runCompare()">⚡ 비교 실행</button>
+      <button class="btn btn-outline btn-sm" onclick="loadHistory()">📋 결과 이력</button>
+    </div>
+
+    <!-- COMPARE PANELS -->
+    <div class="compare-panels" style="flex:1; overflow:hidden;">
+      <!-- LEFT: Basic RAG -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="label label-basic">🔵 Basic RAG</span>
+          <span class="panel-latency" id="basicLatency"></span>
+        </div>
+        <div class="panel-body" id="basicBody">
+          <div class="answer-box placeholder" id="basicAnswer">
+            질문을 입력하고 [비교 실행]을 클릭하세요.
+          </div>
+          <div class="refs-toggle" id="basicRefsToggle" style="display:none" onclick="toggleRefs('basic')">
+            ▶ 참조 청크 보기
+          </div>
+          <div class="refs-list" id="basicRefsList"></div>
+        </div>
+      </div>
+
+      <!-- RIGHT: RAPTOR RAG -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="label label-raptor">🟣 RAPTOR RAG</span>
+          <span class="panel-latency" id="raptorLatency"></span>
+        </div>
+        <div class="panel-body" id="raptorBody">
+          <div class="answer-box placeholder" id="raptorAnswer">
+            질문을 입력하고 [비교 실행]을 클릭하세요.
+          </div>
+          <div class="refs-toggle" id="raptorRefsToggle" style="display:none" onclick="toggleRefs('raptor')">
+            ▶ 참조 청크 보기
+          </div>
+          <div class="refs-list" id="raptorRefsList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- HISTORY PANEL (hidden by default) -->
+    <div id="historySection" style="display:none; max-height:260px; overflow-y:auto; border-top:1px solid var(--border);">
+      <div class="history-section">
+        <h4>이전 비교 결과</h4>
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>질문</th>
+              <th>Basic 답변 요약</th>
+              <th>RAPTOR 답변 요약</th>
+              <th>Basic ms</th>
+              <th>RAPTOR ms</th>
+              <th>시각</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    async function loadSessions() {
+      const res = await fetch('/api/sessions');
+      const sessions = await res.json();
+      const sel = document.getElementById('sessionSelect');
+      sel.innerHTML = '<option value="">-- 세션 선택 --</option>';
+      sessions.forEach(s => {
+        const opt = document.createElement('option');
+        opt.value = s.id;
+        opt.textContent = `${s.title} [${s.is_indexed ? '인덱싱됨' : '미인덱싱'}]`;
+        opt.disabled = !s.is_indexed;
+        sel.appendChild(opt);
+      });
+
+      // URL param으로 세션 자동 선택
+      const params = new URLSearchParams(location.search);
+      const sid = params.get('session');
+      if (sid) sel.value = sid;
+    }
+
+    function onSessionChange() {
+      document.getElementById('historySection').style.display = 'none';
+      resetPanels();
+    }
+
+    async function runCompare() {
+      const sessionId = document.getElementById('sessionSelect').value;
+      const query = document.getElementById('queryInput').value.trim();
+      if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
+      if (!query) { showToast('질문을 입력하세요', 'error'); return; }
+
+      setLoading(true);
+      resetPanels(true);
+
+      try {
+        const res = await fetch('/api/rag/compare', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, query }),
+        });
+
+        if (!res.ok) {
+          const err = await res.json();
+          showToast(err.detail || '비교 실패', 'error');
+          return;
+        }
+
+        const data = await res.json();
+        renderPanel('basic', data.basic_rag);
+        renderPanel('raptor', data.raptor_rag);
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    function renderPanel(type, result) {
+      const prefix = type;
+      const answerEl = document.getElementById(`${prefix}Answer`);
+      const latencyEl = document.getElementById(`${prefix}Latency`);
+      const toggleEl = document.getElementById(`${prefix}RefsToggle`);
+      const refsList = document.getElementById(`${prefix}RefsList`);
+
+      answerEl.textContent = result.answer;
+      answerEl.classList.remove('placeholder');
+      latencyEl.textContent = `${result.latency_ms}ms`;
+
+      refsList.innerHTML = '';
+      if (result.references && result.references.length > 0) {
+        result.references.forEach((ref, i) => {
+          const div = document.createElement('div');
+          div.className = 'ref-item';
+          div.textContent = `[${i+1}] ${ref}`;
+          refsList.appendChild(div);
+        });
+        toggleEl.style.display = 'block';
+      }
+    }
+
+    function toggleRefs(type) {
+      const list = document.getElementById(`${type}RefsList`);
+      const toggle = document.getElementById(`${type}RefsToggle`);
+      list.classList.toggle('open');
+      toggle.textContent = list.classList.contains('open') ? '▼ 참조 청크 숨기기' : '▶ 참조 청크 보기';
+    }
+
+    async function loadHistory() {
+      const sessionId = document.getElementById('sessionSelect').value;
+      if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
+
+      const res = await fetch(`/api/rag/results/${sessionId}`);
+      const rows = await res.json();
+      const tbody = document.getElementById('historyBody');
+      tbody.innerHTML = '';
+
+      if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">결과 없음</td></tr>';
+      } else {
+        rows.forEach(r => {
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td>${escHtml(r.query)}</td>
+            <td>${escHtml((r.basic_rag_answer || '').slice(0, 60))}...</td>
+            <td>${escHtml((r.raptor_rag_answer || '').slice(0, 60))}...</td>
+            <td>${r.basic_rag_latency_ms}ms</td>
+            <td>${r.raptor_rag_latency_ms}ms</td>
+            <td>${r.created_at?.slice(0,16) || ''}</td>`;
+          tbody.appendChild(tr);
+        });
+      }
+
+      document.getElementById('historySection').style.display = 'block';
+    }
+
+    function resetPanels(showSpinner = false) {
+      ['basic', 'raptor'].forEach(type => {
+        const ans = document.getElementById(`${type}Answer`);
+        ans.className = 'answer-box placeholder';
+        ans.innerHTML = showSpinner ? '<div class="spinner"></div>' : '질문을 입력하고 [비교 실행]을 클릭하세요.';
+        document.getElementById(`${type}Latency`).textContent = '';
+        document.getElementById(`${type}RefsToggle`).style.display = 'none';
+        document.getElementById(`${type}RefsList`).innerHTML = '';
+        document.getElementById(`${type}RefsList`).classList.remove('open');
+      });
+    }
+
+    function setLoading(on) {
+      const btn = document.getElementById('btnRun');
+      btn.disabled = on;
+      btn.textContent = on ? '⏳ 실행 중...' : '⚡ 비교 실행';
+    }
+
+    function showToast(msg, type = '') {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = `toast ${type} show`;
+      setTimeout(() => t.classList.remove('show'), 2800);
+    }
+
+    function escHtml(s) {
+      return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    loadSessions();
+  </script>
+</body>
+</html>
