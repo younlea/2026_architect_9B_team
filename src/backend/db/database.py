@@ -33,6 +33,17 @@ CREATE TABLE IF NOT EXISTS rag_results (
     raptor_rag_latency_ms INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+CREATE TABLE IF NOT EXISTS model_compare_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    session_id TEXT,
+    query TEXT,
+    rag_type TEXT,
+    model_name TEXT,
+    answer TEXT,
+    latency_ms INTEGER,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 

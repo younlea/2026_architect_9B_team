@@ -51,7 +51,7 @@ def _cluster_texts(embeddings: np.ndarray, n_clusters: int) -> list[int]:
     return km.fit_predict(embeddings).tolist()
 
 
-def _summarize_cluster(texts: list[str]) -> str:
+def _summarize_cluster(texts: list[str], model: str = None) -> str:
     joined = "\n".join(texts)
     prompt = f"""다음 대화 내용들의 핵심을 간결하게 요약해 주세요. 중요한 정보, 결정사항, 감정적 맥락을 유지하세요.
 
@@ -59,10 +59,10 @@ def _summarize_cluster(texts: list[str]) -> str:
 {joined}
 
 [요약]"""
-    return get_llm_answer(prompt)
+    return get_llm_answer(prompt, model)
 
 
-def _build_tree(chunks: list[str], level: int = 0) -> list[dict]:
+def _build_tree(chunks: list[str], level: int = 0, model: str = None) -> list[dict]:
     """재귀적으로 요약 트리를 구성하여 모든 노드를 반환합니다."""
     nodes = [{"text": c, "level": level} for c in chunks]
 
@@ -80,10 +80,10 @@ def _build_tree(chunks: list[str], level: int = 0) -> list[dict]:
     summaries = []
     for cluster_texts in clusters.values():
         if len(cluster_texts) >= MIN_CLUSTER_SIZE:
-            summaries.append(_summarize_cluster(cluster_texts))
+            summaries.append(_summarize_cluster(cluster_texts, model))
 
     if summaries:
-        upper_nodes = _build_tree(summaries, level + 1)
+        upper_nodes = _build_tree(summaries, level + 1, model)
         nodes.extend(upper_nodes)
 
     return nodes
@@ -112,7 +112,7 @@ def index_session(session_id: str):
         conn.execute("UPDATE sessions SET is_indexed = 1 WHERE id = ?", (session_id,))
 
 
-def query(session_id: str, question: str) -> dict:
+def query(session_id: str, question: str, model: str = None) -> dict:
     start = time.time()
 
     collection = _get_collection(session_id)
@@ -150,7 +150,7 @@ def query(session_id: str, question: str) -> dict:
 
 [답변]"""
 
-    answer = get_llm_answer(prompt)
+    answer = get_llm_answer(prompt, model)
     latency = int((time.time() - start) * 1000)
 
-    return {"answer": answer, "references": docs, "latency_ms": latency}
+    return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}

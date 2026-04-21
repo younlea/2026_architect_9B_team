@@ -49,7 +49,7 @@ def index_session(session_id: str):
         conn.execute("UPDATE sessions SET is_indexed = 1 WHERE id = ?", (session_id,))
 
 
-def query(session_id: str, question: str) -> dict:
+def query(session_id: str, question: str, model: str = None) -> dict:
     start = time.time()
 
     collection = _get_collection(session_id)
@@ -67,7 +67,7 @@ def query(session_id: str, question: str) -> dict:
 
 [답변]"""
 
-    answer = get_llm_answer(prompt)
+    answer = get_llm_answer(prompt, model)
     latency = int((time.time() - start) * 1000)
 
-    return {"answer": answer, "references": docs, "latency_ms": latency}
+    return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}

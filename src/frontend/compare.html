@@ -5,6 +5,98 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>RAG 비교 - RAG Compare POC</title>
   <link rel="stylesheet" href="/static/css/style.css">
+  <style>
+    .model-tag {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 5px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: rgba(99,102,241,0.15);
+      color: #a5b4fc;
+      margin-left: 6px;
+    }
+    .tab-bar {
+      display: flex;
+      gap: 4px;
+      padding: 10px 20px 0;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .tab {
+      padding: 8px 18px;
+      border-radius: 8px 8px 0 0;
+      cursor: pointer;
+      font-size: 0.86rem;
+      color: var(--text-muted);
+      border: 1px solid transparent;
+      border-bottom: none;
+      background: transparent;
+    }
+    .tab.active {
+      background: var(--bg);
+      color: var(--text);
+      border-color: var(--border);
+    }
+    .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
+    .tab-content.active { display: flex; }
+
+    /* 멀티모델 그리드 */
+    .multi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      gap: 16px;
+      padding: 16px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .multi-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .multi-card-header {
+      padding: 10px 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .multi-card-body { padding: 14px; font-size: 0.87rem; line-height: 1.6; }
+    .multi-card-body.loading { color: var(--text-muted); display: flex; align-items: center; gap: 8px; }
+
+    /* 모델 체크박스 목록 */
+    .model-checklist {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 20px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+    }
+    .model-chip {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 10px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      cursor: pointer;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      transition: all 0.15s;
+      user-select: none;
+    }
+    .model-chip.selected {
+      border-color: var(--primary);
+      color: var(--text);
+      background: rgba(99,102,241,0.12);
+    }
+    .model-chip input[type=checkbox] { display: none; }
+  </style>
 </head>
 <body>
   <nav class="nav">
@@ -14,78 +106,95 @@
     <a href="/compare">RAG 비교</a>
   </nav>
 
-  <div style="display:flex; flex-direction:column; height: calc(100vh - 49px);">
-    <!-- TOOLBAR -->
+  <div style="display:flex; flex-direction:column; height:calc(100vh - 49px);">
+
+    <!-- 공통 툴바 -->
     <div class="compare-toolbar">
       <select id="sessionSelect" onchange="onSessionChange()">
         <option value="">-- 세션 선택 --</option>
       </select>
-      <input type="text" id="queryInput" placeholder="질문을 입력하세요..." onkeydown="if(event.key==='Enter') runCompare()">
-      <button class="btn btn-primary btn-sm" id="btnRun" onclick="runCompare()">⚡ 비교 실행</button>
-      <button class="btn btn-outline btn-sm" onclick="loadHistory()">📋 결과 이력</button>
+      <input type="text" id="queryInput" placeholder="질문을 입력하세요..."
+             onkeydown="if(event.key==='Enter') runActive()">
+      <button class="btn btn-primary btn-sm" id="btnRun" onclick="runActive()">⚡ 비교 실행</button>
     </div>
 
-    <!-- COMPARE PANELS -->
-    <div class="compare-panels" style="flex:1; overflow:hidden;">
-      <!-- LEFT: Basic RAG -->
-      <div class="panel">
-        <div class="panel-header">
-          <span class="label label-basic">🔵 Basic RAG</span>
-          <span class="panel-latency" id="basicLatency"></span>
+    <!-- 탭 -->
+    <div class="tab-bar">
+      <div class="tab active" onclick="switchTab('dual')">🔵🟣 Basic vs RAPTOR</div>
+      <div class="tab" onclick="switchTab('multi')">🤖 멀티모델 비교</div>
+    </div>
+
+    <!-- ① 탭: Basic vs RAPTOR (단일 모델 선택) -->
+    <div class="tab-content active" id="tab-dual" style="flex-direction:column;">
+      <div style="padding:8px 20px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <label style="font-size:0.82rem; color:var(--text-muted);">LLM 모델</label>
+        <select id="dualModel" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:0.82rem;">
+          <option value="">기본값 (default)</option>
+        </select>
+        <button class="btn btn-outline btn-sm" onclick="loadHistory()">📋 결과 이력</button>
+      </div>
+      <div class="compare-panels" style="flex:1; overflow:hidden;">
+        <div class="panel">
+          <div class="panel-header">
+            <span class="label label-basic">🔵 Basic RAG</span>
+            <span id="basicModel" class="model-tag"></span>
+            <span class="panel-latency" id="basicLatency"></span>
+          </div>
+          <div class="panel-body">
+            <div class="answer-box placeholder" id="basicAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
+            <div class="refs-toggle" id="basicRefsToggle" style="display:none" onclick="toggleRefs('basic')">▶ 참조 청크 보기</div>
+            <div class="refs-list" id="basicRefsList"></div>
+          </div>
         </div>
-        <div class="panel-body" id="basicBody">
-          <div class="answer-box placeholder" id="basicAnswer">
-            질문을 입력하고 [비교 실행]을 클릭하세요.
+        <div class="panel">
+          <div class="panel-header">
+            <span class="label label-raptor">🟣 RAPTOR RAG</span>
+            <span id="raptorModel" class="model-tag"></span>
+            <span class="panel-latency" id="raptorLatency"></span>
           </div>
-          <div class="refs-toggle" id="basicRefsToggle" style="display:none" onclick="toggleRefs('basic')">
-            ▶ 참조 청크 보기
+          <div class="panel-body">
+            <div class="answer-box placeholder" id="raptorAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
+            <div class="refs-toggle" id="raptorRefsToggle" style="display:none" onclick="toggleRefs('raptor')">▶ 참조 청크 보기</div>
+            <div class="refs-list" id="raptorRefsList"></div>
           </div>
-          <div class="refs-list" id="basicRefsList"></div>
         </div>
       </div>
-
-      <!-- RIGHT: RAPTOR RAG -->
-      <div class="panel">
-        <div class="panel-header">
-          <span class="label label-raptor">🟣 RAPTOR RAG</span>
-          <span class="panel-latency" id="raptorLatency"></span>
-        </div>
-        <div class="panel-body" id="raptorBody">
-          <div class="answer-box placeholder" id="raptorAnswer">
-            질문을 입력하고 [비교 실행]을 클릭하세요.
-          </div>
-          <div class="refs-toggle" id="raptorRefsToggle" style="display:none" onclick="toggleRefs('raptor')">
-            ▶ 참조 청크 보기
-          </div>
-          <div class="refs-list" id="raptorRefsList"></div>
+      <div id="historySection" style="display:none; max-height:240px; overflow-y:auto; border-top:1px solid var(--border);">
+        <div class="history-section">
+          <h4>이전 비교 결과</h4>
+          <table class="history-table">
+            <thead><tr><th>질문</th><th>Basic 답변</th><th>RAPTOR 답변</th><th>Basic ms</th><th>RAPTOR ms</th><th>시각</th></tr></thead>
+            <tbody id="historyBody"></tbody>
+          </table>
         </div>
       </div>
     </div>
 
-    <!-- HISTORY PANEL (hidden by default) -->
-    <div id="historySection" style="display:none; max-height:260px; overflow-y:auto; border-top:1px solid var(--border);">
-      <div class="history-section">
-        <h4>이전 비교 결과</h4>
-        <table class="history-table">
-          <thead>
-            <tr>
-              <th>질문</th>
-              <th>Basic 답변 요약</th>
-              <th>RAPTOR 답변 요약</th>
-              <th>Basic ms</th>
-              <th>RAPTOR ms</th>
-              <th>시각</th>
-            </tr>
-          </thead>
-          <tbody id="historyBody"></tbody>
-        </table>
+    <!-- ② 탭: 멀티모델 비교 -->
+    <div class="tab-content" id="tab-multi" style="flex-direction:column;">
+      <div class="model-checklist" id="modelChecklist">
+        <span style="font-size:0.82rem; color:var(--text-muted); align-self:center;">모델 선택:</span>
+      </div>
+      <div class="multi-grid" id="multiGrid">
+        <div style="color:var(--text-muted); font-size:0.9rem; padding:20px;">
+          세션을 선택하고 질문을 입력한 뒤 [⚡ 비교 실행]을 클릭하세요.
+        </div>
       </div>
     </div>
+
   </div>
 
   <div class="toast" id="toast"></div>
 
   <script>
+    let availableModels = [];
+    let activeTab = 'dual';
+
+    async function init() {
+      await loadSessions();
+      await loadModels();
+    }
+
     async function loadSessions() {
       const res = await fetch('/api/sessions');
       const sessions = await res.json();
@@ -94,120 +203,220 @@
       sessions.forEach(s => {
         const opt = document.createElement('option');
         opt.value = s.id;
-        opt.textContent = `${s.title} [${s.is_indexed ? '인덱싱됨' : '미인덱싱'}]`;
+        opt.textContent = `${s.title} [${s.is_indexed ? '✓' : '미인덱싱'}]`;
         opt.disabled = !s.is_indexed;
         sel.appendChild(opt);
       });
-
-      // URL param으로 세션 자동 선택
       const params = new URLSearchParams(location.search);
       const sid = params.get('session');
       if (sid) sel.value = sid;
     }
 
-    function onSessionChange() {
-      document.getElementById('historySection').style.display = 'none';
-      resetPanels();
+    async function loadModels() {
+      try {
+        const res = await fetch('/api/models');
+        const data = await res.json();
+        availableModels = data.models || [];
+
+        // 단일 모델 드롭다운 채우기
+        const dualSel = document.getElementById('dualModel');
+        dualSel.innerHTML = `<option value="">기본값 (${data.default})</option>`;
+        availableModels.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          dualSel.appendChild(opt);
+        });
+
+        // 멀티모델 체크박스 채우기
+        const checklist = document.getElementById('modelChecklist');
+        checklist.innerHTML = '<span style="font-size:0.82rem;color:var(--text-muted);align-self:center;">모델 선택:</span>';
+        availableModels.forEach(m => {
+          const chip = document.createElement('label');
+          chip.className = 'model-chip selected';
+          chip.innerHTML = `<input type="checkbox" value="${m}" checked> ${m}`;
+          chip.querySelector('input').addEventListener('change', e => {
+            chip.classList.toggle('selected', e.target.checked);
+          });
+          checklist.appendChild(chip);
+        });
+      } catch(e) {
+        console.error('모델 로드 실패:', e);
+      }
     }
 
-    async function runCompare() {
+    function switchTab(tab) {
+      activeTab = tab;
+      document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', (i === 0 && tab === 'dual') || (i === 1 && tab === 'multi'));
+      });
+      document.getElementById('tab-dual').classList.toggle('active', tab === 'dual');
+      document.getElementById('tab-multi').classList.toggle('active', tab === 'multi');
+    }
+
+    function runActive() {
+      if (activeTab === 'dual') runDualCompare();
+      else runMultiCompare();
+    }
+
+    async function runDualCompare() {
       const sessionId = document.getElementById('sessionSelect').value;
       const query = document.getElementById('queryInput').value.trim();
+      const model = document.getElementById('dualModel').value || null;
       if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
       if (!query) { showToast('질문을 입력하세요', 'error'); return; }
 
       setLoading(true);
-      resetPanels(true);
+      resetDualPanels(true);
 
       try {
         const res = await fetch('/api/rag/compare', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, query }),
+          body: JSON.stringify({ session_id: sessionId, query, model }),
         });
-
-        if (!res.ok) {
-          const err = await res.json();
-          showToast(err.detail || '비교 실패', 'error');
-          return;
-        }
-
+        if (!res.ok) { const e = await res.json(); showToast(e.detail || '실패', 'error'); return; }
         const data = await res.json();
-        renderPanel('basic', data.basic_rag);
-        renderPanel('raptor', data.raptor_rag);
+        renderDualPanel('basic', data.basic_rag, data.model);
+        renderDualPanel('raptor', data.raptor_rag, data.model);
       } finally {
         setLoading(false);
       }
     }
 
-    function renderPanel(type, result) {
-      const prefix = type;
-      const answerEl = document.getElementById(`${prefix}Answer`);
-      const latencyEl = document.getElementById(`${prefix}Latency`);
-      const toggleEl = document.getElementById(`${prefix}RefsToggle`);
-      const refsList = document.getElementById(`${prefix}RefsList`);
+    async function runMultiCompare() {
+      const sessionId = document.getElementById('sessionSelect').value;
+      const query = document.getElementById('queryInput').value.trim();
+      if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
+      if (!query) { showToast('질문을 입력하세요', 'error'); return; }
 
-      answerEl.textContent = result.answer;
-      answerEl.classList.remove('placeholder');
-      latencyEl.textContent = `${result.latency_ms}ms`;
+      const selected = [...document.querySelectorAll('#modelChecklist input:checked')].map(i => i.value);
+      if (selected.length === 0) { showToast('모델을 하나 이상 선택하세요', 'error'); return; }
 
-      refsList.innerHTML = '';
-      if (result.references && result.references.length > 0) {
-        result.references.forEach((ref, i) => {
-          const div = document.createElement('div');
-          div.className = 'ref-item';
-          div.textContent = `[${i+1}] ${ref}`;
-          refsList.appendChild(div);
+      setLoading(true);
+      const grid = document.getElementById('multiGrid');
+      grid.innerHTML = '';
+      selected.forEach(m => {
+        ['basic','raptor'].forEach(rag => {
+          grid.appendChild(createMultiCard(m, rag, null));
         });
-        toggleEl.style.display = 'block';
+      });
+
+      try {
+        const res = await fetch('/api/rag/multimodel', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ session_id: sessionId, query, models: selected }),
+        });
+        if (!res.ok) { const e = await res.json(); showToast(e.detail || '실패', 'error'); return; }
+        const data = await res.json();
+        grid.innerHTML = '';
+        // 모델별로 그룹핑
+        const grouped = {};
+        data.results.forEach(r => {
+          if (!grouped[r.model]) grouped[r.model] = {};
+          grouped[r.model][r.rag_type] = r;
+        });
+        Object.entries(grouped).forEach(([model, rags]) => {
+          ['basic','raptor'].forEach(rt => {
+            const r = rags[rt];
+            grid.appendChild(createMultiCard(model, rt, r));
+          });
+        });
+      } finally {
+        setLoading(false);
       }
+    }
+
+    function createMultiCard(model, ragType, result) {
+      const card = document.createElement('div');
+      card.className = 'multi-card';
+      const isBasic = ragType === 'basic';
+      const labelClass = isBasic ? 'label-basic' : 'label-raptor';
+      const labelText = isBasic ? '🔵 Basic RAG' : '🟣 RAPTOR RAG';
+
+      let bodyHtml;
+      if (!result) {
+        bodyHtml = `<div class="multi-card-body loading"><div class="spinner"></div> 생성 중...</div>`;
+      } else if (result.answer && result.answer.startsWith('오류:')) {
+        bodyHtml = `<div class="multi-card-body" style="color:var(--danger)">${escHtml(result.answer)}</div>`;
+      } else {
+        bodyHtml = `<div class="multi-card-body">${escHtml(result?.answer || '')}</div>`;
+      }
+
+      card.innerHTML = `
+        <div class="multi-card-header">
+          <span class="label ${labelClass}">${labelText}</span>
+          <span class="model-tag">${escHtml(model)}</span>
+          ${result ? `<span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted)">${result.latency_ms}ms</span>` : ''}
+        </div>
+        ${bodyHtml}`;
+      return card;
+    }
+
+    function renderDualPanel(type, result, modelName) {
+      document.getElementById(`${type}Answer`).textContent = result.answer;
+      document.getElementById(`${type}Answer`).classList.remove('placeholder');
+      document.getElementById(`${type}Latency`).textContent = `${result.latency_ms}ms`;
+      document.getElementById(`${type}Model`).textContent = modelName || '';
+
+      const refsList = document.getElementById(`${type}RefsList`);
+      refsList.innerHTML = '';
+      if (result.references?.length) {
+        result.references.forEach((ref, i) => {
+          const d = document.createElement('div');
+          d.className = 'ref-item';
+          d.textContent = `[${i+1}] ${ref}`;
+          refsList.appendChild(d);
+        });
+        document.getElementById(`${type}RefsToggle`).style.display = 'block';
+      }
+    }
+
+    function resetDualPanels(spinner = false) {
+      ['basic','raptor'].forEach(t => {
+        const a = document.getElementById(`${t}Answer`);
+        a.className = 'answer-box placeholder';
+        a.innerHTML = spinner ? '<div class="spinner"></div>' : '질문을 입력하고 비교 실행을 클릭하세요.';
+        document.getElementById(`${t}Latency`).textContent = '';
+        document.getElementById(`${t}Model`).textContent = '';
+        document.getElementById(`${t}RefsToggle`).style.display = 'none';
+        document.getElementById(`${t}RefsList`).innerHTML = '';
+        document.getElementById(`${t}RefsList`).classList.remove('open');
+      });
     }
 
     function toggleRefs(type) {
       const list = document.getElementById(`${type}RefsList`);
       const toggle = document.getElementById(`${type}RefsToggle`);
       list.classList.toggle('open');
-      toggle.textContent = list.classList.contains('open') ? '▼ 참조 청크 숨기기' : '▶ 참조 청크 보기';
+      toggle.textContent = list.classList.contains('open') ? '▼ 참조 숨기기' : '▶ 참조 청크 보기';
     }
 
     async function loadHistory() {
       const sessionId = document.getElementById('sessionSelect').value;
       if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
-
       const res = await fetch(`/api/rag/results/${sessionId}`);
       const rows = await res.json();
       const tbody = document.getElementById('historyBody');
-      tbody.innerHTML = '';
-
-      if (rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" style="color:var(--text-muted)">결과 없음</td></tr>';
-      } else {
-        rows.forEach(r => {
-          const tr = document.createElement('tr');
-          tr.innerHTML = `
+      tbody.innerHTML = rows.length === 0
+        ? '<tr><td colspan="6" style="color:var(--text-muted)">결과 없음</td></tr>'
+        : rows.map(r => `<tr>
             <td>${escHtml(r.query)}</td>
-            <td>${escHtml((r.basic_rag_answer || '').slice(0, 60))}...</td>
-            <td>${escHtml((r.raptor_rag_answer || '').slice(0, 60))}...</td>
+            <td>${escHtml((r.basic_rag_answer||'').slice(0,50))}...</td>
+            <td>${escHtml((r.raptor_rag_answer||'').slice(0,50))}...</td>
             <td>${r.basic_rag_latency_ms}ms</td>
             <td>${r.raptor_rag_latency_ms}ms</td>
-            <td>${r.created_at?.slice(0,16) || ''}</td>`;
-          tbody.appendChild(tr);
-        });
-      }
-
+            <td>${(r.created_at||'').slice(0,16)}</td>
+          </tr>`).join('');
       document.getElementById('historySection').style.display = 'block';
     }
 
-    function resetPanels(showSpinner = false) {
-      ['basic', 'raptor'].forEach(type => {
-        const ans = document.getElementById(`${type}Answer`);
-        ans.className = 'answer-box placeholder';
-        ans.innerHTML = showSpinner ? '<div class="spinner"></div>' : '질문을 입력하고 [비교 실행]을 클릭하세요.';
-        document.getElementById(`${type}Latency`).textContent = '';
-        document.getElementById(`${type}RefsToggle`).style.display = 'none';
-        document.getElementById(`${type}RefsList`).innerHTML = '';
-        document.getElementById(`${type}RefsList`).classList.remove('open');
-      });
+    function onSessionChange() {
+      document.getElementById('historySection').style.display = 'none';
+      resetDualPanels();
+      document.getElementById('multiGrid').innerHTML =
+        '<div style="color:var(--text-muted);font-size:0.9rem;padding:20px;">세션을 선택하고 질문을 입력한 뒤 [⚡ 비교 실행]을 클릭하세요.</div>';
     }
 
     function setLoading(on) {
@@ -216,7 +425,7 @@
       btn.textContent = on ? '⏳ 실행 중...' : '⚡ 비교 실행';
     }
 
-    function showToast(msg, type = '') {
+    function showToast(msg, type='') {
       const t = document.getElementById('toast');
       t.textContent = msg;
       t.className = `toast ${type} show`;
@@ -227,7 +436,7 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    loadSessions();
+    init();
   </script>
 </body>
 </html>
