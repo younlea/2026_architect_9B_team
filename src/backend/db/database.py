@@ -44,12 +44,86 @@ CREATE TABLE IF NOT EXISTS model_compare_results (
     latency_ms INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 스레드: 여러 세션을 하나의 주제 단위로 묶는 컨테이너
+CREATE TABLE IF NOT EXISTS threads (
+    id TEXT PRIMARY KEY,
+    title TEXT,
+    description TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    basic_indexed INTEGER DEFAULT 0,
+    raptor_indexed INTEGER DEFAULT 0,
+    basic_chunk_count INTEGER DEFAULT 0,
+    raptor_node_count INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS thread_sessions (
+    thread_id TEXT,
+    session_id TEXT,
+    sort_order INTEGER DEFAULT 0,
+    PRIMARY KEY (thread_id, session_id),
+    FOREIGN KEY (thread_id) REFERENCES threads(id),
+    FOREIGN KEY (session_id) REFERENCES sessions(id)
+);
+
+CREATE TABLE IF NOT EXISTS thread_rag_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT,
+    query TEXT,
+    basic_rag_answer TEXT,
+    basic_rag_latency_ms INTEGER,
+    raptor_rag_answer TEXT,
+    raptor_rag_latency_ms INTEGER,
+    model_name TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- LongBench 벤치마크 질문 (ground truth 포함)
+CREATE TABLE IF NOT EXISTS benchmark_questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    thread_id TEXT,
+    question TEXT,
+    ground_truth_answers TEXT,
+    dataset_name TEXT,
+    source_id TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- 벤치마크 실행 결과 (기법별 정답 여부 포함)
+CREATE TABLE IF NOT EXISTS benchmark_results (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    question_id INTEGER,
+    thread_id TEXT,
+    basic_rag_answer TEXT,
+    basic_rag_latency_ms INTEGER,
+    raptor_rag_answer TEXT,
+    raptor_rag_latency_ms INTEGER,
+    model_name TEXT,
+    basic_correct INTEGER DEFAULT 0,
+    raptor_correct INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+
+
+def get_thread_text(thread_id: str) -> str:
+    """스레드에 속한 모든 세션의 메시지를 시간순으로 합쳐 반환합니다."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT s.title, m.speaker, m.content, m.timestamp
+               FROM thread_sessions ts
+               JOIN sessions s ON ts.session_id = s.id
+               JOIN messages m ON m.session_id = s.id
+               WHERE ts.thread_id = ?
+               ORDER BY ts.sort_order, m.timestamp""",
+            (thread_id,),
+        ).fetchall()
+    return "\n".join(f"[{r['speaker']}] {r['content']}" for r in rows)
 
 
 @contextmanager

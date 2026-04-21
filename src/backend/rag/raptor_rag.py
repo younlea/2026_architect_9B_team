@@ -6,7 +6,7 @@ import time
 import numpy as np
 import chromadb
 from chromadb.utils import embedding_functions
-from backend.db.database import get_conn
+from backend.db.database import get_conn, get_thread_text
 from backend.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
 from backend.rag.llm_client import get_llm_answer
 
@@ -17,12 +17,18 @@ MAX_LEVELS = 3
 MIN_CLUSTER_SIZE = 2
 
 
-def _get_collection(session_id: str):
-    client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
-    ef = embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
-    return client.get_or_create_collection(
-        name=f"raptor_{session_id.replace('-', '_')}",
-        embedding_function=ef,
+def _get_client():
+    return chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+
+
+def _get_ef():
+    return embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
+
+
+def _get_collection(col_name: str):
+    return _get_client().get_or_create_collection(
+        name=col_name.replace("-", "_"),
+        embedding_function=_get_ef(),
     )
 
 
@@ -43,7 +49,6 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
 
 
 def _cluster_texts(embeddings: np.ndarray, n_clusters: int) -> list[int]:
-    """간단한 K-Means 클러스터링 (UMAP 없이도 동작)."""
     from sklearn.cluster import KMeans
     if len(embeddings) <= n_clusters:
         return list(range(len(embeddings)))
@@ -89,43 +94,63 @@ def _build_tree(chunks: list[str], level: int = 0, model: str = None) -> list[di
     return nodes
 
 
+def _index_text(col_name: str, text: str, id_prefix: str, model: str = None) -> int:
+    chunks = _chunk_text(text)
+    all_nodes = _build_tree(chunks, model=model)
+
+    col = _get_collection(col_name)
+    col.upsert(
+        documents=[n["text"] for n in all_nodes],
+        ids=[f"{id_prefix}_raptor_{i}" for i in range(len(all_nodes))],
+        metadatas=[{"level": n["level"]} for n in all_nodes],
+    )
+    return len(all_nodes)
+
+
 def index_session(session_id: str):
     with get_conn() as conn:
         rows = conn.execute(
             "SELECT speaker, content FROM messages WHERE session_id = ? ORDER BY timestamp",
             (session_id,),
         ).fetchall()
-
     full_text = "\n".join(f"[{r['speaker']}] {r['content']}" for r in rows)
-    chunks = _chunk_text(full_text)
-
-    all_nodes = _build_tree(chunks)
-
-    collection = _get_collection(session_id)
-    documents = [n["text"] for n in all_nodes]
-    ids = [f"{session_id}_raptor_{i}" for i in range(len(all_nodes))]
-    metadatas = [{"level": n["level"]} for n in all_nodes]
-
-    collection.upsert(documents=documents, ids=ids, metadatas=metadatas)
-
+    _index_text(f"raptor_s_{session_id}", full_text, session_id)
     with get_conn() as conn:
         conn.execute("UPDATE sessions SET is_indexed = 1 WHERE id = ?", (session_id,))
 
 
-def query(session_id: str, question: str, model: str = None) -> dict:
-    start = time.time()
+def index_thread(thread_id: str, model: str = None) -> int:
+    """스레드의 모든 세션 메시지를 합쳐 단일 RAPTOR 트리 인덱스로 구성합니다."""
+    full_text = get_thread_text(thread_id)
+    node_count = _index_text(f"raptor_t_{thread_id}", full_text, thread_id, model)
+    with get_conn() as conn:
+        conn.execute(
+            "UPDATE threads SET raptor_indexed=1, raptor_node_count=? WHERE id=?",
+            (node_count, thread_id),
+        )
+    return node_count
 
-    collection = _get_collection(session_id)
-    results = collection.query(
+
+def query(session_id: str, question: str, model: str = None) -> dict:
+    return _query_col(f"raptor_s_{session_id}", question, model)
+
+
+def query_thread(thread_id: str, question: str, model: str = None) -> dict:
+    return _query_col(f"raptor_t_{thread_id}", question, model)
+
+
+def _query_col(col_name: str, question: str, model: str = None) -> dict:
+    start = time.time()
+    col = _get_collection(col_name)
+    results = col.query(
         query_texts=[question],
-        n_results=min(TOP_K, collection.count()),
+        n_results=min(TOP_K, col.count()),
         include=["documents", "metadatas", "distances"],
     )
 
     docs = results["documents"][0] if results["documents"] else []
     metas = results["metadatas"][0] if results["metadatas"] else []
 
-    # 레벨별로 분류하여 컨텍스트 구성
     level_groups: dict[int, list[str]] = {}
     for doc, meta in zip(docs, metas):
         lvl = meta.get("level", 0)
@@ -138,7 +163,6 @@ def query(session_id: str, question: str, model: str = None) -> dict:
         context_parts.extend(level_groups[lvl])
 
     context = "\n\n".join(context_parts)
-
     prompt = f"""아래 대화 분석 내용을 참고하여 질문에 답변해 주세요.
 전체 요약은 맥락 파악에, 세부 내용은 구체적 사실 확인에 활용하세요.
 
@@ -149,8 +173,6 @@ def query(session_id: str, question: str, model: str = None) -> dict:
 {question}
 
 [답변]"""
-
     answer = get_llm_answer(prompt, model)
     latency = int((time.time() - start) * 1000)
-
     return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}

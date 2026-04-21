@@ -96,6 +96,29 @@
       background: rgba(99,102,241,0.12);
     }
     .model-chip input[type=checkbox] { display: none; }
+
+    /* 컨텍스트 유형 배지 */
+    .ctx-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 10px;
+      border-radius: 12px;
+      font-size: 0.76rem;
+      font-weight: 600;
+    }
+    .ctx-badge.thread {
+      background: rgba(168,85,247,0.15);
+      color: #c084fc;
+      border: 1px solid rgba(168,85,247,0.3);
+    }
+    .ctx-badge.session {
+      background: rgba(99,102,241,0.15);
+      color: #a5b4fc;
+      border: 1px solid rgba(99,102,241,0.3);
+    }
+
+    select optgroup { font-size: 0.8rem; color: var(--text-muted); }
   </style>
 </head>
 <body>
@@ -110,9 +133,10 @@
 
     <!-- 공통 툴바 -->
     <div class="compare-toolbar">
-      <select id="sessionSelect" onchange="onSessionChange()">
-        <option value="">-- 세션 선택 --</option>
+      <select id="contextSelect" onchange="onContextChange()">
+        <option value="">-- 스레드 또는 세션 선택 --</option>
       </select>
+      <span id="ctxBadge" style="display:none"></span>
       <input type="text" id="queryInput" placeholder="질문을 입력하세요..."
              onkeydown="if(event.key==='Enter') runActive()">
       <button class="btn btn-primary btn-sm" id="btnRun" onclick="runActive()">⚡ 비교 실행</button>
@@ -122,6 +146,7 @@
     <div class="tab-bar">
       <div class="tab active" onclick="switchTab('dual')">🔵🟣 Basic vs RAPTOR</div>
       <div class="tab" onclick="switchTab('multi')">🤖 멀티모델 비교</div>
+      <div class="tab" onclick="switchTab('bench')">📊 LongBench 평가</div>
     </div>
 
     <!-- ① 탭: Basic vs RAPTOR (단일 모델 선택) -->
@@ -177,7 +202,39 @@
       </div>
       <div class="multi-grid" id="multiGrid">
         <div style="color:var(--text-muted); font-size:0.9rem; padding:20px;">
-          세션을 선택하고 질문을 입력한 뒤 [⚡ 비교 실행]을 클릭하세요.
+          스레드 또는 세션을 선택하고 질문을 입력한 뒤 [⚡ 비교 실행]을 클릭하세요.
+        </div>
+      </div>
+    </div>
+
+    <!-- ③ 탭: LongBench 벤치마크 평가 -->
+    <div class="tab-content" id="tab-bench" style="flex-direction:column; overflow:hidden;">
+      <div style="padding:10px 20px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <span style="font-size:0.84rem; color:var(--text-muted);">LongBench ground truth로 정확도 측정</span>
+        <select id="benchModel" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);padding:5px 10px;border-radius:6px;font-size:0.82rem;">
+          <option value="">기본값</option>
+        </select>
+        <button class="btn btn-primary btn-sm" onclick="runBenchmark()">▶ 벤치마크 실행</button>
+        <button class="btn btn-outline btn-sm" onclick="loadBenchResults()">📋 이전 결과</button>
+      </div>
+
+      <!-- 스코어 요약 -->
+      <div id="benchSummary" style="display:none; padding:12px 20px; background:var(--surface); border-bottom:1px solid var(--border);">
+        <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
+          <span style="font-size:0.82rem; color:var(--text-muted);">총 <strong id="bTotal">0</strong>개 질문</span>
+          <span>🔵 Basic RAG 정확도: <strong id="bBasicAcc" style="color:var(--basic-color)">0%</strong> (<span id="bBasicScore"></span>)</span>
+          <span>🟣 RAPTOR RAG 정확도: <strong id="bRaptorAcc" style="color:var(--raptor-color)">0%</strong> (<span id="bRaptorScore"></span>)</span>
+          <span style="font-size:0.76rem; color:var(--text-muted);" id="bModelTag"></span>
+        </div>
+      </div>
+
+      <!-- 결과 테이블 -->
+      <div style="flex:1; overflow-y:auto; padding:16px;">
+        <div id="benchContent">
+          <div style="color:var(--text-muted); font-size:0.9rem;">
+            LongBench 스레드를 선택하고 [▶ 벤치마크 실행]을 클릭하세요.<br>
+            <small>load_longbench.py로 데이터를 먼저 로드해야 합니다.</small>
+          </div>
         </div>
       </div>
     </div>
@@ -190,26 +247,102 @@
     let availableModels = [];
     let activeTab = 'dual';
 
+    // 현재 선택된 컨텍스트 정보
+    function getSelectedContext() {
+      const val = document.getElementById('contextSelect').value;
+      if (!val) return null;
+      const [type, id] = val.split(':');
+      return { type, id };
+    }
+
     async function init() {
-      await loadSessions();
+      await loadContexts();
       await loadModels();
     }
 
-    async function loadSessions() {
-      const res = await fetch('/api/sessions');
-      const sessions = await res.json();
-      const sel = document.getElementById('sessionSelect');
-      sel.innerHTML = '<option value="">-- 세션 선택 --</option>';
-      sessions.forEach(s => {
-        const opt = document.createElement('option');
-        opt.value = s.id;
-        opt.textContent = `${s.title} [${s.is_indexed ? '✓' : '미인덱싱'}]`;
-        opt.disabled = !s.is_indexed;
-        sel.appendChild(opt);
-      });
+    async function loadContexts() {
+      const [threadsRes, sessionsRes] = await Promise.all([
+        fetch('/api/threads'),
+        fetch('/api/sessions'),
+      ]);
+      const threads = await threadsRes.json();
+      const sessions = await sessionsRes.json();
+
+      const sel = document.getElementById('contextSelect');
+      sel.innerHTML = '<option value="">-- 스레드 또는 세션 선택 --</option>';
+
+      // 인덱싱된 스레드 그룹
+      const indexedThreads = threads.filter(t => t.basic_indexed && t.raptor_indexed);
+      if (indexedThreads.length > 0) {
+        const grp = document.createElement('optgroup');
+        grp.label = '📚 주제별 스레드 (인덱싱됨)';
+        indexedThreads.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = `thread:${t.id}`;
+          const msgCount = t.message_count || 0;
+          opt.textContent = `${t.title} [${msgCount}개 메시지]`;
+          grp.appendChild(opt);
+        });
+        sel.appendChild(grp);
+      }
+
+      // 미인덱싱 스레드
+      const unindexedThreads = threads.filter(t => !t.basic_indexed || !t.raptor_indexed);
+      if (unindexedThreads.length > 0) {
+        const grp = document.createElement('optgroup');
+        grp.label = '📚 주제별 스레드 (미인덱싱)';
+        unindexedThreads.forEach(t => {
+          const opt = document.createElement('option');
+          opt.value = `thread:${t.id}`;
+          const msgCount = t.message_count || 0;
+          opt.textContent = `${t.title} [미인덱싱 — 채팅에서 인덱스 후 사용]`;
+          opt.disabled = true;
+          grp.appendChild(opt);
+        });
+        sel.appendChild(grp);
+      }
+
+      // 인덱싱된 세션 그룹
+      const indexedSessions = sessions.filter(s => s.is_indexed);
+      if (indexedSessions.length > 0) {
+        const grp = document.createElement('optgroup');
+        grp.label = '💬 개별 세션 (인덱싱됨)';
+        indexedSessions.forEach(s => {
+          const opt = document.createElement('option');
+          opt.value = `session:${s.id}`;
+          opt.textContent = `${s.title}`;
+          grp.appendChild(opt);
+        });
+        sel.appendChild(grp);
+      }
+
+      // URL 파라미터로 자동 선택
       const params = new URLSearchParams(location.search);
-      const sid = params.get('session');
-      if (sid) sel.value = sid;
+      const threadId = params.get('thread');
+      const sessionId = params.get('session');
+      if (threadId) {
+        sel.value = `thread:${threadId}`;
+      } else if (sessionId) {
+        sel.value = `session:${sessionId}`;
+      }
+      updateCtxBadge();
+    }
+
+    function updateCtxBadge() {
+      const ctx = getSelectedContext();
+      const badge = document.getElementById('ctxBadge');
+      if (!ctx) {
+        badge.style.display = 'none';
+        return;
+      }
+      badge.style.display = 'inline-flex';
+      if (ctx.type === 'thread') {
+        badge.className = 'ctx-badge thread';
+        badge.textContent = '📚 스레드';
+      } else {
+        badge.className = 'ctx-badge session';
+        badge.textContent = '💬 세션';
+      }
     }
 
     async function loadModels() {
@@ -218,7 +351,6 @@
         const data = await res.json();
         availableModels = data.models || [];
 
-        // 단일 모델 드롭다운 채우기
         const dualSel = document.getElementById('dualModel');
         dualSel.innerHTML = `<option value="">기본값 (${data.default})</option>`;
         availableModels.forEach(m => {
@@ -228,7 +360,15 @@
           dualSel.appendChild(opt);
         });
 
-        // 멀티모델 체크박스 채우기
+        // 벤치마크 모델 드롭다운 동기화
+        const benchSel = document.getElementById('benchModel');
+        benchSel.innerHTML = `<option value="">기본값 (${data.default})</option>`;
+        availableModels.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m; opt.textContent = m;
+          benchSel.appendChild(opt);
+        });
+
         const checklist = document.getElementById('modelChecklist');
         checklist.innerHTML = '<span style="font-size:0.82rem;color:var(--text-muted);align-self:center;">모델 선택:</span>';
         availableModels.forEach(m => {
@@ -248,10 +388,18 @@
     function switchTab(tab) {
       activeTab = tab;
       document.querySelectorAll('.tab').forEach((t, i) => {
-        t.classList.toggle('active', (i === 0 && tab === 'dual') || (i === 1 && tab === 'multi'));
+        t.classList.toggle('active',
+          (i === 0 && tab === 'dual') ||
+          (i === 1 && tab === 'multi') ||
+          (i === 2 && tab === 'bench'));
       });
       document.getElementById('tab-dual').classList.toggle('active', tab === 'dual');
       document.getElementById('tab-multi').classList.toggle('active', tab === 'multi');
+      document.getElementById('tab-bench').classList.toggle('active', tab === 'bench');
+      // 탭 전환 시 쿼리 입력창 placeholder 변경
+      document.getElementById('queryInput').style.display = tab === 'bench' ? 'none' : '';
+      document.getElementById('btnRun').style.display = tab === 'bench' ? 'none' : '';
+      if (tab === 'bench') loadBenchResults();
     }
 
     function runActive() {
@@ -259,11 +407,16 @@
       else runMultiCompare();
     }
 
+    function buildContextPayload(ctx) {
+      if (ctx.type === 'thread') return { thread_id: ctx.id };
+      return { session_id: ctx.id };
+    }
+
     async function runDualCompare() {
-      const sessionId = document.getElementById('sessionSelect').value;
+      const ctx = getSelectedContext();
       const query = document.getElementById('queryInput').value.trim();
       const model = document.getElementById('dualModel').value || null;
-      if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
+      if (!ctx) { showToast('스레드 또는 세션을 선택하세요', 'error'); return; }
       if (!query) { showToast('질문을 입력하세요', 'error'); return; }
 
       setLoading(true);
@@ -273,7 +426,7 @@
         const res = await fetch('/api/rag/compare', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, query, model }),
+          body: JSON.stringify({ ...buildContextPayload(ctx), query, model }),
         });
         if (!res.ok) { const e = await res.json(); showToast(e.detail || '실패', 'error'); return; }
         const data = await res.json();
@@ -285,9 +438,9 @@
     }
 
     async function runMultiCompare() {
-      const sessionId = document.getElementById('sessionSelect').value;
+      const ctx = getSelectedContext();
       const query = document.getElementById('queryInput').value.trim();
-      if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
+      if (!ctx) { showToast('스레드 또는 세션을 선택하세요', 'error'); return; }
       if (!query) { showToast('질문을 입력하세요', 'error'); return; }
 
       const selected = [...document.querySelectorAll('#modelChecklist input:checked')].map(i => i.value);
@@ -306,12 +459,11 @@
         const res = await fetch('/api/rag/multimodel', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ session_id: sessionId, query, models: selected }),
+          body: JSON.stringify({ ...buildContextPayload(ctx), query, models: selected }),
         });
         if (!res.ok) { const e = await res.json(); showToast(e.detail || '실패', 'error'); return; }
         const data = await res.json();
         grid.innerHTML = '';
-        // 모델별로 그룹핑
         const grouped = {};
         data.results.forEach(r => {
           if (!grouped[r.model]) grouped[r.model] = {};
@@ -394,9 +546,13 @@
     }
 
     async function loadHistory() {
-      const sessionId = document.getElementById('sessionSelect').value;
-      if (!sessionId) { showToast('세션을 선택하세요', 'error'); return; }
-      const res = await fetch(`/api/rag/results/${sessionId}`);
+      const ctx = getSelectedContext();
+      if (!ctx) { showToast('스레드 또는 세션을 선택하세요', 'error'); return; }
+
+      const url = ctx.type === 'thread'
+        ? `/api/rag/results/thread/${ctx.id}`
+        : `/api/rag/results/${ctx.id}`;
+      const res = await fetch(url);
       const rows = await res.json();
       const tbody = document.getElementById('historyBody');
       tbody.innerHTML = rows.length === 0
@@ -412,11 +568,12 @@
       document.getElementById('historySection').style.display = 'block';
     }
 
-    function onSessionChange() {
+    function onContextChange() {
       document.getElementById('historySection').style.display = 'none';
       resetDualPanels();
       document.getElementById('multiGrid').innerHTML =
-        '<div style="color:var(--text-muted);font-size:0.9rem;padding:20px;">세션을 선택하고 질문을 입력한 뒤 [⚡ 비교 실행]을 클릭하세요.</div>';
+        '<div style="color:var(--text-muted);font-size:0.9rem;padding:20px;">스레드 또는 세션을 선택하고 질문을 입력한 뒤 [⚡ 비교 실행]을 클릭하세요.</div>';
+      updateCtxBadge();
     }
 
     function setLoading(on) {
@@ -434,6 +591,101 @@
 
     function escHtml(s) {
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // ── 벤치마크 ──────────────────────────────────────────────────────────────
+    async function runBenchmark() {
+      const ctx = getSelectedContext();
+      if (!ctx || ctx.type !== 'thread') {
+        showToast('LongBench 스레드를 선택하세요', 'error'); return;
+      }
+      const model = document.getElementById('benchModel').value || null;
+
+      const content = document.getElementById('benchContent');
+      content.innerHTML = '<div class="spinner" style="margin:20px auto;display:block;"></div><div style="text-align:center;color:var(--text-muted);margin-top:8px;">벤치마크 실행 중... (질문 수에 따라 수 분 소요)</div>';
+      document.getElementById('benchSummary').style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/threads/${ctx.id}/benchmark/run`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model }),
+        });
+        if (!res.ok) {
+          const e = await res.json();
+          showToast(e.detail || '벤치마크 실패', 'error');
+          content.innerHTML = `<div style="color:var(--danger);padding:16px;">${escHtml(e.detail || '실패')}</div>`;
+          return;
+        }
+        const data = await res.json();
+        renderBenchResults(data.results, data);
+      } catch(e) {
+        showToast('오류: ' + e.message, 'error');
+        content.innerHTML = `<div style="color:var(--danger);padding:16px;">${escHtml(e.message)}</div>`;
+      }
+    }
+
+    async function loadBenchResults() {
+      const ctx = getSelectedContext();
+      if (!ctx || ctx.type !== 'thread') return;
+
+      try {
+        const res = await fetch(`/api/threads/${ctx.id}/benchmark/results`);
+        const data = await res.json();
+        if (data.results && data.results.length > 0) {
+          renderBenchResults(data.results, data.summary);
+        }
+      } catch(e) { /* no previous results */ }
+    }
+
+    function renderBenchResults(results, summary) {
+      // 요약 표시
+      const sum = summary || {};
+      document.getElementById('bTotal').textContent = sum.total || results.length;
+      document.getElementById('bBasicAcc').textContent = (sum.basic_accuracy ?? '-') + '%';
+      document.getElementById('bRaptorAcc').textContent = (sum.raptor_accuracy ?? '-') + '%';
+      document.getElementById('bBasicScore').textContent = `${sum.basic_correct ?? 0}/${sum.total ?? results.length}`;
+      document.getElementById('bRaptorScore').textContent = `${sum.raptor_correct ?? 0}/${sum.total ?? results.length}`;
+      document.getElementById('bModelTag').textContent = sum.model_name ? `모델: ${sum.model_name}` : '';
+      document.getElementById('benchSummary').style.display = 'block';
+
+      // 결과 테이블
+      const content = document.getElementById('benchContent');
+      if (results.length === 0) {
+        content.innerHTML = '<div style="color:var(--text-muted);padding:16px;">결과 없음</div>';
+        return;
+      }
+
+      const rows = results.map((r, i) => {
+        const gts = Array.isArray(r.ground_truth_answers) ? r.ground_truth_answers : [];
+        const basicAns = r.basic_rag_answer || r.basic_rag?.answer || '';
+        const raptorAns = r.raptor_rag_answer || r.raptor_rag?.answer || '';
+        const basicOk = r.basic_correct !== undefined ? r.basic_correct : r.basic_rag?.correct;
+        const raptorOk = r.raptor_correct !== undefined ? r.raptor_correct : r.raptor_rag?.correct;
+        const tick = (ok) => ok ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--danger)">✗</span>';
+
+        return `<tr>
+          <td style="max-width:200px;word-break:break-word">${escHtml(r.question || '')}</td>
+          <td style="max-width:180px;word-break:break-word;color:var(--text-muted);font-size:0.8rem">${escHtml(gts.join(' / '))}</td>
+          <td style="max-width:220px;word-break:break-word">${escHtml(basicAns.slice(0, 120))}${basicAns.length > 120 ? '…' : ''} ${tick(basicOk)}</td>
+          <td style="max-width:220px;word-break:break-word">${escHtml(raptorAns.slice(0, 120))}${raptorAns.length > 120 ? '…' : ''} ${tick(raptorOk)}</td>
+          <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-muted)">${r.basic_rag_latency_ms || r.basic_rag?.latency_ms || '-'}ms / ${r.raptor_rag_latency_ms || r.raptor_rag?.latency_ms || '-'}ms</td>
+        </tr>`;
+      }).join('');
+
+      content.innerHTML = `
+        <table class="history-table" style="width:100%">
+          <thead>
+            <tr>
+              <th>질문</th>
+              <th>Ground Truth</th>
+              <th>🔵 Basic RAG</th>
+              <th>🟣 RAPTOR RAG</th>
+              <th>지연 (B/R)</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+        </table>`;
     }
 
     init();
