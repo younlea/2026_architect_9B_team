@@ -18,8 +18,8 @@ def generate(body: GenerateRequest):
         raise HTTPException(status_code=400, detail="mode must be '2person' or 'group'")
     if not body.topic.strip():
         raise HTTPException(status_code=400, detail="topic is required")
-    if body.turns < 2 or body.turns > 50:
-        raise HTTPException(status_code=400, detail="turns must be between 2 and 50")
+    if body.turns < 2 or body.turns > 1000:
+        raise HTTPException(status_code=400, detail="turns must be between 2 and 1000")
 
     session_id = generate_conversation(
         mode=body.mode,
