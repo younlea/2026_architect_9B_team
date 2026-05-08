@@ -49,67 +49,78 @@
       opacity: 0.85;
     }
 
-    /* 검색 컨텍스트 Top-3 */
+    /* 답변 후보 (Top-K 검색 결과) */
     .refs-section {
-      margin-bottom: 12px;
-      border-bottom: 1px solid var(--border);
-      padding-bottom: 10px;
+      margin-bottom: 10px;
     }
     .refs-header {
       font-size: 0.74rem;
-      font-weight: 600;
+      font-weight: 700;
       color: var(--text-muted);
-      margin-bottom: 8px;
+      margin-bottom: 6px;
       display: flex;
       align-items: center;
       gap: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
     }
     .refs-count-badge {
-      font-size: 0.68rem;
+      font-size: 0.65rem;
       padding: 1px 6px;
       border-radius: 10px;
       background: var(--surface2);
       color: var(--text-muted);
+      text-transform: none;
+      letter-spacing: 0;
     }
-    .ref-item-row {
-      display: flex;
-      gap: 8px;
+    /* 후보 카드 */
+    .ref-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
       margin-bottom: 6px;
-      align-items: flex-start;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .ref-card:hover { border-color: var(--primary); }
+    .ref-card-header {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 5px;
     }
     .ref-rank {
       flex-shrink: 0;
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
-      font-size: 0.65rem;
+      font-size: 0.62rem;
       font-weight: 700;
       display: flex;
       align-items: center;
       justify-content: center;
-      margin-top: 2px;
     }
     .ref-rank-basic  { background: rgba(99,102,241,0.25); color: #a5b4fc; }
     .ref-rank-raptor { background: rgba(168,85,247,0.25); color: #c084fc; }
     .ref-rank-roi    { background: rgba(34,197,94,0.25);  color: #86efac; }
-    .ref-text {
-      flex: 1;
-      font-size: 0.78rem;
+    .ref-card-label {
+      font-size: 0.65rem;
+      font-weight: 600;
       color: var(--text-muted);
-      line-height: 1.5;
-      background: var(--surface2);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      padding: 7px 10px;
-      cursor: pointer;
-      transition: border-color 0.15s;
+    }
+    .ref-text {
+      font-size: 0.8rem;
+      color: var(--text);
+      line-height: 1.55;
+      white-space: pre-wrap;
+      word-break: break-word;
       overflow: hidden;
       display: -webkit-box;
-      -webkit-line-clamp: 3;
+      -webkit-line-clamp: 4;
       -webkit-box-orient: vertical;
     }
-    .ref-text:hover { border-color: var(--primary); color: var(--text); }
-    .ref-text.expanded { -webkit-line-clamp: unset; display: block; }
+    .ref-card.expanded .ref-text { -webkit-line-clamp: unset; display: block; }
     .refs-more-toggle {
       font-size: 0.75rem;
       color: var(--primary);
@@ -119,6 +130,17 @@
     }
     .refs-more-list { display: none; }
     .refs-more-list.open { display: block; }
+    /* 최종 답변 구분선 */
+    .final-answer-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 6px;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+    }
 
     /* 멀티모델 그리드 */
     .multi-grid {
@@ -248,11 +270,12 @@
           </div>
           <div class="panel-body">
             <div class="refs-section" id="basicRefsSection" style="display:none">
-              <div class="refs-header">📄 검색 컨텍스트 Top-3 <span class="refs-count-badge" id="basicRefsCount"></span></div>
+              <div class="refs-header">🔍 검색 후보 Top-3 <span class="refs-count-badge" id="basicRefsCount"></span></div>
               <div id="basicRefsTop"></div>
               <div class="refs-more-toggle" id="basicRefsMoreToggle" style="display:none" onclick="toggleRefsMore('basic')">▶ 더 보기</div>
               <div class="refs-more-list" id="basicRefsMore"></div>
             </div>
+            <div class="final-answer-label" id="basicAnswerLabel" style="display:none">💬 최종 답변</div>
             <div class="answer-box placeholder" id="basicAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
           </div>
         </div>
@@ -266,11 +289,12 @@
           </div>
           <div class="panel-body">
             <div class="refs-section" id="raptorRefsSection" style="display:none">
-              <div class="refs-header">📄 검색 컨텍스트 Top-3 <span class="refs-count-badge" id="raptorRefsCount"></span></div>
+              <div class="refs-header">🔍 검색 후보 Top-3 <span class="refs-count-badge" id="raptorRefsCount"></span></div>
               <div id="raptorRefsTop"></div>
               <div class="refs-more-toggle" id="raptorRefsMoreToggle" style="display:none" onclick="toggleRefsMore('raptor')">▶ 더 보기</div>
               <div class="refs-more-list" id="raptorRefsMore"></div>
             </div>
+            <div class="final-answer-label" id="raptorAnswerLabel" style="display:none">💬 최종 답변</div>
             <div class="answer-box placeholder" id="raptorAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
           </div>
         </div>
@@ -285,11 +309,12 @@
           </div>
           <div class="panel-body">
             <div class="refs-section" id="roiRefsSection" style="display:none">
-              <div class="refs-header">📄 검색 EU Top-3 <span class="refs-count-badge" id="roiRefsCount"></span></div>
+              <div class="refs-header">🔍 검색 후보 Top-3 <span class="refs-count-badge" id="roiRefsCount"></span></div>
               <div id="roiRefsTop"></div>
               <div class="refs-more-toggle" id="roiRefsMoreToggle" style="display:none" onclick="toggleRefsMore('roi')">▶ 더 보기</div>
               <div class="refs-more-list" id="roiRefsMore"></div>
             </div>
+            <div class="final-answer-label" id="roiAnswerLabel" style="display:none">💬 최종 답변</div>
             <div class="answer-box placeholder" id="roiAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
           </div>
         </div>
@@ -649,19 +674,32 @@
     }
 
     function buildRefItem(text, rank, type) {
-      const row = document.createElement('div');
-      row.className = 'ref-item-row';
+      const card = document.createElement('div');
+      card.className = 'ref-card';
+      card.title = '클릭하여 전체 보기';
+      card.onclick = () => card.classList.toggle('expanded');
+
+      const header = document.createElement('div');
+      header.className = 'ref-card-header';
+
       const badge = document.createElement('div');
       badge.className = `ref-rank ref-rank-${type}`;
       badge.textContent = rank;
+
+      const lbl = document.createElement('span');
+      lbl.className = 'ref-card-label';
+      lbl.textContent = `후보 ${rank}`;
+
+      header.appendChild(badge);
+      header.appendChild(lbl);
+
       const body = document.createElement('div');
       body.className = 'ref-text';
       body.textContent = text;
-      body.title = '클릭하여 전체 보기';
-      body.onclick = () => body.classList.toggle('expanded');
-      row.appendChild(badge);
-      row.appendChild(body);
-      return row;
+
+      card.appendChild(header);
+      card.appendChild(body);
+      return card;
     }
 
     function renderRefs(type, refs) {
@@ -679,8 +717,8 @@
 
       if (!refs?.length) { section.style.display = 'none'; return; }
 
-      const label = type === 'roi' ? 'EU' : '청크';
-      countBadge.textContent = `${Math.min(refs.length, TOP)} / ${refs.length} ${label}`;
+      const label = type === 'roi' ? 'EU' : '후보';
+      countBadge.textContent = `${Math.min(refs.length, TOP)} / ${refs.length}`;
 
       refs.slice(0, TOP).forEach((ref, i) => topEl.appendChild(buildRefItem(ref, i + 1, type)));
 
@@ -698,6 +736,8 @@
       document.getElementById(`${type}Latency`).textContent = `${result.latency_ms}ms`;
       document.getElementById(`${type}Model`).textContent = modelName || '';
       renderRefs(type, result.references);
+      const lbl = document.getElementById(`${type}AnswerLabel`);
+      if (lbl) lbl.style.display = result.references?.length ? 'block' : 'none';
     }
 
     function renderRoiPanel(result, modelName) {
@@ -724,6 +764,8 @@
         metricsEl.textContent = `R(C):${result.r_c} | ${result.regime} | ${result.eu_count}EU`;
       }
       renderRefs('roi', result.references);
+      const lbl = document.getElementById('roiAnswerLabel');
+      if (lbl) lbl.style.display = result.references?.length ? 'block' : 'none';
     }
 
     function resetDualPanels(spinner = false) {
@@ -738,6 +780,8 @@
         document.getElementById(`${t}RefsMore`).innerHTML = '';
         document.getElementById(`${t}RefsMore`).classList.remove('open');
         document.getElementById(`${t}RefsMoreToggle`).style.display = 'none';
+        const lbl = document.getElementById(`${t}AnswerLabel`);
+        if (lbl) lbl.style.display = 'none';
       });
       document.getElementById('roiMetrics').textContent = '';
     }
