@@ -216,6 +216,31 @@
         </select>
         <button class="btn btn-primary btn-sm" onclick="runBenchmark()">▶ 벤치마크 실행</button>
         <button class="btn btn-outline btn-sm" onclick="loadBenchResults()">📋 이전 결과</button>
+        <button class="btn btn-outline btn-sm" onclick="toggleDatasetManager()">📦 데이터셋 관리</button>
+      </div>
+
+      <!-- 데이터셋 관리 영역 (기본 숨김) -->
+      <div id="datasetManager" style="display:none; padding:12px 20px; background:var(--surface2); border-bottom:1px solid var(--border); max-height: 250px; overflow-y: auto;">
+        <div style="font-size:0.85rem; font-weight:bold; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+          <span>사용 가능한 LongBench 데이터셋</span>
+          <button class="btn btn-outline btn-sm" onclick="fetchDatasets()">🔄 새로고침</button>
+        </div>
+        <div id="datasetList" style="display:flex; flex-wrap:wrap; gap:8px;">
+          <!-- JS로 채워짐 -->
+        </div>
+      </div>
+
+      <!-- 데이터셋 뷰어 모달 -->
+      <div id="datasetViewerModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+        <div style="background:var(--bg); border:1px solid var(--border); border-radius:8px; width:80%; max-width:900px; max-height:80vh; display:flex; flex-direction:column; box-shadow:0 10px 25px rgba(0,0,0,0.5);">
+          <div style="padding:12px 20px; border-bottom:1px solid var(--border); display:flex; justify-content:space-between; align-items:center; background:var(--surface);">
+            <h3 style="margin:0; font-size:1.1rem;">👁️ 데이터셋 뷰어 <span id="viewerDatasetName" style="color:var(--primary); font-size:0.9rem; margin-left:8px;"></span></h3>
+            <button class="btn btn-outline btn-sm" onclick="document.getElementById('datasetViewerModal').style.display='none'">닫기</button>
+          </div>
+          <div id="viewerContent" style="padding:20px; overflow-y:auto; flex:1; display:flex; flex-direction:column; gap:20px;">
+            <!-- JS로 채워짐 -->
+          </div>
+        </div>
       </div>
 
       <!-- 스코어 요약 -->
@@ -611,13 +636,16 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model }),
         });
+        // body 스트림은 한 번만 읽을 수 있으므로 text로 먼저 읽은 뒤 JSON 파싱 시도
+        const rawText = await res.text();
         if (!res.ok) {
-          const e = await res.json();
-          showToast(e.detail || '벤치마크 실패', 'error');
-          content.innerHTML = `<div style="color:var(--danger);padding:16px;">${escHtml(e.detail || '실패')}</div>`;
+          let errMsg = '벤치마크 실패';
+          try { errMsg = JSON.parse(rawText).detail || rawText; } catch { errMsg = rawText; }
+          showToast(errMsg, 'error');
+          content.innerHTML = `<div style="color:var(--danger);padding:16px;">${escHtml(errMsg)}</div>`;
           return;
         }
-        const data = await res.json();
+        const data = JSON.parse(rawText);
         renderBenchResults(data.results, data);
       } catch(e) {
         showToast('오류: ' + e.message, 'error');
@@ -636,6 +664,113 @@
           renderBenchResults(data.results, data.summary);
         }
       } catch(e) { /* no previous results */ }
+    }
+
+    // ── 데이터셋 관리 ────────────────────────────────────────────────────────
+    let datasetManagerOpen = false;
+    function toggleDatasetManager() {
+      datasetManagerOpen = !datasetManagerOpen;
+      document.getElementById('datasetManager').style.display = datasetManagerOpen ? 'block' : 'none';
+      if (datasetManagerOpen) fetchDatasets();
+    }
+
+    async function fetchDatasets() {
+      const list = document.getElementById('datasetList');
+      list.innerHTML = '<span style="font-size:0.8rem;color:var(--text-muted)">로딩 중...</span>';
+      try {
+        const res = await fetch('/api/benchmark/datasets');
+        const data = await res.json();
+        list.innerHTML = '';
+        data.datasets.forEach(d => {
+          const card = document.createElement('div');
+          card.style.cssText = 'border:1px solid var(--border); background:var(--surface); padding:8px 12px; border-radius:6px; font-size:0.8rem; display:flex; flex-direction:column; gap:6px; min-width:180px;';
+          
+          let statusBadge = '';
+          if (d.loaded) statusBadge = '<span style="color:var(--success); font-weight:bold;">[📚 DB 로드 완료]</span>';
+          else if (!d.missing_file) statusBadge = '<span style="color:var(--primary); font-weight:bold;">[✅ 다운로드됨]</span>';
+          else statusBadge = '<span style="color:var(--danger); font-weight:bold;">[파일 없음]</span>';
+
+          card.innerHTML = `
+            <div style="display:flex; justify-content:space-between; font-weight:bold;">
+              <span>${escHtml(d.name)}</span>
+              <span style="color:var(--text-muted);font-weight:normal;font-size:0.75rem">${d.size_mb > 0 ? d.size_mb + 'MB' : ''}</span>
+            </div>
+            <div>${statusBadge}</div>
+            <div style="display:flex; gap:4px; margin-top:4px;">
+              ${!d.loaded && !d.missing_file ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="loadDatasetToDB('${escHtml(d.name)}')">DB에 로드</button>` : ''}
+              ${!d.missing_file ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="viewDataset('${escHtml(d.name)}')">👁️ 보기</button>` : ''}
+            </div>
+          `;
+          list.appendChild(card);
+        });
+      } catch(e) {
+        list.innerHTML = '<span style="color:var(--danger)">데이터셋 목록 불러오기 실패</span>';
+      }
+    }
+
+    async function loadDatasetToDB(name) {
+      if(!confirm(`'${name}' 데이터셋을 로드하시겠습니까?\n(예제 수: 5, 수 분 정도 소요될 수 있습니다)`)) return;
+      showToast(`${name} 로드 시작... 백그라운드에서 진행됩니다.`);
+      try {
+        const res = await fetch('/api/benchmark/load', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({dataset_name: name, num_examples: 5})
+        });
+        const rawText = await res.text();
+        let data = {};
+        try { data = JSON.parse(rawText); } catch { }
+        if(!res.ok) throw new Error(data.detail || rawText || '실패');
+        showToast(`${name} 로드 완료!`);
+        fetchDatasets();
+        loadContexts();
+      } catch(e) {
+        showToast('오류: ' + e.message, 'error');
+      }
+    }
+
+    async function viewDataset(name) {
+      const viewer = document.getElementById('datasetViewerModal');
+      const content = document.getElementById('viewerContent');
+      document.getElementById('viewerDatasetName').textContent = `[${name}]`;
+      content.innerHTML = '<div style="text-align:center; padding:40px; color:var(--text-muted);">데이터를 불러오는 중...</div>';
+      viewer.style.display = 'flex';
+      
+      try {
+        const res = await fetch(`/api/benchmark/datasets/${encodeURIComponent(name)}/view`);
+        if (!res.ok) throw new Error('데이터를 불러올 수 없습니다.');
+        const data = await res.json();
+        
+        content.innerHTML = '';
+        data.examples.forEach((ex, idx) => {
+          const div = document.createElement('div');
+          div.style.cssText = 'background:var(--surface2); padding:16px; border-radius:8px; border:1px solid var(--border);';
+          
+          let answersHtml = '';
+          if (Array.isArray(ex.answers)) {
+            answersHtml = ex.answers.map(a => `<span style="background:var(--primary); color:white; padding:2px 8px; border-radius:12px; font-size:0.8rem; margin-right:4px;">${escHtml(a)}</span>`).join('');
+          }
+          
+          div.innerHTML = `
+            <div style="font-weight:bold; font-size:1.05rem; margin-bottom:12px; color:var(--primary);">문제 ${idx + 1}</div>
+            <div style="margin-bottom:12px;">
+              <span style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">질문 (Input)</span>
+              <div style="font-weight:bold;">${escHtml(ex.input)}</div>
+            </div>
+            <div style="margin-bottom:12px;">
+              <span style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">정답 (Ground Truth)</span>
+              <div>${answersHtml}</div>
+            </div>
+            <div>
+              <span style="font-size:0.8rem; color:var(--text-muted); display:block; margin-bottom:4px;">지문 (Context) - 길이: ${ex.context.length}자</span>
+              <div style="font-size:0.85rem; line-height:1.6; background:var(--bg); padding:12px; border-radius:6px; max-height:200px; overflow-y:auto; white-space:pre-wrap; border:1px solid var(--border);">${escHtml(ex.context)}</div>
+            </div>
+          `;
+          content.appendChild(div);
+        });
+      } catch (e) {
+        content.innerHTML = `<div style="color:var(--danger); padding:20px;">오류: ${e.message}</div>`;
+      }
     }
 
     function renderBenchResults(results, summary) {

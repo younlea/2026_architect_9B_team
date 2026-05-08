@@ -6,7 +6,7 @@ Usage:
 
     dataset_name: multifieldqa_en (기본) | hotpotqa | qasper | narrativeqa
     num_examples: 5 (기본)
-    data_dir: LongBench JSONL 파일 경로 (기본: /tmp/longbench/extracted/data)
+    data_dir: LongBench JSONL 파일 경로 (기본: src/data/longbench)
 
 Example:
     python load_longbench.py multifieldqa_en 5
@@ -24,7 +24,8 @@ from backend.rag import basic_rag, raptor_rag
 
 DATASET_NAME = sys.argv[1] if len(sys.argv) > 1 else "multifieldqa_en"
 NUM_EXAMPLES = int(sys.argv[2]) if len(sys.argv) > 2 else 5
-DATA_DIR = sys.argv[3] if len(sys.argv) > 3 else "/tmp/longbench/extracted/data"
+DATA_DIR_DEFAULT = os.path.join(os.path.dirname(__file__), "data", "longbench")
+DATA_DIR = sys.argv[3] if len(sys.argv) > 3 else DATA_DIR_DEFAULT
 THREAD_TITLE = f"[LongBench] {DATASET_NAME}"
 
 
@@ -107,9 +108,9 @@ def main():
     jsonl_path = os.path.join(DATA_DIR, f"{DATASET_NAME}.jsonl")
     if not os.path.exists(jsonl_path):
         print(f"ERROR: {jsonl_path} 파일이 없습니다.")
-        print("data.zip을 /tmp/longbench/에 다운로드하고 extracted/data/에 압축을 푸세요:")
-        print("  curl -L -o /tmp/longbench/data.zip https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip")
-        print("  unzip /tmp/longbench/data.zip -d /tmp/longbench/extracted/")
+        print("data.zip을 다운로드하고 src/data/longbench/에 압축을 푸세요:")
+        print("  curl -L -o /tmp/data.zip https://huggingface.co/datasets/THUDM/LongBench/resolve/main/data.zip")
+        print(f"  unzip /tmp/data.zip -d {DATA_DIR}")
         sys.exit(1)
 
     print(f"LongBench/{DATASET_NAME} 로딩 중... ({NUM_EXAMPLES}개 예제)")
@@ -172,7 +173,7 @@ def main():
                     question,
                     json.dumps(answers, ensure_ascii=False),
                     DATASET_NAME,
-                    str(ex.get("_id", i)),
+                    session_id,
                 ),
             )
 
@@ -196,14 +197,23 @@ def main():
     print(f"\n스레드 생성: '{THREAD_TITLE}' (id={thread_id})")
     print(f"세션: {len(session_ids)}개")
 
-    # 인덱싱
+    # 인덱싱 (각 문제별 독립적 검색을 위해 세션 단위로 수행)
     print("\nBasic RAG 인덱싱 중...")
-    basic_chunks = basic_rag.index_thread(thread_id)
-    print(f"  Basic RAG: {basic_chunks} 청크")
+    basic_chunks = 0
+    for sid in session_ids:
+        basic_rag.index_session(sid)
+        # count chunks? (index_session doesn't return count, so we just log progress)
+    with get_conn() as conn:
+        conn.execute("UPDATE threads SET basic_indexed = 1 WHERE id = ?", (thread_id,))
+    print("  Basic RAG 인덱싱 완료")
 
     print("RAPTOR RAG 인덱싱 중...")
-    raptor_nodes = raptor_rag.index_thread(thread_id)
-    print(f"  RAPTOR RAG: {raptor_nodes} 노드")
+    raptor_nodes = 0
+    for sid in session_ids:
+        raptor_rag.index_session(sid)
+    with get_conn() as conn:
+        conn.execute("UPDATE threads SET raptor_indexed = 1 WHERE id = ?", (thread_id,))
+    print("  RAPTOR RAG 인덱싱 완료")
 
     print(f"\n완료!")
     print(f"  스레드 ID: {thread_id}")

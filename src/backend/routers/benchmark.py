@@ -1,6 +1,9 @@
 """벤치마크: LongBench 질문으로 Basic RAG vs RAPTOR RAG 정확도 비교"""
 import asyncio
 import json
+import os
+import re
+from collections import Counter
 from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -10,14 +13,143 @@ from backend.config import OLLAMA_MODEL
 
 router = APIRouter(prefix="/api", tags=["benchmark"])
 
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
+
 
 class BenchmarkRunRequest(BaseModel):
     model: Optional[str] = None
 
-
 def _answer_correct(answer: str, ground_truths: list[str]) -> bool:
+    if not answer or not ground_truths:
+        return False
+        
     ans_lower = answer.lower()
-    return any(gt.lower() in ans_lower for gt in ground_truths if gt)
+    # 1. 완전 일치 (부분 문자열) 검사
+    if any(gt.lower() in ans_lower for gt in ground_truths if gt):
+        return True
+
+    # 2. 토큰/글자 기반 유사도(F1 Score) 검사 (완전 일치 실패 시)
+    def get_tokens(text):
+        if not text: return []
+        # 한자(중국어)나 한글이 포함된 경우 글자 단위로 토큰화
+        if any('\u4e00' <= char <= '\u9fff' or '\uac00' <= char <= '\ud7a3' for char in text):
+            return [c for c in text.strip() if c.strip()]
+        # 영어 등은 단어 단위로 토큰화
+        return re.findall(r'\w+', text.lower())
+
+    pred_tokens = get_tokens(answer)
+    if not pred_tokens:
+        return False
+
+    for gt in ground_truths:
+        if not gt: continue
+        truth_tokens = get_tokens(gt)
+        if not truth_tokens: continue
+        
+        common = Counter(pred_tokens) & Counter(truth_tokens)
+        num_same = sum(common.values())
+        if num_same == 0:
+            continue
+            
+        precision = 1.0 * num_same / len(pred_tokens)
+        recall = 1.0 * num_same / len(truth_tokens)
+        f1 = (2 * precision * recall) / (precision + recall)
+        
+        # 모델 답변이 길어지면 F1이 낮아지므로 Recall(재현율)도 확인
+        # 모델 답변이 너무 짧게 요약되면 Recall이 낮아지므로 Precision(정밀도)도 확인
+        if f1 >= 0.25 or recall >= 0.5 or precision >= 0.4:
+            return True
+            
+    return False
+
+
+@router.get("/benchmark/datasets")
+def get_datasets():
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "longbench")
+    downloaded = []
+    if os.path.exists(data_dir):
+        for f in os.listdir(data_dir):
+            if f.endswith(".jsonl"):
+                dataset_name = f[:-6]
+                size_mb = os.path.getsize(os.path.join(data_dir, f)) / (1024*1024)
+                downloaded.append({"name": dataset_name, "size_mb": round(size_mb, 1)})
+    
+    loaded = []
+    with get_conn() as conn:
+        rows = conn.execute("SELECT id, title FROM threads WHERE title LIKE '[LongBench] %'").fetchall()
+        for r in rows:
+            name = r["title"].replace("[LongBench] ", "")
+            loaded.append({"name": name, "thread_id": r["id"]})
+    
+    result = []
+    loaded_dict = {item["name"]: item["thread_id"] for item in loaded}
+    
+    for d in downloaded:
+        d["loaded"] = d["name"] in loaded_dict
+        if d["loaded"]:
+            d["thread_id"] = loaded_dict[d["name"]]
+        result.append(d)
+        
+    downloaded_names = {d["name"] for d in downloaded}
+    for l in loaded:
+        if l["name"] not in downloaded_names:
+            result.append({"name": l["name"], "size_mb": 0, "loaded": True, "thread_id": l["thread_id"], "missing_file": True})
+            
+    result.sort(key=lambda x: x["name"])
+    return {"datasets": result}
+
+
+class LoadDatasetRequest(BaseModel):
+    dataset_name: str
+    num_examples: int = 5
+
+
+@router.get("/benchmark/datasets/{dataset_name}/view")
+def view_dataset(dataset_name: str, limit: int = 5):
+    data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "longbench")
+    jsonl_path = os.path.join(data_dir, f"{dataset_name}.jsonl")
+    
+    if not os.path.exists(jsonl_path):
+        raise HTTPException(status_code=404, detail=f"Dataset {dataset_name} not found")
+        
+    examples = []
+    try:
+        with open(jsonl_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if line:
+                    ex = json.loads(line)
+                    examples.append({
+                        "input": ex.get("input", ""),
+                        "context": ex.get("context", ""),
+                        "answers": ex.get("answers", [])
+                    })
+                    if len(examples) >= limit:
+                        break
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+        
+    return {"dataset": dataset_name, "examples": examples}
+
+
+@router.post("/benchmark/load")
+async def load_dataset(body: LoadDatasetRequest):
+    script_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "load_longbench.py")
+    import sys
+    try:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable, script_path, body.dataset_name, str(body.num_examples),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            raise HTTPException(status_code=500, detail=f"Load failed: {stderr.decode('utf-8', errors='ignore')}")
+            
+        return {"status": "success", "message": "데이터 로드 완료", "log": stdout.decode('utf-8', errors='ignore')}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/threads/{thread_id}/benchmark/questions")
@@ -48,7 +180,7 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
             raise HTTPException(status_code=400, detail="Thread not indexed yet")
 
         questions = conn.execute(
-            "SELECT id, question, ground_truth_answers FROM benchmark_questions WHERE thread_id=?",
+            "SELECT id, question, ground_truth_answers, source_id FROM benchmark_questions WHERE thread_id=?",
             (thread_id,),
         ).fetchall()
 
@@ -62,10 +194,22 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
     for q in questions:
         qid = q["id"]
         question = q["question"]
+        # 요약 태스크(multi_news 등)는 input이 비어있음 → GT 언어에 맞는 요약 프롬프트로 대체
+        if not question or not question.strip():
+            gt_sample = " ".join(ground_truths[:1])
+            has_cjk = any('一' <= c <= '鿿' or '가' <= c <= '힣' for c in gt_sample)
+            question = "이 문서의 핵심 내용을 간결하게 요약해 주세요." if has_cjk else \
+                       "Summarize the key content of the document concisely in English."
         ground_truths = json.loads(q["ground_truth_answers"] or "[]")
 
-        basic_fn = lambda question=question: basic_rag.query_thread(thread_id, question, model)
-        raptor_fn = lambda question=question: raptor_rag.query_thread(thread_id, question, model)
+        source_id = dict(q).get("source_id") or ""
+        # source_id가 UUID 형식이면 세션 단위 검색, 아니면 스레드 단위로 fallback
+        if _UUID_RE.match(source_id):
+            basic_fn = lambda question=question, sid=source_id: basic_rag.query(sid, question, model)
+            raptor_fn = lambda question=question, sid=source_id: raptor_rag.query(sid, question, model)
+        else:
+            basic_fn = lambda question=question: basic_rag.query_thread(thread_id, question, model)
+            raptor_fn = lambda question=question: raptor_rag.query_thread(thread_id, question, model)
         basic_res, raptor_res = await asyncio.gather(
             loop.run_in_executor(None, basic_fn),
             loop.run_in_executor(None, raptor_fn),

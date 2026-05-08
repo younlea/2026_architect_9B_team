@@ -10,11 +10,13 @@ from backend.db.database import get_conn, get_thread_text
 from backend.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
 from backend.rag.llm_client import get_llm_answer
 
-CHUNK_SIZE = 300
-CHUNK_OVERLAP = 50
+CHUNK_SIZE = 512      # 한국어 기준 약 250 어절
+CHUNK_OVERLAP = 80    # 약 15% overlap
 TOP_K = 5
 MAX_LEVELS = 3
 MIN_CLUSTER_SIZE = 2
+DBSCAN_EPS = 0.25     # 코사인 거리 임계값 (0~2, 작을수록 엄격하게 묶음)
+DBSCAN_MIN_SAMPLES = 2  # 클러스터 형성 최소 샘플 수
 
 
 def _get_client():
@@ -33,13 +35,33 @@ def _get_collection(col_name: str):
 
 
 def _chunk_text(text: str) -> list[str]:
+    """문장 경계 인식 스마트 청킹 (문장이 중간에서 잘리지 않도록)."""
+    import re
+    sentences = re.split(r'(?<=[.!?\n])\s*', text)
+    sentences = [s.strip() for s in sentences if s.strip()]
+
     chunks = []
-    start = 0
-    while start < len(text):
-        end = start + CHUNK_SIZE
-        chunks.append(text[start:end])
-        start += CHUNK_SIZE - CHUNK_OVERLAP
-    return [c for c in chunks if c.strip()]
+    current = ""
+    for sent in sentences:
+        if len(current) + len(sent) + 1 > CHUNK_SIZE and current:
+            chunks.append(current.strip())
+            overlap_text = current[-CHUNK_OVERLAP:] if len(current) > CHUNK_OVERLAP else current
+            current = overlap_text + " " + sent
+        else:
+            current = (current + " " + sent).strip() if current else sent
+    if current.strip():
+        chunks.append(current.strip())
+
+    result = []
+    for chunk in chunks:
+        if len(chunk) <= CHUNK_SIZE * 2:
+            result.append(chunk)
+        else:
+            start = 0
+            while start < len(chunk):
+                result.append(chunk[start:start + CHUNK_SIZE])
+                start += CHUNK_SIZE - CHUNK_OVERLAP
+    return [c for c in result if c.strip()]
 
 
 def _embed_texts(texts: list[str]) -> np.ndarray:
@@ -48,12 +70,30 @@ def _embed_texts(texts: list[str]) -> np.ndarray:
     return model.encode(texts, normalize_embeddings=True)
 
 
-def _cluster_texts(embeddings: np.ndarray, n_clusters: int) -> list[int]:
-    from sklearn.cluster import KMeans
-    if len(embeddings) <= n_clusters:
-        return list(range(len(embeddings)))
-    km = KMeans(n_clusters=n_clusters, random_state=42, n_init="auto")
-    return km.fit_predict(embeddings).tolist()
+def _cluster_texts(embeddings: np.ndarray) -> list[int]:
+    """DBSCAN으로 코사인 거리 기반 의미 클러스터링.
+    - 유사한 청크라리 자동으로 묶임 (KMeans의 고정 수 문제 해결)
+    - 잘엠 노이즈(독립된 내용) 자동 감지
+    """
+    from sklearn.cluster import DBSCAN
+    n = len(embeddings)
+    if n <= DBSCAN_MIN_SAMPLES:
+        return list(range(n))
+
+    # 코사인 거리로 DBSCAN (코사인 거리 = 1 - 코사인 유사도)
+    db = DBSCAN(eps=DBSCAN_EPS, min_samples=DBSCAN_MIN_SAMPLES, metric='cosine')
+    labels = db.fit_predict(embeddings).tolist()
+
+    # 노이즈(-1)는 각자 독립 클러스터로 배정
+    max_label = max(labels) if labels else -1
+    result = []
+    for lbl in labels:
+        if lbl == -1:
+            max_label += 1
+            result.append(max_label)
+        else:
+            result.append(lbl)
+    return result
 
 
 def _summarize_cluster(texts: list[str], model: str = None) -> str:
@@ -75,8 +115,7 @@ def _build_tree(chunks: list[str], level: int = 0, model: str = None) -> list[di
         return nodes
 
     embeddings = _embed_texts(chunks)
-    n_clusters = max(2, len(chunks) // 3)
-    labels = _cluster_texts(embeddings, n_clusters)
+    labels = _cluster_texts(embeddings)
 
     clusters: dict[int, list[str]] = {}
     for text, label in zip(chunks, labels):
@@ -142,9 +181,12 @@ def query_thread(thread_id: str, question: str, model: str = None) -> dict:
 def _query_col(col_name: str, question: str, model: str = None) -> dict:
     start = time.time()
     col = _get_collection(col_name)
+    count = col.count()
+    if count == 0:
+        return {"answer": "", "references": [], "latency_ms": 0, "model": model or "default"}
     results = col.query(
         query_texts=[question],
-        n_results=min(TOP_K, col.count()),
+        n_results=min(TOP_K, count),
         include=["documents", "metadatas", "distances"],
     )
 
@@ -165,6 +207,7 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
     context = "\n\n".join(context_parts)
     prompt = f"""아래 대화 분석 내용을 참고하여 질문에 답변해 주세요.
 전체 요약은 맥락 파악에, 세부 내용은 구체적 사실 확인에 활용하세요.
+(주의: 반드시 질문과 동일한 언어로 답변을 작성해야 합니다.)
 
 [분석 내용]
 {context}
