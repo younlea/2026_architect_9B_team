@@ -66,9 +66,8 @@ def _chunk_text(text: str) -> list[str]:
 
 
 def _embed_texts(texts: list[str]) -> np.ndarray:
-    from sentence_transformers import SentenceTransformer
-    model = SentenceTransformer(EMBEDDING_MODEL)
-    return model.encode(texts, normalize_embeddings=True)
+    ef = _get_ef()
+    return np.array(ef(texts), dtype=float)
 
 
 # ── 엔트로피 계산 (논문 Algorithm 1) ────────────────────────────────────────
