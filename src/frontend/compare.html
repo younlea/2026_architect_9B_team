@@ -1065,6 +1065,19 @@
 
       const tick = ok => ok ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--danger)">✗</span>';
 
+      const refsHtml = (refs, color) => {
+        if (!refs?.length) return '';
+        const top3 = refs.slice(0, 3);
+        const items = top3.map((ref, i) => `
+          <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:7px 10px; margin-bottom:5px; cursor:pointer;"
+               onclick="this.style.webkitLineClamp=this.style.webkitLineClamp?'':this.getAttribute('data-clamp'); this.style.display=this.style.display==='-webkit-box'?'block':'-webkit-box';"
+               style="-webkit-line-clamp:3; display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; font-size:0.78rem; line-height:1.5; color:var(--text); word-break:break-word; white-space:pre-wrap;">
+            <span style="font-size:0.62rem; font-weight:700; color:${color}; margin-right:4px;">후보${i+1}</span>${escHtml(ref)}
+          </div>`).join('');
+        return `<div style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px;">🔍 검색 후보 Top-3</div>${items}
+          <div style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 5px; padding-top:8px; border-top:1px solid var(--border);">💬 최종 답변</div>`;
+      };
+
       const cards = results.map((r, idx) => {
         const gts = Array.isArray(r.ground_truth_answers) ? r.ground_truth_answers : [];
         const basicAns  = r.basic_rag_answer  || r.basic_rag?.answer  || '';
@@ -1076,13 +1089,17 @@
         const bMs  = r.basic_rag_latency_ms  || r.basic_rag?.latency_ms  || '-';
         const rMs  = r.raptor_rag_latency_ms || r.raptor_rag?.latency_ms || '-';
         const roiMs = r.roi_rag_latency_ms   || r.roi_rag?.latency_ms   || null;
+        const basicRefs  = r.basic_rag?.references  || [];
+        const raptorRefs = r.raptor_rag?.references || [];
+        const roiRefs    = r.roi_rag?.references    || [];
 
-        const ansCell = (ans, ok, ms, label, color) => `
-          <div style="flex:1; min-width:0; background:var(--surface2); border-radius:8px; padding:10px 12px; border:1px solid var(--border);">
-            <div style="font-size:0.72rem; font-weight:700; color:${color}; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+        const ansCell = (ans, ok, ms, label, color, refs) => `
+          <div style="flex:1; min-width:220px; background:var(--surface2); border-radius:8px; padding:10px 12px; border:1px solid var(--border);">
+            <div style="font-size:0.72rem; font-weight:700; color:${color}; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
               <span>${label}</span>
               <span style="color:var(--text-muted); font-weight:400;">${ms !== null && ms !== '-' ? ms + 'ms' : '-'}</span>
             </div>
+            ${refsHtml(refs, color)}
             <div style="font-size:0.82rem; line-height:1.55; word-break:break-word; white-space:pre-wrap; max-height:120px; overflow-y:auto;">
               ${ans ? escHtml(ans) + ' ' + tick(ok) : '<span style="color:var(--text-muted)">—</span>'}
             </div>
@@ -1096,9 +1113,9 @@
               정답: <strong style="color:var(--text);">${escHtml(gts.join(' / '))}</strong>
             </div>
             <div style="display:flex; gap:8px; flex-wrap:wrap;">
-              ${ansCell(basicAns,  basicOk,  bMs,  '🔵 Basic RAG',  'var(--basic-color)')}
-              ${ansCell(raptorAns, raptorOk, rMs,  '🟣 RAPTOR RAG', 'var(--raptor-color)')}
-              ${roiAns !== undefined ? ansCell(roiAns, roiOk, roiMs, '🟢 ROI-RAG', 'var(--roi-color)') : ''}
+              ${ansCell(basicAns,  basicOk,  bMs,  '🔵 Basic RAG',  'var(--basic-color)',  basicRefs)}
+              ${ansCell(raptorAns, raptorOk, rMs,  '🟣 RAPTOR RAG', 'var(--raptor-color)', raptorRefs)}
+              ${ansCell(roiAns,    roiOk,    roiMs,'🟢 ROI-RAG',    'var(--roi-color)',    roiRefs)}
             </div>
           </div>`;
       }).join('');
