@@ -1021,7 +1021,7 @@
 
       const tick = ok => ok ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--danger)">✗</span>';
 
-      const rows = results.map(r => {
+      const cards = results.map((r, idx) => {
         const gts = Array.isArray(r.ground_truth_answers) ? r.ground_truth_answers : [];
         const basicAns  = r.basic_rag_answer  || r.basic_rag?.answer  || '';
         const raptorAns = r.raptor_rag_answer || r.raptor_rag?.answer || '';
@@ -1031,32 +1031,35 @@
         const roiOk     = r.roi_correct     !== undefined ? r.roi_correct     : r.roi_rag?.correct;
         const bMs  = r.basic_rag_latency_ms  || r.basic_rag?.latency_ms  || '-';
         const rMs  = r.raptor_rag_latency_ms || r.raptor_rag?.latency_ms || '-';
-        const roiMs = r.roi_rag_latency_ms   || r.roi_rag?.latency_ms   || '—';
+        const roiMs = r.roi_rag_latency_ms   || r.roi_rag?.latency_ms   || null;
 
-        return `<tr>
-          <td style="max-width:180px;word-break:break-word">${escHtml(r.question || '')}</td>
-          <td style="max-width:150px;word-break:break-word;color:var(--text-muted);font-size:0.8rem">${escHtml(gts.join(' / '))}</td>
-          <td style="max-width:200px;word-break:break-word">${escHtml(basicAns.slice(0,100))}${basicAns.length > 100 ? '…' : ''} ${tick(basicOk)}</td>
-          <td style="max-width:200px;word-break:break-word">${escHtml(raptorAns.slice(0,100))}${raptorAns.length > 100 ? '…' : ''} ${tick(raptorOk)}</td>
-          <td style="max-width:200px;word-break:break-word">${roiAns ? escHtml(roiAns.slice(0,100)) + (roiAns.length > 100 ? '…' : '') + ' ' + tick(roiOk) : '<span style="color:var(--text-muted)">—</span>'}</td>
-          <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-muted)">${bMs}ms / ${rMs}ms / ${roiMs}${typeof roiMs === 'number' ? 'ms' : ''}</td>
-        </tr>`;
+        const ansCell = (ans, ok, ms, label, color) => `
+          <div style="flex:1; min-width:0; background:var(--surface2); border-radius:8px; padding:10px 12px; border:1px solid var(--border);">
+            <div style="font-size:0.72rem; font-weight:700; color:${color}; margin-bottom:6px; display:flex; justify-content:space-between; align-items:center;">
+              <span>${label}</span>
+              <span style="color:var(--text-muted); font-weight:400;">${ms !== null && ms !== '-' ? ms + 'ms' : '-'}</span>
+            </div>
+            <div style="font-size:0.82rem; line-height:1.55; word-break:break-word; white-space:pre-wrap; max-height:120px; overflow-y:auto;">
+              ${ans ? escHtml(ans) + ' ' + tick(ok) : '<span style="color:var(--text-muted)">—</span>'}
+            </div>
+          </div>`;
+
+        return `
+          <div style="background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:14px 16px; margin-bottom:12px;">
+            <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:4px;">Q${idx + 1}</div>
+            <div style="font-size:0.9rem; font-weight:500; margin-bottom:6px; word-break:break-word;">${escHtml(r.question || '')}</div>
+            <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:10px;">
+              정답: <strong style="color:var(--text);">${escHtml(gts.join(' / '))}</strong>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              ${ansCell(basicAns,  basicOk,  bMs,  '🔵 Basic RAG',  'var(--basic-color)')}
+              ${ansCell(raptorAns, raptorOk, rMs,  '🟣 RAPTOR RAG', 'var(--raptor-color)')}
+              ${roiAns !== undefined ? ansCell(roiAns, roiOk, roiMs, '🟢 ROI-RAG', 'var(--roi-color)') : ''}
+            </div>
+          </div>`;
       }).join('');
 
-      content.innerHTML = `
-        <table class="history-table" style="width:100%">
-          <thead>
-            <tr>
-              <th>질문</th>
-              <th>Ground Truth</th>
-              <th>🔵 Basic RAG</th>
-              <th>🟣 RAPTOR RAG</th>
-              <th>🟢 ROI-RAG</th>
-              <th>지연 (B/R/ROI)</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-        </table>`;
+      content.innerHTML = cards;
     }
 
     init();
