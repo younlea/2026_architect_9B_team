@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from backend.db.database import init_db
 from backend.routers import chat, rag_compare, agent, threads, benchmark
@@ -22,16 +22,24 @@ FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
 app.mount("/static", StaticFiles(directory=str(FRONTEND_DIR / "static")), name="static")
 
 
+def _no_cache_response(path: str) -> FileResponse:
+    return FileResponse(path, headers={
+        "Cache-Control": "no-cache, no-store, must-revalidate",
+        "Pragma": "no-cache",
+        "Expires": "0",
+    })
+
+
 @app.get("/")
 def root():
-    return FileResponse(str(FRONTEND_DIR / "index.html"))
+    return _no_cache_response(str(FRONTEND_DIR / "index.html"))
 
 
 @app.get("/chat")
 def chat_page():
-    return FileResponse(str(FRONTEND_DIR / "chat.html"))
+    return _no_cache_response(str(FRONTEND_DIR / "chat.html"))
 
 
 @app.get("/compare")
 def compare_page():
-    return FileResponse(str(FRONTEND_DIR / "compare.html"))
+    return _no_cache_response(str(FRONTEND_DIR / "compare.html"))
