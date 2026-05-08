@@ -215,13 +215,13 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
     for q in questions:
         qid = q["id"]
         question = q["question"]
+        ground_truths = json.loads(q["ground_truth_answers"] or "[]")
         # 요약 태스크(multi_news 등)는 input이 비어있음 → GT 언어에 맞는 요약 프롬프트로 대체
         if not question or not question.strip():
             gt_sample = " ".join(ground_truths[:1])
             has_cjk = any('一' <= c <= '鿿' or '가' <= c <= '힣' for c in gt_sample)
             question = "이 문서의 핵심 내용을 간결하게 요약해 주세요." if has_cjk else \
                        "Summarize the key content of the document concisely in English."
-        ground_truths = json.loads(q["ground_truth_answers"] or "[]")
 
         source_id = dict(q).get("source_id") or ""
         # source_id가 UUID 형식이면 세션 단위 검색, 아니면 스레드 단위로 fallback
