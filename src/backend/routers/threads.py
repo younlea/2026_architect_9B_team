@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.db.database import get_conn
-from backend.rag import basic_rag, raptor_rag
+from backend.rag import basic_rag, raptor_rag, roi_rag
 
 router = APIRouter(prefix="/api", tags=["threads"])
 
@@ -26,6 +26,7 @@ def list_threads():
             """SELECT t.id, t.title, t.description, t.created_at,
                       t.basic_indexed, t.raptor_indexed,
                       t.basic_chunk_count, t.raptor_node_count,
+                      t.roi_indexed, t.roi_eu_count, t.roi_regime,
                       COUNT(ts.session_id) AS session_count,
                       SUM(m_cnt.cnt) AS message_count
                FROM threads t
@@ -125,12 +126,15 @@ def index_thread(thread_id: str, body: ThreadIndexRequest = ThreadIndexRequest()
 
     basic_chunks = basic_rag.index_thread(thread_id)
     raptor_nodes = raptor_rag.index_thread(thread_id, body.model)
+    roi_result = roi_rag.index_thread(thread_id, body.model)
 
     return {
         "ok": True,
         "message_count": msg_count,
         "basic_chunk_count": basic_chunks,
         "raptor_node_count": raptor_nodes,
+        "roi_eu_count": roi_result["eu_count"],
+        "roi_regime": roi_result["regime"],
     }
 
 

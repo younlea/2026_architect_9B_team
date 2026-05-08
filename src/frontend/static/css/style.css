@@ -9,6 +9,7 @@
   --primary-hover: #4f46e5;
   --basic-color: #38bdf8;
   --raptor-color: #a78bfa;
+  --roi-color: #4ade80;
   --success: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
@@ -270,6 +271,7 @@ a:hover { text-decoration: underline; }
 }
 .label-basic { background: rgba(56,189,248,0.15); color: var(--basic-color); }
 .label-raptor { background: rgba(167,139,250,0.15); color: var(--raptor-color); }
+.label-roi { background: rgba(74,222,128,0.15); color: var(--roi-color); }
 .panel-latency { font-size: 0.78rem; color: var(--text-muted); margin-left: auto; }
 
 .panel-body { flex: 1; overflow-y: auto; padding: 18px; }
