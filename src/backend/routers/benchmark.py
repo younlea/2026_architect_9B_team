@@ -76,24 +76,42 @@ def get_datasets():
     
     loaded = []
     with get_conn() as conn:
-        rows = conn.execute("SELECT id, title FROM threads WHERE title LIKE '[LongBench] %'").fetchall()
+        rows = conn.execute(
+            "SELECT id, title, basic_indexed, raptor_indexed, roi_indexed FROM threads WHERE title LIKE '[LongBench] %'"
+        ).fetchall()
         for r in rows:
             name = r["title"].replace("[LongBench] ", "")
-            loaded.append({"name": name, "thread_id": r["id"]})
-    
+            loaded.append({
+                "name": name,
+                "thread_id": r["id"],
+                "basic_indexed": bool(r["basic_indexed"]),
+                "raptor_indexed": bool(r["raptor_indexed"]),
+                "roi_indexed": bool(r["roi_indexed"]),
+            })
+
     result = []
-    loaded_dict = {item["name"]: item["thread_id"] for item in loaded}
-    
+    loaded_dict = {item["name"]: item for item in loaded}
+
     for d in downloaded:
-        d["loaded"] = d["name"] in loaded_dict
-        if d["loaded"]:
-            d["thread_id"] = loaded_dict[d["name"]]
+        info = loaded_dict.get(d["name"])
+        d["loaded"] = info is not None
+        if info:
+            d["thread_id"] = info["thread_id"]
+            d["basic_indexed"] = info["basic_indexed"]
+            d["raptor_indexed"] = info["raptor_indexed"]
+            d["roi_indexed"] = info["roi_indexed"]
         result.append(d)
-        
+
     downloaded_names = {d["name"] for d in downloaded}
     for l in loaded:
         if l["name"] not in downloaded_names:
-            result.append({"name": l["name"], "size_mb": 0, "loaded": True, "thread_id": l["thread_id"], "missing_file": True})
+            result.append({
+                "name": l["name"], "size_mb": 0, "loaded": True, "missing_file": True,
+                "thread_id": l["thread_id"],
+                "basic_indexed": l["basic_indexed"],
+                "raptor_indexed": l["raptor_indexed"],
+                "roi_indexed": l["roi_indexed"],
+            })
             
     result.sort(key=lambda x: x["name"])
     return {"datasets": result}

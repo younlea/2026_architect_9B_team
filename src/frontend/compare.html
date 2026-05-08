@@ -868,22 +868,33 @@
         list.innerHTML = '';
         data.datasets.forEach(d => {
           const card = document.createElement('div');
-          card.style.cssText = 'border:1px solid var(--border); background:var(--surface); padding:8px 12px; border-radius:6px; font-size:0.8rem; display:flex; flex-direction:column; gap:6px; min-width:180px;';
-          
+          card.style.cssText = 'border:1px solid var(--border); background:var(--surface); padding:8px 12px; border-radius:6px; font-size:0.8rem; display:flex; flex-direction:column; gap:6px; min-width:200px;';
+
           let statusBadge = '';
-          if (d.loaded) statusBadge = '<span style="color:var(--success); font-weight:bold;">[📚 DB 로드 완료]</span>';
-          else if (!d.missing_file) statusBadge = '<span style="color:var(--primary); font-weight:bold;">[✅ 다운로드됨]</span>';
-          else statusBadge = '<span style="color:var(--danger); font-weight:bold;">[파일 없음]</span>';
+          if (d.loaded) statusBadge = '<span style="color:var(--success); font-weight:bold;">📚 DB 로드됨</span>';
+          else if (!d.missing_file) statusBadge = '<span style="color:var(--primary); font-weight:bold;">✅ 다운로드됨</span>';
+          else statusBadge = '<span style="color:var(--danger); font-weight:bold;">파일 없음</span>';
+
+          const dot = (ok) => `<span style="font-size:0.7rem;">${ok ? '🟢' : '⚪'}</span>`;
+          const indexStatus = d.loaded ? `
+            <div style="display:flex; gap:8px; font-size:0.72rem; color:var(--text-muted); margin-top:2px;">
+              ${dot(d.basic_indexed)} Basic
+              ${dot(d.raptor_indexed)} RAPTOR
+              ${dot(d.roi_indexed)} ROI
+            </div>` : '';
+
+          const allIndexed = d.basic_indexed && d.raptor_indexed && d.roi_indexed;
 
           card.innerHTML = `
             <div style="display:flex; justify-content:space-between; font-weight:bold;">
               <span>${escHtml(d.name)}</span>
               <span style="color:var(--text-muted);font-weight:normal;font-size:0.75rem">${d.size_mb > 0 ? d.size_mb + 'MB' : ''}</span>
             </div>
-            <div>${statusBadge}</div>
-            <div style="display:flex; gap:4px; margin-top:4px;">
-              ${!d.loaded && !d.missing_file ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="loadDatasetToDB('${escHtml(d.name)}')">DB에 로드</button>` : ''}
-              ${!d.missing_file ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="viewDataset('${escHtml(d.name)}')">👁️ 보기</button>` : ''}
+            <div>${statusBadge}${indexStatus}</div>
+            <div style="display:flex; gap:4px; margin-top:4px; flex-wrap:wrap;">
+              ${!d.loaded && !d.missing_file ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="loadDatasetToDB('${escHtml(d.name)}')">📥 DB 로드</button>` : ''}
+              ${d.loaded ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="indexDataset('${escHtml(d.thread_id)}', '${escHtml(d.name)}')" ${allIndexed ? '' : 'style="flex:1;border-color:var(--primary);"'}>${allIndexed ? '🔄 재인덱싱' : '⚡ 인덱싱'}</button>` : ''}
+              ${!d.missing_file ? `<button class="btn btn-outline btn-sm" style="flex:1;" onclick="viewDataset('${escHtml(d.name)}')">👁️</button>` : ''}
             </div>
           `;
           list.appendChild(card);
@@ -907,6 +918,25 @@
         try { data = JSON.parse(rawText); } catch { }
         if(!res.ok) throw new Error(data.detail || rawText || '실패');
         showToast(`${name} 로드 완료!`);
+        fetchDatasets();
+        loadContexts();
+      } catch(e) {
+        showToast('오류: ' + e.message, 'error');
+      }
+    }
+
+    async function indexDataset(threadId, name) {
+      if (!confirm(`'${name}' 인덱싱을 실행합니다.\nBasic RAG + RAPTOR + ROI-RAG 세 개를 모두 인덱싱합니다.\n(수 분 소요될 수 있습니다)`)) return;
+      showToast(`${name} 인덱싱 시작...`);
+      try {
+        const res = await fetch(`/api/threads/${threadId}/index`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({})
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || '인덱싱 실패');
+        showToast(`✅ ${name} 인덱싱 완료! (Basic ${data.basic_chunk_count}청크 / RAPTOR ${data.raptor_node_count}노드 / ROI ${data.roi_eu_count}EU)`, 'success');
         fetchDatasets();
         loadContexts();
       } catch(e) {
