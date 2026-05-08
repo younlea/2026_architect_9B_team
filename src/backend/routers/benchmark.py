@@ -16,6 +16,18 @@ router = APIRouter(prefix="/api", tags=["benchmark"])
 _UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 
 
+def _session_has_data(session_id: str) -> bool:
+    """Check if the per-session basic_s_ ChromaDB collection has indexed data."""
+    try:
+        import chromadb
+        from backend.config import CHROMA_PERSIST_DIR
+        client = chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
+        col = client.get_collection(f"basic_s_{session_id}".replace("-", "_"))
+        return col.count() > 0
+    except Exception:
+        return False
+
+
 class BenchmarkRunRequest(BaseModel):
     model: Optional[str] = None
 
@@ -212,6 +224,12 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
     model = body.model
     results = []
 
+    # 첫 번째 질문의 source_id로 세션 단위 인덱스 유무를 한 번만 확인
+    first_source_id = dict(questions[0]).get("source_id") or "" if questions else ""
+    use_session_routing = (
+        _UUID_RE.match(first_source_id) and _session_has_data(first_source_id)
+    )
+
     for q in questions:
         qid = q["id"]
         question = q["question"]
@@ -224,8 +242,8 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
                        "Summarize the key content of the document concisely in English."
 
         source_id = dict(q).get("source_id") or ""
-        # source_id가 UUID 형식이면 세션 단위 검색, 아니면 스레드 단위로 fallback
-        if _UUID_RE.match(source_id):
+        # 세션 단위 인덱스가 있으면 세션별 검색, 없으면 스레드 단위 fallback
+        if use_session_routing and _UUID_RE.match(source_id):
             basic_fn = lambda question=question, sid=source_id: basic_rag.query(sid, question, model)
             raptor_fn = lambda question=question, sid=source_id: raptor_rag.query(sid, question, model)
         else:
@@ -301,6 +319,11 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
 @router.get("/threads/{thread_id}/benchmark/results")
 def get_benchmark_results(thread_id: str):
     with get_conn() as conn:
+        thread = conn.execute(
+            "SELECT roi_indexed FROM threads WHERE id=?", (thread_id,)
+        ).fetchone()
+        roi_indexed = bool(thread["roi_indexed"]) if thread and thread["roi_indexed"] else False
+
         rows = conn.execute(
             """SELECT br.id, br.question_id, bq.question, bq.ground_truth_answers,
                       br.basic_rag_answer, br.basic_rag_latency_ms,
@@ -328,7 +351,8 @@ def get_benchmark_results(thread_id: str):
     basic_score = sum(1 for r in results if r["basic_correct"])
     raptor_score = sum(1 for r in results if r["raptor_correct"])
     roi_score = sum(1 for r in results if r.get("roi_correct"))
-    roi_ready = any(r.get("roi_rag_answer") for r in results)
+    # roi_ready: ROI 인덱스가 있으면 true (과거 결과가 NULL이어도 포함)
+    roi_has_results = any(r.get("roi_rag_answer") for r in results)
 
     return {
         "results": results,
@@ -339,8 +363,8 @@ def get_benchmark_results(thread_id: str):
             "roi_correct": roi_score,
             "basic_accuracy": round(basic_score / total * 100, 1) if total else 0,
             "raptor_accuracy": round(raptor_score / total * 100, 1) if total else 0,
-            "roi_accuracy": round(roi_score / total * 100, 1) if total and roi_ready else None,
-            "roi_ready": roi_ready,
+            "roi_accuracy": round(roi_score / total * 100, 1) if total and roi_has_results else None,
+            "roi_ready": roi_indexed,
             "model_name": results[0]["model_name"] if results else None,
         },
     }

@@ -997,10 +997,15 @@
       document.getElementById('bRaptorScore').textContent = `${sum.raptor_correct ?? 0}/${sum.total ?? results.length}`;
 
       const roiWrap = document.getElementById('bRoiAccWrap');
-      if (sum.roi_accuracy != null) {
+      if (sum.roi_ready) {
         roiWrap.style.display = '';
-        document.getElementById('bRoiAcc').textContent = sum.roi_accuracy + '%';
-        document.getElementById('bRoiScore').textContent = `${sum.roi_correct ?? 0}/${sum.total ?? results.length}`;
+        if (sum.roi_accuracy != null) {
+          document.getElementById('bRoiAcc').textContent = sum.roi_accuracy + '%';
+          document.getElementById('bRoiScore').textContent = `${sum.roi_correct ?? 0}/${sum.total ?? results.length}`;
+        } else {
+          document.getElementById('bRoiAcc').textContent = '미실행';
+          document.getElementById('bRoiScore').textContent = '벤치마크 재실행 필요';
+        }
       } else {
         roiWrap.style.display = 'none';
       }
