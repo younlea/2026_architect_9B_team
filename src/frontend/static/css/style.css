@@ -284,6 +284,8 @@ a:hover { text-decoration: underline; }
   line-height: 1.65;
   white-space: pre-wrap;
   min-height: 80px;
+  max-height: 38vh;
+  overflow-y: auto;
 }
 .answer-box.placeholder { color: var(--text-muted); font-style: italic; }
 
