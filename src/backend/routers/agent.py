@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from backend.agent.conversation_gen import generate_conversation
@@ -10,6 +11,7 @@ class GenerateRequest(BaseModel):
     topic: str
     turns: int = 10
     speakers: list[str] = []
+    model: Optional[str] = None
 
 
 @router.post("/agent/generate")
@@ -26,5 +28,6 @@ def generate(body: GenerateRequest):
         topic=body.topic,
         turns=body.turns,
         speakers=body.speakers,
+        model=body.model,
     )
     return {"session_id": session_id, "ok": True}

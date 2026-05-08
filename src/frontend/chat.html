@@ -213,11 +213,17 @@
                style="width:72px; padding:3px 6px; border:1px solid var(--border); border-radius:5px;
                       background:var(--surface2); color:var(--text); font-size:0.9rem; text-align:center;"
                oninput="const v=Math.min(1000,Math.max(4,parseInt(this.value)||4));
-                        document.getElementById('agentTurns').value=Math.min(v,100);">
+                        document.getElementById('agentTurns').value=v;">
         <span style="font-size:0.78rem; color:var(--text-muted);">턴 (4 ~ 1000)</span>
       </label>
       <input type="range" id="agentTurns" min="4" max="1000" value="10" style="width:100%; margin-top:6px;"
              oninput="document.getElementById('agentTurnsNum').value=this.value;">
+    </div>
+    <div class="form-group">
+      <label>LLM 모델</label>
+      <select id="agentModel" style="width:100%;">
+        <option value="">기본값</option>
+      </select>
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeModal('agentModal')">취소</button>
@@ -352,16 +358,30 @@
     sessions.forEach(s => {
       const div = document.createElement('div');
       div.className = 'session-item' + (currentMode === 'session' && currentItem?.id === s.id ? ' active' : '');
+      div.style.position = 'relative';
       div.innerHTML = `
-        <div class="s-title">${escHtml(s.title)}</div>
+        <div class="s-title" style="padding-right:22px;">${escHtml(s.title)}</div>
         <div class="s-meta">${s.mode === '2person' ? '2인' : '그룹'}
           <span class="badge ${s.is_indexed ? 'badge-indexed' : 'badge-unindexed'}">
             ${s.is_indexed ? '인덱싱됨' : '미인덱싱'}
           </span>
-        </div>`;
+        </div>
+        <button class="del-btn" title="삭제" onclick="deleteSession(event,'${s.id}')">×</button>`;
       div.onclick = () => selectSession(s);
       list.appendChild(div);
     });
+  }
+
+  async function deleteSession(e, id) {
+    e.stopPropagation();
+    if (!confirm('이 세션을 삭제할까요?')) return;
+    await fetch(`/api/sessions/${id}`, { method: 'DELETE' });
+    if (currentMode === 'session' && currentItem?.id === id) {
+      currentMode = null; currentItem = null;
+      document.getElementById('viewTitle').textContent = '항목을 선택하세요';
+      document.getElementById('chatMessages').innerHTML = '';
+    }
+    await loadSessions();
   }
 
   async function selectSession(s) {
@@ -505,6 +525,7 @@
     const turns = Math.min(1000, Math.max(4, parseInt(document.getElementById('agentTurnsNum').value) || 10));
     const spkRaw = document.getElementById('agentSpeakers').value;
     const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()) : [];
+    const model = document.getElementById('agentModel').value || null;
     if (!topic) { showToast('주제를 입력하세요', 'error'); return; }
 
     const btn = document.getElementById('btnGenerate');
@@ -512,7 +533,7 @@
     try {
       const res = await fetch('/api/agent/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, topic, turns, speakers }),
+        body: JSON.stringify({ mode, topic, turns, speakers, model }),
       });
       if (res.ok) {
         const data = await res.json();
@@ -533,7 +554,20 @@
   }
 
   function openNewSessionModal() { document.getElementById('newSessionModal').classList.add('open'); }
-  function openAgentModal() { document.getElementById('agentModal').classList.add('open'); }
+  async function openAgentModal() {
+    document.getElementById('agentModal').classList.add('open');
+    try {
+      const res = await fetch('/api/models');
+      const data = await res.json();
+      const sel = document.getElementById('agentModel');
+      sel.innerHTML = `<option value="">기본값 (${data.default})</option>`;
+      (data.models || []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m; opt.textContent = m;
+        sel.appendChild(opt);
+      });
+    } catch(e) { /* 모델 로드 실패 시 기본값 유지 */ }
+  }
   function closeModal(id) { document.getElementById(id).classList.remove('open'); }
 
   function showToast(msg, type = '') {

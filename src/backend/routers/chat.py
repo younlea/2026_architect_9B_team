@@ -60,6 +60,17 @@ def add_message(session_id: str, body: MessageCreate):
     return {"ok": True}
 
 
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: str):
+    with get_conn() as conn:
+        sess = conn.execute("SELECT id FROM sessions WHERE id = ?", (session_id,)).fetchone()
+        if not sess:
+            raise HTTPException(status_code=404, detail="Session not found")
+        conn.execute("DELETE FROM messages WHERE session_id = ?", (session_id,))
+        conn.execute("DELETE FROM sessions WHERE id = ?", (session_id,))
+    return {"ok": True}
+
+
 @router.post("/sessions/{session_id}/index")
 def index_session(session_id: str):
     from backend.rag import basic_rag, raptor_rag

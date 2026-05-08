@@ -120,6 +120,15 @@ a:hover { text-decoration: underline; }
 .session-item.active { background: var(--surface2); border-color: var(--primary); color: var(--text); }
 .session-item .s-title { font-weight: 500; }
 .session-item .s-meta { font-size: 0.75rem; margin-top: 2px; }
+.del-btn {
+  position: absolute; top: 8px; right: 6px;
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 1rem; line-height: 1;
+  padding: 2px 4px; border-radius: 4px; opacity: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+.session-item:hover .del-btn { opacity: 1; }
+.del-btn:hover { background: #5c1a1a; color: #f87171; }
 .badge {
   display: inline-block;
   padding: 1px 7px;
