@@ -207,9 +207,17 @@
       <input type="text" id="agentSpeakers" placeholder="예: 김재원, 이현수">
     </div>
     <div class="form-group">
-      <label>대화 턴 수: <span id="turnsVal">10</span></label>
-      <input type="range" id="agentTurns" min="4" max="30" value="10"
-             oninput="document.getElementById('turnsVal').textContent=this.value">
+      <label style="display:flex; align-items:center; gap:8px;">
+        대화 턴 수:
+        <input type="number" id="agentTurnsNum" min="4" max="1000" value="10"
+               style="width:72px; padding:3px 6px; border:1px solid var(--border); border-radius:5px;
+                      background:var(--surface2); color:var(--text); font-size:0.9rem; text-align:center;"
+               oninput="const v=Math.min(1000,Math.max(4,parseInt(this.value)||4));
+                        document.getElementById('agentTurns').value=Math.min(v,100);">
+        <span style="font-size:0.78rem; color:var(--text-muted);">턴 (4 ~ 1000)</span>
+      </label>
+      <input type="range" id="agentTurns" min="4" max="100" value="10" style="width:100%; margin-top:6px;"
+             oninput="document.getElementById('agentTurnsNum').value=this.value;">
     </div>
     <div class="modal-footer">
       <button class="btn btn-outline btn-sm" onclick="closeModal('agentModal')">취소</button>
@@ -494,7 +502,7 @@
   async function generateConversation() {
     const topic = document.getElementById('agentTopic').value.trim();
     const mode = document.getElementById('agentMode').value;
-    const turns = parseInt(document.getElementById('agentTurns').value);
+    const turns = Math.min(1000, Math.max(4, parseInt(document.getElementById('agentTurnsNum').value) || 10));
     const spkRaw = document.getElementById('agentSpeakers').value;
     const speakers = spkRaw ? spkRaw.split(',').map(s => s.trim()) : [];
     if (!topic) { showToast('주제를 입력하세요', 'error'); return; }
