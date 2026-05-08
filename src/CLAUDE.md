@@ -31,6 +31,7 @@ cd src && python seed_data.py
 | `src/backend/main.py` | FastAPI 앱 + 정적 파일 서빙 |
 | `src/backend/rag/basic_rag.py` | Basic RAG: 고정 청킹, ChromaDB cosine 검색 |
 | `src/backend/rag/raptor_rag.py` | RAPTOR: 재귀 요약 트리, K-Means 클러스터링, 다층 검색 |
+| `src/backend/rag/roi_rag.py` | ROI-RAG (KDD 2026): 엔트로피 기반 EU 구성, 적응형 요약, 단일 ANN 조회 |
 | `src/backend/rag/llm_client.py` | OpenAI / Ollama 공통 인터페이스 |
 | `src/backend/db/database.py` | SQLite 초기화, `get_conn()` context manager |
 | `src/backend/routers/chat.py` | 세션·메시지 CRUD, `/index` 엔드포인트 |
@@ -45,22 +46,32 @@ cd src && python seed_data.py
 sessions  (id, title, mode, created_at, is_indexed)
 messages  (id, session_id, speaker, content, timestamp)
 rag_results (id, session_id, query, basic_rag_answer, basic_rag_latency_ms, raptor_rag_answer, raptor_rag_latency_ms, created_at)
+threads (id, title, description, created_at,
+         basic_indexed, raptor_indexed, roi_indexed,
+         basic_chunk_count, raptor_node_count, roi_eu_count, roi_regime)
+thread_rag_results (..., roi_rag_answer, roi_rag_latency_ms)
+benchmark_results (..., roi_rag_answer, roi_rag_latency_ms, roi_correct)
 ```
+
+> DB 마이그레이션: `database._apply_migrations()` — 앱 시작 시 자동 실행
 
 ## RAG 파이프라인 흐름
 
 ```
 [채팅 입력] → SQLite 저장
      ↓
-[/index 호출]
-  ├── basic_rag.index_session()  → 고정 청킹 → ChromaDB (basic_{session_id})
-  └── raptor_rag.index_session() → 청킹 → K-Means 클러스터링 → LLM 요약 → 트리 구성 → ChromaDB (raptor_{session_id})
+[/threads/{id}/index 호출]
+  ├── basic_rag.index_thread()   → 고정 청킹 → ChromaDB (basic_t_{thread_id})
+  ├── raptor_rag.index_thread()  → 청킹 → K-Means → LLM 요약 → 트리 → ChromaDB (raptor_t_{thread_id})
+  └── roi_rag.index_thread()     → 청킹 → kNN → 엔트로피(RE/DE) → Greedy EU 구성
+                                   → 적응형 LLM 요약 → EU 임베딩(mean pool) → ChromaDB (roi_t_{thread_id})
      ↓
 [/rag/compare 호출] (asyncio.gather로 병렬 실행)
-  ├── basic_rag.query()   → top-5 검색 → LLM 답변
-  └── raptor_rag.query()  → 전체 레벨 검색 → 레벨별 컨텍스트 조합 → LLM 답변
+  ├── basic_rag.query_thread()   → top-5 검색 → LLM 답변
+  ├── raptor_rag.query_thread()  → 전체 레벨 검색 → 레벨별 컨텍스트 조합 → LLM 답변
+  └── roi_rag.query_thread()     → 단일 ANN 조회 → EU 컨텍스트 → LLM 답변 + {r_c, regime, eu_count}
      ↓
-결과를 rag_results 테이블에 저장 + 프론트엔드에 반환
+결과를 thread_rag_results 테이블에 저장 + 프론트엔드에 반환 (3-way 비교)
 ```
 
 ## 환경변수 (`src/.env`)

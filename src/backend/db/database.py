@@ -106,9 +106,29 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
 """
 
 
+def _apply_migrations(conn):
+    """신규 컬럼을 기존 DB에 추가합니다. 이미 존재하는 컬럼은 무시합니다."""
+    migrations = [
+        "ALTER TABLE threads ADD COLUMN roi_indexed INTEGER DEFAULT 0",
+        "ALTER TABLE threads ADD COLUMN roi_eu_count INTEGER DEFAULT 0",
+        "ALTER TABLE threads ADD COLUMN roi_regime TEXT DEFAULT ''",
+        "ALTER TABLE thread_rag_results ADD COLUMN roi_rag_answer TEXT",
+        "ALTER TABLE thread_rag_results ADD COLUMN roi_rag_latency_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN roi_rag_answer TEXT",
+        "ALTER TABLE benchmark_results ADD COLUMN roi_rag_latency_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN roi_correct INTEGER DEFAULT 0",
+    ]
+    for sql in migrations:
+        try:
+            conn.execute(sql)
+        except Exception:
+            pass  # 이미 존재하는 컬럼
+
+
 def init_db():
     with get_conn() as conn:
         conn.executescript(SCHEMA)
+        _apply_migrations(conn)
 
 
 def get_thread_text(thread_id: str) -> str:

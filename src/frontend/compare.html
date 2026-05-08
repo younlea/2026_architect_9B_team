@@ -41,10 +41,18 @@
     .tab-content { display: none; flex: 1; flex-direction: column; overflow: hidden; }
     .tab-content.active { display: flex; }
 
+    /* ROI 메트릭 뱃지 */
+    .roi-metrics {
+      font-size: 0.73rem;
+      color: var(--roi-color);
+      margin-left: 6px;
+      opacity: 0.85;
+    }
+
     /* 멀티모델 그리드 */
     .multi-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
       gap: 16px;
       padding: 16px;
       overflow-y: auto;
@@ -144,12 +152,12 @@
 
     <!-- 탭 -->
     <div class="tab-bar">
-      <div class="tab active" onclick="switchTab('dual')">🔵🟣 Basic vs RAPTOR</div>
+      <div class="tab active" onclick="switchTab('dual')">🔵🟣🟢 3-Way 비교</div>
       <div class="tab" onclick="switchTab('multi')">🤖 멀티모델 비교</div>
       <div class="tab" onclick="switchTab('bench')">📊 LongBench 평가</div>
     </div>
 
-    <!-- ① 탭: Basic vs RAPTOR (단일 모델 선택) -->
+    <!-- ① 탭: Basic vs RAPTOR vs ROI-RAG -->
     <div class="tab-content active" id="tab-dual" style="flex-direction:column;">
       <div style="padding:8px 20px; background:var(--surface); border-bottom:1px solid var(--border); display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
         <label style="font-size:0.82rem; color:var(--text-muted);">LLM 모델</label>
@@ -159,6 +167,8 @@
         <button class="btn btn-outline btn-sm" onclick="loadHistory()">📋 결과 이력</button>
       </div>
       <div class="compare-panels" style="flex:1; overflow:hidden;">
+
+        <!-- Basic RAG 패널 -->
         <div class="panel">
           <div class="panel-header">
             <span class="label label-basic">🔵 Basic RAG</span>
@@ -171,6 +181,8 @@
             <div class="refs-list" id="basicRefsList"></div>
           </div>
         </div>
+
+        <!-- RAPTOR RAG 패널 -->
         <div class="panel">
           <div class="panel-header">
             <span class="label label-raptor">🟣 RAPTOR RAG</span>
@@ -183,12 +195,39 @@
             <div class="refs-list" id="raptorRefsList"></div>
           </div>
         </div>
+
+        <!-- ROI-RAG 패널 -->
+        <div class="panel">
+          <div class="panel-header">
+            <span class="label label-roi">🟢 ROI-RAG</span>
+            <span id="roiModel" class="model-tag"></span>
+            <span class="panel-latency" id="roiLatency"></span>
+            <span class="roi-metrics" id="roiMetrics"></span>
+          </div>
+          <div class="panel-body">
+            <div class="answer-box placeholder" id="roiAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
+            <div class="refs-toggle" id="roiRefsToggle" style="display:none" onclick="toggleRefs('roi')">▶ 참조 EU 보기</div>
+            <div class="refs-list" id="roiRefsList"></div>
+          </div>
+        </div>
+
       </div>
       <div id="historySection" style="display:none; max-height:240px; overflow-y:auto; border-top:1px solid var(--border);">
         <div class="history-section">
           <h4>이전 비교 결과</h4>
           <table class="history-table">
-            <thead><tr><th>질문</th><th>Basic 답변</th><th>RAPTOR 답변</th><th>Basic ms</th><th>RAPTOR ms</th><th>시각</th></tr></thead>
+            <thead>
+              <tr>
+                <th>질문</th>
+                <th>Basic</th>
+                <th>RAPTOR</th>
+                <th>ROI-RAG</th>
+                <th>Basic ms</th>
+                <th>RAPTOR ms</th>
+                <th>ROI ms</th>
+                <th>시각</th>
+              </tr>
+            </thead>
             <tbody id="historyBody"></tbody>
           </table>
         </div>
@@ -247,8 +286,9 @@
       <div id="benchSummary" style="display:none; padding:12px 20px; background:var(--surface); border-bottom:1px solid var(--border);">
         <div style="display:flex; gap:24px; align-items:center; flex-wrap:wrap;">
           <span style="font-size:0.82rem; color:var(--text-muted);">총 <strong id="bTotal">0</strong>개 질문</span>
-          <span>🔵 Basic RAG 정확도: <strong id="bBasicAcc" style="color:var(--basic-color)">0%</strong> (<span id="bBasicScore"></span>)</span>
-          <span>🟣 RAPTOR RAG 정확도: <strong id="bRaptorAcc" style="color:var(--raptor-color)">0%</strong> (<span id="bRaptorScore"></span>)</span>
+          <span>🔵 Basic RAG: <strong id="bBasicAcc" style="color:var(--basic-color)">0%</strong> (<span id="bBasicScore"></span>)</span>
+          <span>🟣 RAPTOR RAG: <strong id="bRaptorAcc" style="color:var(--raptor-color)">0%</strong> (<span id="bRaptorScore"></span>)</span>
+          <span id="bRoiAccWrap">🟢 ROI-RAG: <strong id="bRoiAcc" style="color:var(--roi-color)">0%</strong> (<span id="bRoiScore"></span>)</span>
           <span style="font-size:0.76rem; color:var(--text-muted);" id="bModelTag"></span>
         </div>
       </div>
@@ -272,7 +312,6 @@
     let availableModels = [];
     let activeTab = 'dual';
 
-    // 현재 선택된 컨텍스트 정보
     function getSelectedContext() {
       const val = document.getElementById('contextSelect').value;
       if (!val) return null;
@@ -296,7 +335,6 @@
       const sel = document.getElementById('contextSelect');
       sel.innerHTML = '<option value="">-- 스레드 또는 세션 선택 --</option>';
 
-      // 인덱싱된 스레드 그룹
       const indexedThreads = threads.filter(t => t.basic_indexed && t.raptor_indexed);
       if (indexedThreads.length > 0) {
         const grp = document.createElement('optgroup');
@@ -305,13 +343,13 @@
           const opt = document.createElement('option');
           opt.value = `thread:${t.id}`;
           const msgCount = t.message_count || 0;
-          opt.textContent = `${t.title} [${msgCount}개 메시지]`;
+          const roiTag = t.roi_indexed ? ` 🟢${t.roi_regime || ''}` : '';
+          opt.textContent = `${t.title} [${msgCount}개 메시지${roiTag}]`;
           grp.appendChild(opt);
         });
         sel.appendChild(grp);
       }
 
-      // 미인덱싱 스레드
       const unindexedThreads = threads.filter(t => !t.basic_indexed || !t.raptor_indexed);
       if (unindexedThreads.length > 0) {
         const grp = document.createElement('optgroup');
@@ -319,7 +357,6 @@
         unindexedThreads.forEach(t => {
           const opt = document.createElement('option');
           opt.value = `thread:${t.id}`;
-          const msgCount = t.message_count || 0;
           opt.textContent = `${t.title} [미인덱싱 — 채팅에서 인덱스 후 사용]`;
           opt.disabled = true;
           grp.appendChild(opt);
@@ -327,7 +364,6 @@
         sel.appendChild(grp);
       }
 
-      // 인덱싱된 세션 그룹
       const indexedSessions = sessions.filter(s => s.is_indexed);
       if (indexedSessions.length > 0) {
         const grp = document.createElement('optgroup');
@@ -341,25 +377,18 @@
         sel.appendChild(grp);
       }
 
-      // URL 파라미터로 자동 선택
       const params = new URLSearchParams(location.search);
       const threadId = params.get('thread');
       const sessionId = params.get('session');
-      if (threadId) {
-        sel.value = `thread:${threadId}`;
-      } else if (sessionId) {
-        sel.value = `session:${sessionId}`;
-      }
+      if (threadId) sel.value = `thread:${threadId}`;
+      else if (sessionId) sel.value = `session:${sessionId}`;
       updateCtxBadge();
     }
 
     function updateCtxBadge() {
       const ctx = getSelectedContext();
       const badge = document.getElementById('ctxBadge');
-      if (!ctx) {
-        badge.style.display = 'none';
-        return;
-      }
+      if (!ctx) { badge.style.display = 'none'; return; }
       badge.style.display = 'inline-flex';
       if (ctx.type === 'thread') {
         badge.className = 'ctx-badge thread';
@@ -380,12 +409,10 @@
         dualSel.innerHTML = `<option value="">기본값 (${data.default})</option>`;
         availableModels.forEach(m => {
           const opt = document.createElement('option');
-          opt.value = m;
-          opt.textContent = m;
+          opt.value = m; opt.textContent = m;
           dualSel.appendChild(opt);
         });
 
-        // 벤치마크 모델 드롭다운 동기화
         const benchSel = document.getElementById('benchModel');
         benchSel.innerHTML = `<option value="">기본값 (${data.default})</option>`;
         availableModels.forEach(m => {
@@ -421,7 +448,6 @@
       document.getElementById('tab-dual').classList.toggle('active', tab === 'dual');
       document.getElementById('tab-multi').classList.toggle('active', tab === 'multi');
       document.getElementById('tab-bench').classList.toggle('active', tab === 'bench');
-      // 탭 전환 시 쿼리 입력창 placeholder 변경
       document.getElementById('queryInput').style.display = tab === 'bench' ? 'none' : '';
       document.getElementById('btnRun').style.display = tab === 'bench' ? 'none' : '';
       if (tab === 'bench') loadBenchResults();
@@ -455,8 +481,9 @@
         });
         if (!res.ok) { const e = await res.json(); showToast(e.detail || '실패', 'error'); return; }
         const data = await res.json();
-        renderDualPanel('basic', data.basic_rag, data.model);
-        renderDualPanel('raptor', data.raptor_rag, data.model);
+        renderPanel('basic', data.basic_rag, data.model);
+        renderPanel('raptor', data.raptor_rag, data.model);
+        renderRoiPanel(data.roi_rag, data.model);
       } finally {
         setLoading(false);
       }
@@ -475,7 +502,7 @@
       const grid = document.getElementById('multiGrid');
       grid.innerHTML = '';
       selected.forEach(m => {
-        ['basic','raptor'].forEach(rag => {
+        ['basic', 'raptor', 'roi'].forEach(rag => {
           grid.appendChild(createMultiCard(m, rag, null));
         });
       });
@@ -495,9 +522,9 @@
           grouped[r.model][r.rag_type] = r;
         });
         Object.entries(grouped).forEach(([model, rags]) => {
-          ['basic','raptor'].forEach(rt => {
+          ['basic', 'raptor', 'roi'].forEach(rt => {
             const r = rags[rt];
-            grid.appendChild(createMultiCard(model, rt, r));
+            grid.appendChild(createMultiCard(model, rt, r || null));
           });
         });
       } finally {
@@ -508,9 +535,12 @@
     function createMultiCard(model, ragType, result) {
       const card = document.createElement('div');
       card.className = 'multi-card';
-      const isBasic = ragType === 'basic';
-      const labelClass = isBasic ? 'label-basic' : 'label-raptor';
-      const labelText = isBasic ? '🔵 Basic RAG' : '🟣 RAPTOR RAG';
+      const labelMap = {
+        basic:  { cls: 'label-basic',  text: '🔵 Basic RAG' },
+        raptor: { cls: 'label-raptor', text: '🟣 RAPTOR RAG' },
+        roi:    { cls: 'label-roi',    text: '🟢 ROI-RAG' },
+      };
+      const { cls, text } = labelMap[ragType] || labelMap.basic;
 
       let bodyHtml;
       if (!result) {
@@ -518,12 +548,16 @@
       } else if (result.answer && result.answer.startsWith('오류:')) {
         bodyHtml = `<div class="multi-card-body" style="color:var(--danger)">${escHtml(result.answer)}</div>`;
       } else {
-        bodyHtml = `<div class="multi-card-body">${escHtml(result?.answer || '')}</div>`;
+        let extra = '';
+        if (ragType === 'roi' && result.r_c !== undefined) {
+          extra = `<div style="margin-top:8px;font-size:0.75rem;color:var(--roi-color)">R(C):${result.r_c} | ${result.regime} | ${result.eu_count}EU</div>`;
+        }
+        bodyHtml = `<div class="multi-card-body">${escHtml(result?.answer || '')}${extra}</div>`;
       }
 
       card.innerHTML = `
         <div class="multi-card-header">
-          <span class="label ${labelClass}">${labelText}</span>
+          <span class="label ${cls}">${text}</span>
           <span class="model-tag">${escHtml(model)}</span>
           ${result ? `<span style="margin-left:auto;font-size:0.75rem;color:var(--text-muted)">${result.latency_ms}ms</span>` : ''}
         </div>
@@ -531,7 +565,7 @@
       return card;
     }
 
-    function renderDualPanel(type, result, modelName) {
+    function renderPanel(type, result, modelName) {
       document.getElementById(`${type}Answer`).textContent = result.answer;
       document.getElementById(`${type}Answer`).classList.remove('placeholder');
       document.getElementById(`${type}Latency`).textContent = `${result.latency_ms}ms`;
@@ -550,8 +584,48 @@
       }
     }
 
+    function renderRoiPanel(result, modelName) {
+      const answerEl = document.getElementById('roiAnswer');
+      const latencyEl = document.getElementById('roiLatency');
+      const modelEl = document.getElementById('roiModel');
+      const metricsEl = document.getElementById('roiMetrics');
+      const refsToggle = document.getElementById('roiRefsToggle');
+      const refsList = document.getElementById('roiRefsList');
+
+      if (!result) {
+        answerEl.textContent = 'ROI-RAG가 인덱싱되지 않았습니다. 인덱스 실행 후 다시 시도하세요.';
+        answerEl.classList.add('placeholder');
+        latencyEl.textContent = '';
+        modelEl.textContent = '';
+        metricsEl.textContent = '';
+        refsToggle.style.display = 'none';
+        refsList.innerHTML = '';
+        return;
+      }
+
+      answerEl.textContent = result.answer;
+      answerEl.classList.remove('placeholder');
+      latencyEl.textContent = `${result.latency_ms}ms`;
+      modelEl.textContent = modelName || '';
+
+      if (result.r_c !== undefined) {
+        metricsEl.textContent = `R(C):${result.r_c} | ${result.regime} | ${result.eu_count}EU`;
+      }
+
+      refsList.innerHTML = '';
+      if (result.references?.length) {
+        result.references.forEach((ref, i) => {
+          const d = document.createElement('div');
+          d.className = 'ref-item';
+          d.textContent = `[EU ${i+1}] ${ref}`;
+          refsList.appendChild(d);
+        });
+        refsToggle.style.display = 'block';
+      }
+    }
+
     function resetDualPanels(spinner = false) {
-      ['basic','raptor'].forEach(t => {
+      ['basic', 'raptor', 'roi'].forEach(t => {
         const a = document.getElementById(`${t}Answer`);
         a.className = 'answer-box placeholder';
         a.innerHTML = spinner ? '<div class="spinner"></div>' : '질문을 입력하고 비교 실행을 클릭하세요.';
@@ -561,13 +635,15 @@
         document.getElementById(`${t}RefsList`).innerHTML = '';
         document.getElementById(`${t}RefsList`).classList.remove('open');
       });
+      document.getElementById('roiMetrics').textContent = '';
     }
 
     function toggleRefs(type) {
       const list = document.getElementById(`${type}RefsList`);
       const toggle = document.getElementById(`${type}RefsToggle`);
       list.classList.toggle('open');
-      toggle.textContent = list.classList.contains('open') ? '▼ 참조 숨기기' : '▶ 참조 청크 보기';
+      const label = type === 'roi' ? '참조 EU' : '참조 청크';
+      toggle.textContent = list.classList.contains('open') ? `▼ ${label} 숨기기` : `▶ ${label} 보기`;
     }
 
     async function loadHistory() {
@@ -581,13 +657,15 @@
       const rows = await res.json();
       const tbody = document.getElementById('historyBody');
       tbody.innerHTML = rows.length === 0
-        ? '<tr><td colspan="6" style="color:var(--text-muted)">결과 없음</td></tr>'
+        ? '<tr><td colspan="8" style="color:var(--text-muted)">결과 없음</td></tr>'
         : rows.map(r => `<tr>
             <td>${escHtml(r.query)}</td>
-            <td>${escHtml((r.basic_rag_answer||'').slice(0,50))}...</td>
-            <td>${escHtml((r.raptor_rag_answer||'').slice(0,50))}...</td>
+            <td>${escHtml((r.basic_rag_answer||'').slice(0,40))}…</td>
+            <td>${escHtml((r.raptor_rag_answer||'').slice(0,40))}…</td>
+            <td>${escHtml((r.roi_rag_answer||'—').slice(0,40))}…</td>
             <td>${r.basic_rag_latency_ms}ms</td>
             <td>${r.raptor_rag_latency_ms}ms</td>
+            <td>${r.roi_rag_latency_ms != null ? r.roi_rag_latency_ms + 'ms' : '—'}</td>
             <td>${(r.created_at||'').slice(0,16)}</td>
           </tr>`).join('');
       document.getElementById('historySection').style.display = 'block';
@@ -618,7 +696,8 @@
       return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     }
 
-    // ── 벤치마크 ──────────────────────────────────────────────────────────────
+    // ── 벤치마크 ─────────────────────────────────────────────────────────────
+
     async function runBenchmark() {
       const ctx = getSelectedContext();
       if (!ctx || ctx.type !== 'thread') {
@@ -656,7 +735,6 @@
     async function loadBenchResults() {
       const ctx = getSelectedContext();
       if (!ctx || ctx.type !== 'thread') return;
-
       try {
         const res = await fetch(`/api/threads/${ctx.id}/benchmark/results`);
         const data = await res.json();
@@ -774,37 +852,52 @@
     }
 
     function renderBenchResults(results, summary) {
-      // 요약 표시
       const sum = summary || {};
       document.getElementById('bTotal').textContent = sum.total || results.length;
       document.getElementById('bBasicAcc').textContent = (sum.basic_accuracy ?? '-') + '%';
       document.getElementById('bRaptorAcc').textContent = (sum.raptor_accuracy ?? '-') + '%';
       document.getElementById('bBasicScore').textContent = `${sum.basic_correct ?? 0}/${sum.total ?? results.length}`;
       document.getElementById('bRaptorScore').textContent = `${sum.raptor_correct ?? 0}/${sum.total ?? results.length}`;
+
+      const roiWrap = document.getElementById('bRoiAccWrap');
+      if (sum.roi_accuracy != null) {
+        roiWrap.style.display = '';
+        document.getElementById('bRoiAcc').textContent = sum.roi_accuracy + '%';
+        document.getElementById('bRoiScore').textContent = `${sum.roi_correct ?? 0}/${sum.total ?? results.length}`;
+      } else {
+        roiWrap.style.display = 'none';
+      }
+
       document.getElementById('bModelTag').textContent = sum.model_name ? `모델: ${sum.model_name}` : '';
       document.getElementById('benchSummary').style.display = 'block';
 
-      // 결과 테이블
       const content = document.getElementById('benchContent');
       if (results.length === 0) {
         content.innerHTML = '<div style="color:var(--text-muted);padding:16px;">결과 없음</div>';
         return;
       }
 
-      const rows = results.map((r, i) => {
+      const tick = ok => ok ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--danger)">✗</span>';
+
+      const rows = results.map(r => {
         const gts = Array.isArray(r.ground_truth_answers) ? r.ground_truth_answers : [];
-        const basicAns = r.basic_rag_answer || r.basic_rag?.answer || '';
+        const basicAns  = r.basic_rag_answer  || r.basic_rag?.answer  || '';
         const raptorAns = r.raptor_rag_answer || r.raptor_rag?.answer || '';
-        const basicOk = r.basic_correct !== undefined ? r.basic_correct : r.basic_rag?.correct;
-        const raptorOk = r.raptor_correct !== undefined ? r.raptor_correct : r.raptor_rag?.correct;
-        const tick = (ok) => ok ? '<span style="color:var(--success)">✓</span>' : '<span style="color:var(--danger)">✗</span>';
+        const roiAns    = r.roi_rag_answer    || r.roi_rag?.answer    || '';
+        const basicOk   = r.basic_correct   !== undefined ? r.basic_correct   : r.basic_rag?.correct;
+        const raptorOk  = r.raptor_correct  !== undefined ? r.raptor_correct  : r.raptor_rag?.correct;
+        const roiOk     = r.roi_correct     !== undefined ? r.roi_correct     : r.roi_rag?.correct;
+        const bMs  = r.basic_rag_latency_ms  || r.basic_rag?.latency_ms  || '-';
+        const rMs  = r.raptor_rag_latency_ms || r.raptor_rag?.latency_ms || '-';
+        const roiMs = r.roi_rag_latency_ms   || r.roi_rag?.latency_ms   || '—';
 
         return `<tr>
-          <td style="max-width:200px;word-break:break-word">${escHtml(r.question || '')}</td>
-          <td style="max-width:180px;word-break:break-word;color:var(--text-muted);font-size:0.8rem">${escHtml(gts.join(' / '))}</td>
-          <td style="max-width:220px;word-break:break-word">${escHtml(basicAns.slice(0, 120))}${basicAns.length > 120 ? '…' : ''} ${tick(basicOk)}</td>
-          <td style="max-width:220px;word-break:break-word">${escHtml(raptorAns.slice(0, 120))}${raptorAns.length > 120 ? '…' : ''} ${tick(raptorOk)}</td>
-          <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-muted)">${r.basic_rag_latency_ms || r.basic_rag?.latency_ms || '-'}ms / ${r.raptor_rag_latency_ms || r.raptor_rag?.latency_ms || '-'}ms</td>
+          <td style="max-width:180px;word-break:break-word">${escHtml(r.question || '')}</td>
+          <td style="max-width:150px;word-break:break-word;color:var(--text-muted);font-size:0.8rem">${escHtml(gts.join(' / '))}</td>
+          <td style="max-width:200px;word-break:break-word">${escHtml(basicAns.slice(0,100))}${basicAns.length > 100 ? '…' : ''} ${tick(basicOk)}</td>
+          <td style="max-width:200px;word-break:break-word">${escHtml(raptorAns.slice(0,100))}${raptorAns.length > 100 ? '…' : ''} ${tick(raptorOk)}</td>
+          <td style="max-width:200px;word-break:break-word">${roiAns ? escHtml(roiAns.slice(0,100)) + (roiAns.length > 100 ? '…' : '') + ' ' + tick(roiOk) : '<span style="color:var(--text-muted)">—</span>'}</td>
+          <td style="white-space:nowrap;font-size:0.78rem;color:var(--text-muted)">${bMs}ms / ${rMs}ms / ${roiMs}${typeof roiMs === 'number' ? 'ms' : ''}</td>
         </tr>`;
       }).join('');
 
@@ -816,7 +909,8 @@
               <th>Ground Truth</th>
               <th>🔵 Basic RAG</th>
               <th>🟣 RAPTOR RAG</th>
-              <th>지연 (B/R)</th>
+              <th>🟢 ROI-RAG</th>
+              <th>지연 (B/R/ROI)</th>
             </tr>
           </thead>
           <tbody>${rows}</tbody>
