@@ -130,6 +130,9 @@
     }
     .refs-more-list { display: none; }
     .refs-more-list.open { display: block; }
+    details[open] > summary span:first-child { content: '▼'; }
+    details > summary { list-style: none; }
+    details > summary::-webkit-details-marker { display: none; }
     /* 최종 답변 구분선 */
     .final-answer-label {
       font-size: 0.72rem;
@@ -270,10 +273,15 @@
           </div>
           <div class="panel-body">
             <div class="refs-section" id="basicRefsSection" style="display:none">
-              <div class="refs-header">🔍 검색 후보 Top-3 <span class="refs-count-badge" id="basicRefsCount"></span></div>
-              <div id="basicRefsTop"></div>
-              <div class="refs-more-toggle" id="basicRefsMoreToggle" style="display:none" onclick="toggleRefsMore('basic')">▶ 더 보기</div>
-              <div class="refs-more-list" id="basicRefsMore"></div>
+              <div class="refs-header" onclick="toggleRefsSection('basic')" style="cursor:pointer">
+                🔍 검색 후보 <span class="refs-count-badge" id="basicRefsCount"></span>
+                <span id="basicRefsChevron" style="margin-left:auto">▶</span>
+              </div>
+              <div id="basicRefsBody" style="display:none">
+                <div id="basicRefsTop"></div>
+                <div class="refs-more-toggle" id="basicRefsMoreToggle" style="display:none" onclick="toggleRefsMore('basic')">▶ 더 보기</div>
+                <div class="refs-more-list" id="basicRefsMore"></div>
+              </div>
             </div>
             <div class="final-answer-label" id="basicAnswerLabel" style="display:none">💬 최종 답변</div>
             <div class="answer-box placeholder" id="basicAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
@@ -289,10 +297,15 @@
           </div>
           <div class="panel-body">
             <div class="refs-section" id="raptorRefsSection" style="display:none">
-              <div class="refs-header">🔍 검색 후보 Top-3 <span class="refs-count-badge" id="raptorRefsCount"></span></div>
-              <div id="raptorRefsTop"></div>
-              <div class="refs-more-toggle" id="raptorRefsMoreToggle" style="display:none" onclick="toggleRefsMore('raptor')">▶ 더 보기</div>
-              <div class="refs-more-list" id="raptorRefsMore"></div>
+              <div class="refs-header" onclick="toggleRefsSection('raptor')" style="cursor:pointer">
+                🔍 검색 후보 <span class="refs-count-badge" id="raptorRefsCount"></span>
+                <span id="raptorRefsChevron" style="margin-left:auto">▶</span>
+              </div>
+              <div id="raptorRefsBody" style="display:none">
+                <div id="raptorRefsTop"></div>
+                <div class="refs-more-toggle" id="raptorRefsMoreToggle" style="display:none" onclick="toggleRefsMore('raptor')">▶ 더 보기</div>
+                <div class="refs-more-list" id="raptorRefsMore"></div>
+              </div>
             </div>
             <div class="final-answer-label" id="raptorAnswerLabel" style="display:none">💬 최종 답변</div>
             <div class="answer-box placeholder" id="raptorAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
@@ -309,10 +322,15 @@
           </div>
           <div class="panel-body">
             <div class="refs-section" id="roiRefsSection" style="display:none">
-              <div class="refs-header">🔍 검색 후보 Top-3 <span class="refs-count-badge" id="roiRefsCount"></span></div>
-              <div id="roiRefsTop"></div>
-              <div class="refs-more-toggle" id="roiRefsMoreToggle" style="display:none" onclick="toggleRefsMore('roi')">▶ 더 보기</div>
-              <div class="refs-more-list" id="roiRefsMore"></div>
+              <div class="refs-header" onclick="toggleRefsSection('roi')" style="cursor:pointer">
+                🔍 검색 후보 <span class="refs-count-badge" id="roiRefsCount"></span>
+                <span id="roiRefsChevron" style="margin-left:auto">▶</span>
+              </div>
+              <div id="roiRefsBody" style="display:none">
+                <div id="roiRefsTop"></div>
+                <div class="refs-more-toggle" id="roiRefsMoreToggle" style="display:none" onclick="toggleRefsMore('roi')">▶ 더 보기</div>
+                <div class="refs-more-list" id="roiRefsMore"></div>
+              </div>
             </div>
             <div class="final-answer-label" id="roiAnswerLabel" style="display:none">💬 최종 답변</div>
             <div class="answer-box placeholder" id="roiAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
@@ -776,6 +794,8 @@
         document.getElementById(`${t}Latency`).textContent = '';
         document.getElementById(`${t}Model`).textContent = '';
         document.getElementById(`${t}RefsSection`).style.display = 'none';
+        document.getElementById(`${t}RefsBody`).style.display = 'none';
+        document.getElementById(`${t}RefsChevron`).textContent = '▶';
         document.getElementById(`${t}RefsTop`).innerHTML = '';
         document.getElementById(`${t}RefsMore`).innerHTML = '';
         document.getElementById(`${t}RefsMore`).classList.remove('open');
@@ -784,6 +804,14 @@
         if (lbl) lbl.style.display = 'none';
       });
       document.getElementById('roiMetrics').textContent = '';
+    }
+
+    function toggleRefsSection(type) {
+      const body = document.getElementById(`${type}RefsBody`);
+      const chevron = document.getElementById(`${type}RefsChevron`);
+      const open = body.style.display === 'block';
+      body.style.display = open ? 'none' : 'block';
+      chevron.textContent = open ? '▶' : '▼';
     }
 
     function toggleRefsMore(type) {
@@ -1069,13 +1097,24 @@
         if (!refs?.length) return '';
         const top3 = refs.slice(0, 3);
         const items = top3.map((ref, i) => `
-          <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:7px 10px; margin-bottom:5px; cursor:pointer;"
-               onclick="this.style.webkitLineClamp=this.style.webkitLineClamp?'':this.getAttribute('data-clamp'); this.style.display=this.style.display==='-webkit-box'?'block':'-webkit-box';"
-               style="-webkit-line-clamp:3; display:-webkit-box; -webkit-box-orient:vertical; overflow:hidden; font-size:0.78rem; line-height:1.5; color:var(--text); word-break:break-word; white-space:pre-wrap;">
+          <div style="background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:7px 10px; margin-bottom:5px; cursor:pointer;
+                      overflow:hidden; display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical;
+                      font-size:0.78rem; line-height:1.5; color:var(--text); word-break:break-word; white-space:pre-wrap;"
+               onclick="const el=this; const open=el.style.webkitLineClamp==='unset'; el.style.webkitLineClamp=open?'3':'unset'; el.style.display=open?'-webkit-box':'block';">
             <span style="font-size:0.62rem; font-weight:700; color:${color}; margin-right:4px;">후보${i+1}</span>${escHtml(ref)}
           </div>`).join('');
-        return `<div style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin-bottom:5px;">🔍 검색 후보 Top-3</div>${items}
-          <div style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase; letter-spacing:0.04em; margin:8px 0 5px; padding-top:8px; border-top:1px solid var(--border);">💬 최종 답변</div>`;
+        return `
+          <details style="margin-bottom:8px;">
+            <summary style="cursor:pointer; font-size:0.7rem; font-weight:700; color:var(--text-muted);
+                            text-transform:uppercase; letter-spacing:0.04em; list-style:none;
+                            display:flex; align-items:center; gap:6px; user-select:none; padding:2px 0;">
+              <span style="font-size:0.65rem;">▶</span> 🔍 검색 후보 Top-3
+              <span style="font-size:0.65rem; font-weight:400;">(${top3.length}개 · 클릭하여 펼치기)</span>
+            </summary>
+            <div style="margin-top:6px;">${items}</div>
+          </details>
+          <div style="font-size:0.7rem; font-weight:700; color:var(--text-muted); text-transform:uppercase;
+                      letter-spacing:0.04em; margin:4px 0 5px; padding-top:6px; border-top:1px solid var(--border);">💬 최종 답변</div>`;
       };
 
       const cards = results.map((r, idx) => {
