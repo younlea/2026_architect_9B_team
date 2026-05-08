@@ -373,7 +373,7 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
 
     # R(C) 계산
     r_c = 0.0
-    if eu_embeds and len(eu_embeds) >= 2:
+    if eu_embeds is not None and len(eu_embeds) >= 2:
         r_c = _compute_r_c(np.array(eu_embeds, dtype=float))
 
     regime = metas[0].get("regime", "") if metas else ""
