@@ -49,6 +49,77 @@
       opacity: 0.85;
     }
 
+    /* 검색 컨텍스트 Top-3 */
+    .refs-section {
+      margin-top: 12px;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+    }
+    .refs-header {
+      font-size: 0.74rem;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .refs-count-badge {
+      font-size: 0.68rem;
+      padding: 1px 6px;
+      border-radius: 10px;
+      background: var(--surface2);
+      color: var(--text-muted);
+    }
+    .ref-item-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 6px;
+      align-items: flex-start;
+    }
+    .ref-rank {
+      flex-shrink: 0;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      font-size: 0.65rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-top: 2px;
+    }
+    .ref-rank-basic  { background: rgba(99,102,241,0.25); color: #a5b4fc; }
+    .ref-rank-raptor { background: rgba(168,85,247,0.25); color: #c084fc; }
+    .ref-rank-roi    { background: rgba(34,197,94,0.25);  color: #86efac; }
+    .ref-text {
+      flex: 1;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      cursor: pointer;
+      transition: border-color 0.15s;
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+    }
+    .ref-text:hover { border-color: var(--primary); color: var(--text); }
+    .ref-text.expanded { -webkit-line-clamp: unset; display: block; }
+    .refs-more-toggle {
+      font-size: 0.75rem;
+      color: var(--primary);
+      cursor: pointer;
+      margin-top: 4px;
+      user-select: none;
+    }
+    .refs-more-list { display: none; }
+    .refs-more-list.open { display: block; }
+
     /* 멀티모델 그리드 */
     .multi-grid {
       display: grid;
@@ -177,8 +248,12 @@
           </div>
           <div class="panel-body">
             <div class="answer-box placeholder" id="basicAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
-            <div class="refs-toggle" id="basicRefsToggle" style="display:none" onclick="toggleRefs('basic')">▶ 참조 청크 보기</div>
-            <div class="refs-list" id="basicRefsList"></div>
+            <div class="refs-section" id="basicRefsSection" style="display:none">
+              <div class="refs-header">📄 검색 컨텍스트 Top-3 <span class="refs-count-badge" id="basicRefsCount"></span></div>
+              <div id="basicRefsTop"></div>
+              <div class="refs-more-toggle" id="basicRefsMoreToggle" style="display:none" onclick="toggleRefsMore('basic')">▶ 더 보기</div>
+              <div class="refs-more-list" id="basicRefsMore"></div>
+            </div>
           </div>
         </div>
 
@@ -191,8 +266,12 @@
           </div>
           <div class="panel-body">
             <div class="answer-box placeholder" id="raptorAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
-            <div class="refs-toggle" id="raptorRefsToggle" style="display:none" onclick="toggleRefs('raptor')">▶ 참조 청크 보기</div>
-            <div class="refs-list" id="raptorRefsList"></div>
+            <div class="refs-section" id="raptorRefsSection" style="display:none">
+              <div class="refs-header">📄 검색 컨텍스트 Top-3 <span class="refs-count-badge" id="raptorRefsCount"></span></div>
+              <div id="raptorRefsTop"></div>
+              <div class="refs-more-toggle" id="raptorRefsMoreToggle" style="display:none" onclick="toggleRefsMore('raptor')">▶ 더 보기</div>
+              <div class="refs-more-list" id="raptorRefsMore"></div>
+            </div>
           </div>
         </div>
 
@@ -206,8 +285,12 @@
           </div>
           <div class="panel-body">
             <div class="answer-box placeholder" id="roiAnswer">질문을 입력하고 비교 실행을 클릭하세요.</div>
-            <div class="refs-toggle" id="roiRefsToggle" style="display:none" onclick="toggleRefs('roi')">▶ 참조 EU 보기</div>
-            <div class="refs-list" id="roiRefsList"></div>
+            <div class="refs-section" id="roiRefsSection" style="display:none">
+              <div class="refs-header">📄 검색 EU Top-3 <span class="refs-count-badge" id="roiRefsCount"></span></div>
+              <div id="roiRefsTop"></div>
+              <div class="refs-more-toggle" id="roiRefsMoreToggle" style="display:none" onclick="toggleRefsMore('roi')">▶ 더 보기</div>
+              <div class="refs-more-list" id="roiRefsMore"></div>
+            </div>
           </div>
         </div>
 
@@ -565,23 +648,56 @@
       return card;
     }
 
+    function buildRefItem(text, rank, type) {
+      const row = document.createElement('div');
+      row.className = 'ref-item-row';
+      const badge = document.createElement('div');
+      badge.className = `ref-rank ref-rank-${type}`;
+      badge.textContent = rank;
+      const body = document.createElement('div');
+      body.className = 'ref-text';
+      body.textContent = text;
+      body.title = '클릭하여 전체 보기';
+      body.onclick = () => body.classList.toggle('expanded');
+      row.appendChild(badge);
+      row.appendChild(body);
+      return row;
+    }
+
+    function renderRefs(type, refs) {
+      const TOP = 3;
+      const section = document.getElementById(`${type}RefsSection`);
+      const topEl = document.getElementById(`${type}RefsTop`);
+      const moreEl = document.getElementById(`${type}RefsMore`);
+      const moreToggle = document.getElementById(`${type}RefsMoreToggle`);
+      const countBadge = document.getElementById(`${type}RefsCount`);
+
+      topEl.innerHTML = '';
+      moreEl.innerHTML = '';
+      moreToggle.style.display = 'none';
+      moreEl.classList.remove('open');
+
+      if (!refs?.length) { section.style.display = 'none'; return; }
+
+      const label = type === 'roi' ? 'EU' : '청크';
+      countBadge.textContent = `${Math.min(refs.length, TOP)} / ${refs.length} ${label}`;
+
+      refs.slice(0, TOP).forEach((ref, i) => topEl.appendChild(buildRefItem(ref, i + 1, type)));
+
+      if (refs.length > TOP) {
+        refs.slice(TOP).forEach((ref, i) => moreEl.appendChild(buildRefItem(ref, i + TOP + 1, type)));
+        moreToggle.style.display = 'block';
+        moreToggle.textContent = `▶ 나머지 ${refs.length - TOP}개 더 보기`;
+      }
+      section.style.display = 'block';
+    }
+
     function renderPanel(type, result, modelName) {
       document.getElementById(`${type}Answer`).textContent = result.answer;
       document.getElementById(`${type}Answer`).classList.remove('placeholder');
       document.getElementById(`${type}Latency`).textContent = `${result.latency_ms}ms`;
       document.getElementById(`${type}Model`).textContent = modelName || '';
-
-      const refsList = document.getElementById(`${type}RefsList`);
-      refsList.innerHTML = '';
-      if (result.references?.length) {
-        result.references.forEach((ref, i) => {
-          const d = document.createElement('div');
-          d.className = 'ref-item';
-          d.textContent = `[${i+1}] ${ref}`;
-          refsList.appendChild(d);
-        });
-        document.getElementById(`${type}RefsToggle`).style.display = 'block';
-      }
+      renderRefs(type, result.references);
     }
 
     function renderRoiPanel(result, modelName) {
@@ -589,8 +705,6 @@
       const latencyEl = document.getElementById('roiLatency');
       const modelEl = document.getElementById('roiModel');
       const metricsEl = document.getElementById('roiMetrics');
-      const refsToggle = document.getElementById('roiRefsToggle');
-      const refsList = document.getElementById('roiRefsList');
 
       if (!result) {
         answerEl.textContent = 'ROI-RAG가 인덱싱되지 않았습니다. 인덱스 실행 후 다시 시도하세요.';
@@ -598,8 +712,7 @@
         latencyEl.textContent = '';
         modelEl.textContent = '';
         metricsEl.textContent = '';
-        refsToggle.style.display = 'none';
-        refsList.innerHTML = '';
+        renderRefs('roi', []);
         return;
       }
 
@@ -607,21 +720,10 @@
       answerEl.classList.remove('placeholder');
       latencyEl.textContent = `${result.latency_ms}ms`;
       modelEl.textContent = modelName || '';
-
       if (result.r_c !== undefined) {
         metricsEl.textContent = `R(C):${result.r_c} | ${result.regime} | ${result.eu_count}EU`;
       }
-
-      refsList.innerHTML = '';
-      if (result.references?.length) {
-        result.references.forEach((ref, i) => {
-          const d = document.createElement('div');
-          d.className = 'ref-item';
-          d.textContent = `[EU ${i+1}] ${ref}`;
-          refsList.appendChild(d);
-        });
-        refsToggle.style.display = 'block';
-      }
+      renderRefs('roi', result.references);
     }
 
     function resetDualPanels(spinner = false) {
@@ -631,19 +733,24 @@
         a.innerHTML = spinner ? '<div class="spinner"></div>' : '질문을 입력하고 비교 실행을 클릭하세요.';
         document.getElementById(`${t}Latency`).textContent = '';
         document.getElementById(`${t}Model`).textContent = '';
-        document.getElementById(`${t}RefsToggle`).style.display = 'none';
-        document.getElementById(`${t}RefsList`).innerHTML = '';
-        document.getElementById(`${t}RefsList`).classList.remove('open');
+        document.getElementById(`${t}RefsSection`).style.display = 'none';
+        document.getElementById(`${t}RefsTop`).innerHTML = '';
+        document.getElementById(`${t}RefsMore`).innerHTML = '';
+        document.getElementById(`${t}RefsMore`).classList.remove('open');
+        document.getElementById(`${t}RefsMoreToggle`).style.display = 'none';
       });
       document.getElementById('roiMetrics').textContent = '';
     }
 
-    function toggleRefs(type) {
-      const list = document.getElementById(`${type}RefsList`);
-      const toggle = document.getElementById(`${type}RefsToggle`);
-      list.classList.toggle('open');
-      const label = type === 'roi' ? '참조 EU' : '참조 청크';
-      toggle.textContent = list.classList.contains('open') ? `▼ ${label} 숨기기` : `▶ ${label} 보기`;
+    function toggleRefsMore(type) {
+      const more = document.getElementById(`${type}RefsMore`);
+      const toggle = document.getElementById(`${type}RefsMoreToggle`);
+      more.classList.toggle('open');
+      const count = more.querySelectorAll('.ref-item-row').length;
+      const label = type === 'roi' ? 'EU' : '청크';
+      toggle.textContent = more.classList.contains('open')
+        ? `▲ 접기`
+        : `▶ 나머지 ${count}개 더 보기`;
     }
 
     async function loadHistory() {
