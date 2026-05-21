@@ -117,6 +117,9 @@ def _apply_migrations(conn):
         "ALTER TABLE benchmark_results ADD COLUMN roi_rag_answer TEXT",
         "ALTER TABLE benchmark_results ADD COLUMN roi_rag_latency_ms INTEGER",
         "ALTER TABLE benchmark_results ADD COLUMN roi_correct INTEGER DEFAULT 0",
+        "ALTER TABLE benchmark_results ADD COLUMN basic_rag_references TEXT DEFAULT '[]'",
+        "ALTER TABLE benchmark_results ADD COLUMN raptor_rag_references TEXT DEFAULT '[]'",
+        "ALTER TABLE benchmark_results ADD COLUMN roi_rag_references TEXT DEFAULT '[]'",
     ]
     for sql in migrations:
         try:

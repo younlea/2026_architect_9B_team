@@ -6,6 +6,7 @@ import re
 from collections import Counter
 from typing import Optional
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from backend.db.database import get_conn
 from backend.rag import basic_rag, raptor_rag, roi_rag
@@ -222,98 +223,111 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
 
     loop = asyncio.get_event_loop()
     model = body.model
-    results = []
+    total_q = len(questions)
 
-    # 첫 번째 질문의 source_id로 세션 단위 인덱스 유무를 한 번만 확인
     first_source_id = dict(questions[0]).get("source_id") or "" if questions else ""
     use_session_routing = (
         _UUID_RE.match(first_source_id) and _session_has_data(first_source_id)
     )
 
-    for q in questions:
-        qid = q["id"]
-        question = q["question"]
-        ground_truths = json.loads(q["ground_truth_answers"] or "[]")
-        # 요약 태스크(multi_news 등)는 input이 비어있음 → GT 언어에 맞는 요약 프롬프트로 대체
-        if not question or not question.strip():
-            gt_sample = " ".join(ground_truths[:1])
-            has_cjk = any('一' <= c <= '鿿' or '가' <= c <= '힣' for c in gt_sample)
-            question = "이 문서의 핵심 내용을 간결하게 요약해 주세요." if has_cjk else \
-                       "Summarize the key content of the document concisely in English."
+    def _sse(event: dict) -> str:
+        return f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
-        source_id = dict(q).get("source_id") or ""
-        # 세션 단위 인덱스가 있으면 세션별 검색, 없으면 스레드 단위 fallback
-        if use_session_routing and _UUID_RE.match(source_id):
-            basic_fn = lambda question=question, sid=source_id: basic_rag.query(sid, question, model)
-            raptor_fn = lambda question=question, sid=source_id: raptor_rag.query(sid, question, model)
-        else:
-            basic_fn = lambda question=question: basic_rag.query_thread(thread_id, question, model)
-            raptor_fn = lambda question=question: raptor_rag.query_thread(thread_id, question, model)
+    async def event_stream():
+        results = []
+        try:
+            for idx, q in enumerate(questions):
+                qid = q["id"]
+                question = q["question"]
+                ground_truths = json.loads(q["ground_truth_answers"] or "[]")
 
-        fns = [basic_fn, raptor_fn]
-        if roi_ready:
-            roi_fn = lambda question=question: roi_rag.query_thread(thread_id, question, model)
-            fns.append(roi_fn)
+                if not question or not question.strip():
+                    gt_sample = " ".join(ground_truths[:1])
+                    has_cjk = any('一' <= c <= '鿿' or '가' <= c <= '힣' for c in gt_sample)
+                    question = "이 문서의 핵심 내용을 간결하게 요약해 주세요." if has_cjk else \
+                               "Summarize the key content of the document concisely in English."
 
-        done = await asyncio.gather(*[loop.run_in_executor(None, fn) for fn in fns])
-        basic_res, raptor_res = done[0], done[1]
-        roi_res = done[2] if roi_ready else None
+                source_id = dict(q).get("source_id") or ""
+                q_preview = question[:60] + "..." if len(question) > 60 else question
 
-        basic_correct = int(_answer_correct(basic_res["answer"], ground_truths))
-        raptor_correct = int(_answer_correct(raptor_res["answer"], ground_truths))
-        roi_correct = int(_answer_correct(roi_res["answer"], ground_truths)) if roi_res else 0
+                yield _sse({"type": "progress", "current": idx + 1, "total": total_q,
+                            "rag": "Basic RAG", "question": q_preview})
+                if use_session_routing and _UUID_RE.match(source_id):
+                    basic_res = await loop.run_in_executor(None, lambda sid=source_id: basic_rag.query(sid, question, model))
+                else:
+                    basic_res = await loop.run_in_executor(None, lambda q=question: basic_rag.query_thread(thread_id, q, model))
 
-        with get_conn() as conn:
-            conn.execute(
-                "DELETE FROM benchmark_results WHERE question_id=? AND thread_id=?",
-                (qid, thread_id),
-            )
-            conn.execute(
-                """INSERT INTO benchmark_results
-                   (question_id, thread_id,
-                    basic_rag_answer, basic_rag_latency_ms,
-                    raptor_rag_answer, raptor_rag_latency_ms,
-                    roi_rag_answer, roi_rag_latency_ms,
-                    model_name, basic_correct, raptor_correct, roi_correct)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    qid, thread_id,
-                    basic_res["answer"], basic_res["latency_ms"],
-                    raptor_res["answer"], raptor_res["latency_ms"],
-                    roi_res["answer"] if roi_res else None,
-                    roi_res["latency_ms"] if roi_res else None,
-                    model or OLLAMA_MODEL,
-                    basic_correct, raptor_correct, roi_correct,
-                ),
-            )
+                yield _sse({"type": "progress", "current": idx + 1, "total": total_q,
+                            "rag": "RAPTOR RAG", "question": q_preview})
+                if use_session_routing and _UUID_RE.match(source_id):
+                    raptor_res = await loop.run_in_executor(None, lambda sid=source_id: raptor_rag.query(sid, question, model))
+                else:
+                    raptor_res = await loop.run_in_executor(None, lambda q=question: raptor_rag.query_thread(thread_id, q, model))
 
-        results.append({
-            "question_id": qid,
-            "question": question,
-            "ground_truth_answers": ground_truths,
-            "basic_rag": {**basic_res, "correct": bool(basic_correct)},
-            "raptor_rag": {**raptor_res, "correct": bool(raptor_correct)},
-            "roi_rag": {**roi_res, "correct": bool(roi_correct)} if roi_res else None,
-        })
+                roi_res = None
+                if roi_ready:
+                    yield _sse({"type": "progress", "current": idx + 1, "total": total_q,
+                                "rag": "ROI-RAG", "question": q_preview})
+                    roi_res = await loop.run_in_executor(None, lambda q=question: roi_rag.query_thread(thread_id, q, model))
 
-    total = len(results)
-    basic_score = sum(1 for r in results if r["basic_rag"]["correct"])
-    raptor_score = sum(1 for r in results if r["raptor_rag"]["correct"])
-    roi_score = sum(1 for r in results if r.get("roi_rag") and r["roi_rag"]["correct"])
+                basic_correct = int(_answer_correct(basic_res["answer"], ground_truths))
+                raptor_correct = int(_answer_correct(raptor_res["answer"], ground_truths))
+                roi_correct = int(_answer_correct(roi_res["answer"], ground_truths)) if roi_res else 0
 
-    return {
-        "thread_id": thread_id,
-        "model": model or OLLAMA_MODEL,
-        "roi_ready": roi_ready,
-        "total": total,
-        "basic_correct": basic_score,
-        "raptor_correct": raptor_score,
-        "roi_correct": roi_score,
-        "basic_accuracy": round(basic_score / total * 100, 1) if total else 0,
-        "raptor_accuracy": round(raptor_score / total * 100, 1) if total else 0,
-        "roi_accuracy": round(roi_score / total * 100, 1) if total and roi_ready else None,
-        "results": results,
-    }
+                with get_conn() as conn:
+                    conn.execute("DELETE FROM benchmark_results WHERE question_id=? AND thread_id=?", (qid, thread_id))
+                    conn.execute(
+                        """INSERT INTO benchmark_results
+                           (question_id, thread_id,
+                            basic_rag_answer, basic_rag_latency_ms, basic_rag_references,
+                            raptor_rag_answer, raptor_rag_latency_ms, raptor_rag_references,
+                            roi_rag_answer, roi_rag_latency_ms, roi_rag_references,
+                            model_name, basic_correct, raptor_correct, roi_correct)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        (qid, thread_id,
+                         basic_res["answer"], basic_res["latency_ms"],
+                         json.dumps(basic_res.get("references", []), ensure_ascii=False),
+                         raptor_res["answer"], raptor_res["latency_ms"],
+                         json.dumps(raptor_res.get("references", []), ensure_ascii=False),
+                         roi_res["answer"] if roi_res else None,
+                         roi_res["latency_ms"] if roi_res else None,
+                         json.dumps(roi_res.get("references", []), ensure_ascii=False) if roi_res else "[]",
+                         model or OLLAMA_MODEL,
+                         basic_correct, raptor_correct, roi_correct),
+                    )
+
+                result = {
+                    "question_id": qid, "question": question,
+                    "ground_truth_answers": ground_truths,
+                    "basic_rag": {**basic_res, "correct": bool(basic_correct)},
+                    "raptor_rag": {**raptor_res, "correct": bool(raptor_correct)},
+                    "roi_rag": {**roi_res, "correct": bool(roi_correct)} if roi_res else None,
+                }
+                results.append(result)
+                yield _sse({"type": "question_done", "current": idx + 1, "total": total_q, "result": result})
+
+            total = len(results)
+            basic_score = sum(1 for r in results if r["basic_rag"]["correct"])
+            raptor_score = sum(1 for r in results if r["raptor_rag"]["correct"])
+            roi_score = sum(1 for r in results if r.get("roi_rag") and r["roi_rag"]["correct"])
+
+            yield _sse({"type": "done",
+                        "thread_id": thread_id,
+                        "model": model or OLLAMA_MODEL,
+                        "roi_ready": roi_ready,
+                        "total": total,
+                        "basic_correct": basic_score,
+                        "raptor_correct": raptor_score,
+                        "roi_correct": roi_score,
+                        "basic_accuracy": round(basic_score / total * 100, 1) if total else 0,
+                        "raptor_accuracy": round(raptor_score / total * 100, 1) if total else 0,
+                        "roi_accuracy": round(roi_score / total * 100, 1) if total and roi_ready else None,
+                        "results": results})
+        except Exception as e:
+            yield _sse({"type": "error", "message": str(e)})
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream",
+                             headers={"X-Accel-Buffering": "no", "Cache-Control": "no-cache"})
 
 
 @router.get("/threads/{thread_id}/benchmark/results")
@@ -326,9 +340,9 @@ def get_benchmark_results(thread_id: str):
 
         rows = conn.execute(
             """SELECT br.id, br.question_id, bq.question, bq.ground_truth_answers,
-                      br.basic_rag_answer, br.basic_rag_latency_ms,
-                      br.raptor_rag_answer, br.raptor_rag_latency_ms,
-                      br.roi_rag_answer, br.roi_rag_latency_ms,
+                      br.basic_rag_answer, br.basic_rag_latency_ms, br.basic_rag_references,
+                      br.raptor_rag_answer, br.raptor_rag_latency_ms, br.raptor_rag_references,
+                      br.roi_rag_answer, br.roi_rag_latency_ms, br.roi_rag_references,
                       br.model_name, br.basic_correct, br.raptor_correct, br.roi_correct,
                       br.created_at
                FROM benchmark_results br
@@ -345,6 +359,9 @@ def get_benchmark_results(thread_id: str):
     for r in rows:
         item = dict(r)
         item["ground_truth_answers"] = json.loads(r["ground_truth_answers"] or "[]")
+        item["basic_rag_references"] = json.loads(r["basic_rag_references"] or "[]")
+        item["raptor_rag_references"] = json.loads(r["raptor_rag_references"] or "[]")
+        item["roi_rag_references"] = json.loads(r["roi_rag_references"] or "[]")
         results.append(item)
 
     total = len(results)

@@ -1,8 +1,8 @@
 import time
 import chromadb
-from chromadb.utils import embedding_functions
 from backend.db.database import get_conn, get_thread_text
-from backend.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
+from backend.config import CHROMA_PERSIST_DIR
+from backend.rag import _ef as _shared_ef
 from backend.rag.llm_client import get_llm_answer
 
 CHUNK_SIZE = 512      # 한국어 기준 약 250 어절 (기존 300자에서 확대)
@@ -15,7 +15,7 @@ def _get_client():
 
 
 def _get_ef():
-    return embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
+    return _shared_ef.get()
 
 
 def _get_collection(col_name: str):
@@ -125,6 +125,6 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
 {question}
 
 [답변]"""
-    answer = get_llm_answer(prompt, model)
+    answer = get_llm_answer(prompt, model, deterministic=True)
     latency = int((time.time() - start) * 1000)
     return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}

@@ -10,9 +10,9 @@ import json
 import time
 import numpy as np
 import chromadb
-from chromadb.utils import embedding_functions
 from backend.db.database import get_conn, get_thread_text
-from backend.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
+from backend.config import CHROMA_PERSIST_DIR
+from backend.rag import _ef as _shared_ef
 from backend.rag.llm_client import get_llm_answer
 
 # ── 하이퍼파라미터 (논문 Appendix A 기준) ──────────────────────────────────
@@ -40,9 +40,7 @@ def _get_client():
 
 
 def _get_ef():
-    return embedding_functions.SentenceTransformerEmbeddingFunction(
-        model_name=EMBEDDING_MODEL
-    )
+    return _shared_ef.get()
 
 
 def _get_collection(col_name: str):
@@ -392,7 +390,7 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
         f"[질문]\n{question}\n\n[답변]"
     )
 
-    answer = get_llm_answer(prompt, model)
+    answer = get_llm_answer(prompt, model, deterministic=True)
     latency = int((time.time() - start) * 1000)
 
     # 원문 세그먼트 참조용 (최대 TOP_K개)

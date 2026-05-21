@@ -86,16 +86,10 @@ async def compare_rag(body: CompareRequest):
         raptor_fn = lambda: raptor_rag.query(body.session_id, body.query, body.model)
         roi_fn = None  # 세션 레벨 ROI 미지원
 
-    futures = [
-        loop.run_in_executor(None, basic_fn),
-        loop.run_in_executor(None, raptor_fn),
-    ]
-    if status["roi"] and roi_fn:
-        futures.append(loop.run_in_executor(None, roi_fn))
-
-    done = await asyncio.gather(*futures)
-    basic_result, raptor_result = done[0], done[1]
-    roi_result = done[2] if len(done) > 2 else None
+    # Ollama는 단일 처리 → 병렬 요청 시 큐 대기로 타임아웃 발생, 순차 실행
+    basic_result = await loop.run_in_executor(None, basic_fn)
+    raptor_result = await loop.run_in_executor(None, raptor_fn)
+    roi_result = await loop.run_in_executor(None, roi_fn) if status["roi"] and roi_fn else None
 
     ctx_id = body.thread_id or body.session_id
     with get_conn() as conn:
@@ -183,8 +177,12 @@ async def multimodel_compare(body: MultiModelCompareRequest):
             )))
 
     results = []
-    futures = [t[2] for t in tasks]
-    done = await asyncio.gather(*futures, return_exceptions=True)
+    done = []
+    for _, _, fut in tasks:
+        try:
+            done.append(await fut)
+        except Exception as e:
+            done.append(e)
 
     with get_conn() as conn:
         for (rag_type, model_name, _), result in zip(tasks, done):

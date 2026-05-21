@@ -5,9 +5,9 @@ RAPTOR RAG: Recursive Abstractive Processing for Tree-Organized Retrieval
 import time
 import numpy as np
 import chromadb
-from chromadb.utils import embedding_functions
 from backend.db.database import get_conn, get_thread_text
-from backend.config import CHROMA_PERSIST_DIR, EMBEDDING_MODEL
+from backend.config import CHROMA_PERSIST_DIR
+from backend.rag import _ef as _shared_ef
 from backend.rag.llm_client import get_llm_answer
 
 CHUNK_SIZE = 512      # 한국어 기준 약 250 어절
@@ -24,7 +24,7 @@ def _get_client():
 
 
 def _get_ef():
-    return embedding_functions.SentenceTransformerEmbeddingFunction(model_name=EMBEDDING_MODEL)
+    return _shared_ef.get()
 
 
 def _get_collection(col_name: str):
@@ -197,11 +197,20 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
         lvl = meta.get("level", 0)
         level_groups.setdefault(lvl, []).append(doc)
 
+    MAX_CONTEXT_CHARS = 6000
     context_parts = []
+    total_chars = 0
     for lvl in sorted(level_groups.keys(), reverse=True):
         label = "전체 요약" if lvl > 0 else "세부 내용"
         context_parts.append(f"[{label} (레벨 {lvl})]")
-        context_parts.extend(level_groups[lvl])
+        for doc in level_groups[lvl]:
+            truncated = doc[:1500] + "..." if len(doc) > 1500 else doc
+            if total_chars + len(truncated) > MAX_CONTEXT_CHARS:
+                break
+            context_parts.append(truncated)
+            total_chars += len(truncated)
+        if total_chars >= MAX_CONTEXT_CHARS:
+            break
 
     context = "\n\n".join(context_parts)
     prompt = f"""아래 대화 분석 내용을 참고하여 질문에 답변해 주세요.
@@ -215,6 +224,6 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
 {question}
 
 [답변]"""
-    answer = get_llm_answer(prompt, model)
+    answer = get_llm_answer(prompt, model, deterministic=True)
     latency = int((time.time() - start) * 1000)
     return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}
