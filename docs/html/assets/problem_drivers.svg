@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">과제 배경 드라이버</title>
+  <desc id="desc">보안, 중복, 권한, 응답 속도, 근거 추적 요구가 RAG 기반 코드 어시스트 프레임워크 필요성으로 수렴하는 도식</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.hub{fill:#ecfeff;stroke:#0891b2;stroke-width:3}.t{font:700 22px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}.s{font:500 15px Arial,'Noto Sans KR',sans-serif;fill:#334155}.small{font:500 13px Arial,'Noto Sans KR',sans-serif;fill:#64748b}.line{stroke:#94a3b8;stroke-width:3;fill:none;marker-end:url(#arrow)}.accent1{fill:#eff6ff}.accent2{fill:#fef2f2}.accent3{fill:#f0fdf4}.accent4{fill:#fff7ed}.accent5{fill:#f5f3ff}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker>
+  </defs>
+  <rect class="bg" width="1200" height="420" rx="22"/>
+  <rect class="box accent1" x="45" y="55" width="230" height="92" rx="12"/>
+  <text class="t" x="72" y="90">사내 코드 보안</text><text class="s" x="72" y="118">외부 LLM 전송 불가</text>
+  <rect class="box accent2" x="45" y="270" width="230" height="92" rx="12"/>
+  <text class="t" x="72" y="305">중복 코드</text><text class="s" x="72" y="333">Top-K 편향 / Token 낭비</text>
+  <rect class="box accent3" x="472" y="35" width="256" height="92" rx="12"/>
+  <text class="t" x="506" y="70">권한 민감성</text><text class="s" x="506" y="98">프로젝트/부서/역할별 범위</text>
+  <rect class="hub" x="430" y="165" width="340" height="108" rx="18"/>
+  <text class="t" x="486" y="204">RAG 기반 코드 어시스트</text>
+  <text class="s" x="501" y="235">검색 + 권한 + 근거 + 지식 계층</text>
+  <rect class="box accent4" x="925" y="55" width="230" height="92" rx="12"/>
+  <text class="t" x="954" y="90">응답 속도</text><text class="s" x="954" y="118">IDE 흐름 방해 최소화</text>
+  <rect class="box accent5" x="925" y="270" width="230" height="92" rx="12"/>
+  <text class="t" x="954" y="305">근거 추적</text><text class="s" x="954" y="333">Citation / Audit / Source</text>
+  <path class="line" d="M275 101 C345 112 380 160 430 198"/>
+  <path class="line" d="M275 316 C345 303 380 260 430 235"/>
+  <path class="line" d="M600 127 L600 165"/>
+  <path class="line" d="M770 198 C840 160 865 112 925 101"/>
+  <path class="line" d="M770 235 C840 260 865 303 925 316"/>
+  <text class="small" x="430" y="392">핵심: 사내 지식은 외부로 보내지 않고, 내부 검색/권한/증거 계층으로 LLM Context를 통제한다.</text>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="470" viewBox="0 0 1200 470" role="img" aria-labelledby="title desc">
+  <title id="title">DP3 Knowledge Layer</title>
+  <desc id="desc">SPRAG 이후 LLM Wiki Knowledge Cache가 필요한 이유와 Query Routing 구조</desc>
+  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.sprag{fill:#dbeafe;stroke:#2563eb}.wiki{fill:#fef3c7;stroke:#d97706}.route{fill:#ecfdf5;stroke:#16a34a}.fallback{fill:#f5f3ff;stroke:#7c3aed}.t{font:700 22px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}.s{font:600 15px Arial,'Noto Sans KR',sans-serif;fill:#334155}.small{font:500 13px Arial,'Noto Sans KR',sans-serif;fill:#64748b}.line{stroke:#94a3b8;stroke-width:3;fill:none;marker-end:url(#a)}</style><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker></defs>
+  <rect class="bg" width="1200" height="470" rx="22"/>
+  <text class="t" x="54" y="54">SPRAG 이후 남는 문제: Evidence 검색은 최적화됐지만 Canonical Answer 운영은 별도 계층 필요</text>
+  <rect class="box sprag" x="70" y="115" width="245" height="105" rx="14"/><text class="s" x="112" y="155">SPRAG EU RAG</text><text class="small" x="100" y="184">중복 근거 압축 / Source Mapping</text>
+  <rect class="box route" x="440" y="110" width="260" height="115" rx="14"/><text class="s" x="501" y="150">Query Router</text><text class="small" x="478" y="180">반복/정책/최신성/권한/Confidence 판단</text>
+  <rect class="box wiki" x="830" y="75" width="280" height="120" rx="14"/><text class="s" x="892" y="116">LLM Wiki Cache</text><text class="small" x="868" y="146">검토 가능한 Canonical Answer</text><text class="small" x="868" y="170">API / Component / FAQ / Decision</text>
+  <rect class="box fallback" x="830" y="255" width="280" height="120" rx="14"/><text class="s" x="888" y="296">SPRAG / Source Fallback</text><text class="small" x="870" y="326">최신성 / 상세근거 / Low Confidence</text>
+  <path class="line" d="M315 167 L440 167"/><path class="line" d="M700 158 C760 125 785 115 830 118"/><path class="line" d="M700 180 C760 235 785 290 830 307"/>
+  <rect class="box" x="70" y="300" width="245" height="82" rx="14"/><text class="s" x="105" y="334">DP1이 해결</text><text class="small" x="102" y="360">검색 효율 / Prompt 감소</text>
+  <rect class="box" x="440" y="300" width="260" height="82" rx="14"/><text class="s" x="480" y="334">DP3가 해결</text><text class="small" x="470" y="360">반복 QA / 일관성 / 운영 지식</text>
+  <text class="s" x="72" y="430">Q&amp;A 핵심: DP3는 SPRAG를 대체하지 않는다. EU를 사람이 검토 가능한 지식 계층으로 승격하고, 언제 Fallback할지 결정한다.</text>
+</svg>

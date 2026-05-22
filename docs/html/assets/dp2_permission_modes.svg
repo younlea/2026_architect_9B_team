@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">DP2 권한 전략 비교</title>
+  <desc id="desc">권한별 분리 DB, 통합 DB Post-filtering, 통합 DB Pre-filtering 비교</desc>
+  <defs><style>.bg{fill:#f8fafc}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:2}.good{fill:#dcfce7;stroke:#16a34a}.warn{fill:#fff7ed;stroke:#ea580c}.bad{fill:#fee2e2;stroke:#dc2626}.t{font:700 20px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}.s{font:600 14px Arial,'Noto Sans KR',sans-serif;fill:#334155}.x{font:700 18px Arial,'Noto Sans KR',sans-serif;fill:#991b1b}.ok{font:700 18px Arial,'Noto Sans KR',sans-serif;fill:#166534}.line{stroke:#94a3b8;stroke-width:2;fill:none;marker-end:url(#a)}</style><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker></defs>
+  <rect class="bg" width="1200" height="430" rx="22"/>
+  <rect class="panel" x="35" y="55" width="350" height="315" rx="16"/><text class="t" x="70" y="92">A. 권한별 분리 Index</text>
+  <rect class="good" x="75" y="135" width="110" height="55" rx="10"/><text class="s" x="101" y="168">Index A</text><rect class="good" x="210" y="135" width="110" height="55" rx="10"/><text class="s" x="236" y="168">Index B</text>
+  <text class="ok" x="78" y="230">+ 보안 경계 명확</text><text class="x" x="78" y="265">- Index 조합 폭발</text><text class="x" x="78" y="300">- Score 병합 복잡</text>
+  <rect class="panel" x="425" y="55" width="350" height="315" rx="16"/><text class="t" x="460" y="92">B. Post-filtering</text>
+  <rect class="warn" x="505" y="128" width="190" height="62" rx="10"/><text class="s" x="552" y="164">Global Search</text>
+  <rect class="bad" x="505" y="225" width="190" height="62" rx="10"/><text class="s" x="546" y="261">Filter After</text>
+  <path class="line" d="M600 190 L600 225"/><text class="ok" x="468" y="325">+ 운영 단순</text><text class="x" x="578" y="325">- 결과 부족/중간 노출 위험</text>
+  <rect class="panel" x="815" y="55" width="350" height="315" rx="16"/><text class="t" x="850" y="92">C. Pre-filtering 선택</text>
+  <rect class="good" x="900" y="128" width="190" height="62" rx="10"/><text class="s" x="932" y="164">Permission Scope</text>
+  <rect class="good" x="900" y="225" width="190" height="62" rx="10"/><text class="s" x="946" y="261">Allowed Top-K</text>
+  <path class="line" d="M995 190 L995 225"/><text class="ok" x="858" y="325">+ 운영성과 보안성 균형</text>
+  <text class="s" x="56" y="402">선택: 일반 데이터는 통합 Index + Permission-aware Pre-filtering, 고보안 데이터는 분리 Index 예외 전략.</text>
+</svg>

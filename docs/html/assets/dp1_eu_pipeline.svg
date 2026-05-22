@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="460" viewBox="0 0 1200 460" role="img" aria-labelledby="title desc">
+  <title id="title">SPRAG Evidence Unit Pipeline</title>
+  <desc id="desc">오프라인에서 Evidence Unit을 생성하고 온라인에서 단일 또는 소수 EU를 검색하는 흐름</desc>
+  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.off{fill:#eff6ff;stroke:#2563eb}.on{fill:#ecfdf5;stroke:#16a34a}.warn{fill:#fff7ed;stroke:#ea580c}.t{font:700 20px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}.s{font:600 14px Arial,'Noto Sans KR',sans-serif;fill:#334155}.line{stroke:#94a3b8;stroke-width:3;fill:none;marker-end:url(#a)}</style><marker id="a" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#94a3b8"/></marker></defs>
+  <rect class="bg" width="1200" height="460" rx="22"/>
+  <text class="t" x="50" y="52">Offline: 중복 처리를 Index-time으로 이동</text><text class="t" x="760" y="52">Online: Query-time 단순화</text>
+  <rect class="box off" x="55" y="95" width="170" height="72" rx="12"/><text class="s" x="95" y="125">Corpus</text><text class="s" x="82" y="148">Code / Docs</text>
+  <rect class="box off" x="260" y="95" width="170" height="72" rx="12"/><text class="s" x="293" y="125">Segment</text><text class="s" x="294" y="148">Extraction</text>
+  <rect class="box off" x="465" y="95" width="180" height="72" rx="12"/><text class="s" x="505" y="125">Semantic</text><text class="s" x="500" y="148">Clustering</text>
+  <rect class="box off" x="260" y="245" width="170" height="72" rx="12"/><text class="s" x="287" y="275">Entropy-based</text><text class="s" x="307" y="298">Selection</text>
+  <rect class="box off" x="465" y="245" width="180" height="72" rx="12"/><text class="s" x="500" y="275">Adaptive</text><text class="s" x="485" y="298">Summarization</text>
+  <rect class="box warn" x="55" y="245" width="170" height="72" rx="12"/><text class="s" x="91" y="275">Source</text><text class="s" x="88" y="298">Mapping</text>
+  <rect class="box off" x="700" y="170" width="190" height="86" rx="14"/><text class="s" x="742" y="205">Evidence Unit</text><text class="s" x="766" y="230">Index</text>
+  <rect class="box on" x="950" y="95" width="190" height="72" rx="12"/><text class="s" x="987" y="125">User Query</text><text class="s" x="984" y="148">Permission Scope</text>
+  <rect class="box on" x="950" y="245" width="190" height="72" rx="12"/><text class="s" x="982" y="275">Single / Few</text><text class="s" x="1000" y="298">EU Search</text>
+  <rect class="box on" x="950" y="355" width="190" height="56" rx="12"/><text class="s" x="988" y="389">Answer + Citation</text>
+  <path class="line" d="M225 131 L260 131"/><path class="line" d="M430 131 L465 131"/><path class="line" d="M555 167 L555 245"/><path class="line" d="M465 281 L430 281"/><path class="line" d="M260 281 L225 281"/><path class="line" d="M645 281 C675 260 685 238 700 220"/><path class="line" d="M645 131 C680 145 688 168 700 190"/><path class="line" d="M890 213 C920 190 930 160 950 140"/><path class="line" d="M1045 167 L1045 245"/><path class="line" d="M1045 317 L1045 355"/>
+  <text class="s" x="72" y="390">핵심 메시지: EU는 단일 문장이 아니라 유사 Segment 집합을 압축한 증거 단위이며, Prompt 길이와 생성 지연을 줄이는 기반이다.</text>
+</svg>
