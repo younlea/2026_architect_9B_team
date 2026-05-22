@@ -48,6 +48,8 @@
 
 사용자가 언급한 두 가지 옵션은 A와 B에 해당한다. 본 문서에서는 Architecture 관점에서 C를 추가한다. C는 실제 실무 설계에서 보안성과 검색 효율을 동시에 고려할 때 중요한 후보가 될 수 있다.
 
+> Note: Option C는 사용자 최초 후보에는 없던 Architecture-derived Candidate이다. Option A의 물리적/논리적 보안 경계와 Option B의 통합 DB 운영성을 절충하기 위해 추가한 후보이며, 최종 발표에서 후보를 2개로 제한해야 한다면 Appendix 또는 보완 설계로 이동할 수 있다.
+
 ---
 
 ## 4. Option A. 권한별 분리 DB / Index
@@ -193,6 +195,27 @@ flowchart TD
 | 결과 부족 위험 낮음 | ★★☆ | ★☆☆ | ★★★ |
 | 감사 가능성 | ★★☆ | ★★☆ | ★★★ |
 
+### 7.1 KPI 기반 Trade-off 평가
+
+아래 값은 현재 내부 PoC 측정값이 아니라 설계 비교를 위한 `[Expected]` 기준이다. 실제 구현 후에는 권한 Scenario, Repository Scope, Query Set을 고정하고 재측정해야 한다.
+
+| KPI | 측정 의미 | Option A. 권한별 분리 DB / Index | Option B. 통합 DB + Post-filtering | Option C. 통합 DB + Permission-aware Pre-filtering |
+|---|---|---:|---:|---:|
+| Unauthorized Context Exposure Rate | 권한 없는 Chunk가 검색 결과, Context, 답변에 포함되는 비율 | [Expected] 0% 목표 | [Expected] 0% 목표이나 구현 오류 위험 중간 | [Expected] 0% 목표 |
+| Allowed Result Sufficiency@10 | 권한 적용 후 Top-10에 답변 가능한 결과가 충분히 남는 비율 | [Expected] 80~95% | [Expected] 50~80% | [Expected] 85~95% |
+| Permission Filter Latency Overhead | 권한 처리로 추가되는 P95 지연 | [Expected] 낮음~중간 | [Expected] 중간~높음 | [Expected] 중간 |
+| Index Operation Count | 운영해야 하는 Index/DB 개수 | [Expected] 권한 그룹 수에 비례 | [Expected] 1개 중심 | [Expected] 1개 중심 + 예외 분리 |
+| Permission Change Propagation Cost | 권한 변경 시 반영 비용 | [Expected] 높음 | [Expected] 낮음~중간 | [Expected] 중간 |
+| Score Normalization Complexity | 여러 Index 결과를 병합할 때 점수 정규화 복잡도 | [Expected] 높음 | [Expected] 낮음 | [Expected] 낮음 |
+| Audit Explainability | 질의 시 어떤 권한 조건으로 결과가 나왔는지 설명 가능성 | [Expected] 중간 | [Expected] 중간 | [Expected] 높음 |
+| Sensitive Dataset Isolation | 고보안 데이터셋을 일반 데이터와 분리하는 용이성 | [Expected] 높음 | [Expected] 낮음 | [Expected] 중간~높음 |
+
+### 7.2 KPI 평가 해석
+
+- Option A는 권한 경계가 명확하지만, 권한 그룹과 프로젝트가 늘어날수록 Index 운영 수와 병합 복잡도가 커진다.
+- Option B는 운영은 단순하지만, 권한 없는 결과를 검색한 뒤 제거하므로 필터링 후 결과 부족과 중간 결과 노출 위험을 관리해야 한다.
+- Option C는 통합 Index 운영성을 유지하면서 검색 후보군을 권한 Metadata로 먼저 제한한다. 단, Vector/Search DB의 Metadata Filtering 성능과 권한 Metadata 품질이 전제 조건이다.
+
 ---
 
 ## 8. Decision
@@ -212,11 +235,11 @@ flowchart TD
 3. **결과 부족 문제가 줄어든다.**  
    Post-filtering은 Top-K를 가져온 후 권한 없는 결과를 제거하므로 결과가 부족해질 수 있다. Pre-filtering은 처음부터 허용 범위 내에서 Top-K를 구성하므로 이 문제가 완화된다.
 
-4. **기존 Dedup-aware RAG와 결합하기 쉽다.**  
-   Dedup Cluster와 Canonical Chunk에 Permission Metadata를 연결하여, 권한 범위 내에서 대표 Chunk를 선택할 수 있다.
+4. **기존 SPRAG 기반 Evidence Unit RAG와 결합하기 쉽다.**  
+   Evidence Unit과 원본 Segment에 Permission Metadata를 연결하여, 권한 범위 내에서만 EU와 Source Mapping을 사용할 수 있다.
 
 5. **감사와 추적이 가능하다.**  
-   Query 시 사용된 Permission Filter Expression과 반환된 Chunk를 로그로 남기면, 권한 판단 근거를 추적할 수 있다.
+   Query 시 사용된 Permission Filter Expression과 반환된 EU/Segment를 로그로 남기면, 권한 판단 근거를 추적할 수 있다.
 
 ---
 
@@ -235,8 +258,10 @@ flowchart TD
 ### 9.2 권한 Metadata 모델 예시
 
 ```text
-Chunk {
-  chunk_id
+KnowledgeItem {
+  knowledge_item_id
+  eu_id
+  segment_id
   repository_id
   project_id
   department_id
@@ -245,7 +270,6 @@ Chunk {
   allowed_roles
   confidentiality_level
   source_version
-  canonical_group_id
 }
 ```
 
@@ -283,7 +307,7 @@ sequenceDiagram
 - 통합 Index 운영으로 관리 복잡도 감소
 - 권한 없는 데이터가 검색 후보에 포함될 위험 감소
 - 권한 범위 내 Top-K 품질 개선
-- 기존 Dedup-aware RAG와 자연스럽게 결합
+- SPRAG 기반 Evidence Unit RAG와 자연스럽게 결합
 - 권한 판단과 검색 결과의 Audit 가능
 - 프로젝트/부서/역할 변경에 대한 대응성 향상
 
@@ -314,3 +338,25 @@ Unified Index + Permission-aware Pre-filtering
 예외 전략:
 High-confidentiality Data → Separated Secure Index
 ```
+
+---
+
+## 12. References / Evidence
+
+| ID | 문서명 | 출처 | 본 DP에서의 활용 |
+|---|---|---|---|
+| REF-DP2-01 | Filtering data for vector search | OpenSearch Documentation, https://docs.opensearch.org/latest/vector-search/filter-search-knn/index/ | Vector Search에서 filtering during search와 post-filtering 차이를 설명하는 근거 |
+| REF-DP2-02 | k-NN query | OpenSearch Documentation, https://docs.opensearch.org/2.19/query-dsl/specialized/k-nn/ | k-NN 검색에서 filter 필드를 적용할 수 있다는 구현 가능성 근거 |
+| REF-DP2-03 | Filter by metadata | Pinecone Documentation, https://docs.pinecone.io/guides/search/filter-by-metadata | Metadata Filter로 검색 결과를 제한하는 통합 Index 설계 근거 |
+| REF-DP2-04 | Filtering | Qdrant Documentation, https://qdrant.tech/documentation/search/filtering/ | Payload 기반 조건 필터를 Vector Search와 결합할 수 있다는 근거 |
+
+---
+
+## 13. PPT 필수 포함 포인트
+
+| 우선순위 | PPT에 반드시 들어갈 메시지 | 이유 |
+|---|---|---|
+| Must | 권한은 검색 정확도만큼 중요한 Architecture Concern이며, 권한 없는 코드가 답변에 섞이면 보안 사고가 된다. | DP2의 필요성을 강하게 설명한다. |
+| Must | Candidate C는 사용자 최초 후보가 아니라 A/B의 Trade-off를 보완한 Architecture-derived Candidate이다. | 후보가 늘어난 이유를 발표자가 먼저 설명할 수 있어야 한다. |
+| Must | 선택안은 통합 DB + Permission-aware Pre-filtering이며, 검색 전부터 권한 범위 내 후보만 검색한다. | Post-filtering과의 차이를 분명히 보여준다. |
+| Must | 고보안 데이터는 예외적으로 분리 Index를 사용하는 Hybrid 전략을 유지한다. | “통합 DB가 보안상 위험하지 않은가?” 질문에 대한 방어 포인트다. |

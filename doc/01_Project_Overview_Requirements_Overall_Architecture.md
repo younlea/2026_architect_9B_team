@@ -64,7 +64,7 @@
 
 1. 사내 코드 및 관련 문서를 수집한다.
 2. 코드 Chunk, 문서 Chunk, 메타데이터, 권한 정보를 생성한다.
-3. 중복이 많은 코드 데이터에서 검색 품질을 유지할 수 있도록 Offline Dedup-aware RAG 구조를 적용한다.
+3. 중복이 많은 코드 데이터에서 검색 품질을 유지할 수 있도록 SPRAG 기반 Evidence Unit Offline Dedup-aware RAG 구조를 적용한다.
 4. 사용자 권한에 따라 접근 가능한 지식만 검색 또는 답변에 사용한다.
 5. QA 속도와 정확도를 높이기 위해 Knowledge Access Strategy를 정의한다.
 6. 사내 코드 어시스트 툴이 사용할 수 있는 질의 API를 제공한다.
@@ -259,7 +259,7 @@ flowchart TD
 | Data Collector | 사내 코드 Repository, 문서, API Spec, 설계 문서를 수집한다. |
 | Parser / Chunker | 코드와 문서를 검색 가능한 단위로 분할한다. 코드의 경우 함수, 클래스, 파일, 모듈 단위 Chunk를 고려한다. |
 | Metadata Extractor | Repository, Path, Language, Symbol, Commit, Project, Owner 정보를 추출한다. |
-| Dedup-aware RAG Preprocessor | 유사 코드, 반복 문서, 복사된 Chunk를 분석하여 Canonical Chunk 또는 Cluster를 만든다. |
+| Dedup-aware RAG Preprocessor | 유사 코드, 반복 문서, 복사된 Segment를 분석하여 Evidence Unit과 Source Mapping을 만든다. |
 | Permission Tagger | 각 Chunk에 프로젝트/부서/역할 기반 접근 권한 메타데이터를 연결한다. |
 | Embedding / Index Builder | Vector Index와 Keyword Index를 생성한다. |
 | Knowledge Cache Builder | 반복적으로 사용될 설계 지식, 정책, API 요약을 LLM Wiki 형태로 생성한다. |
@@ -278,15 +278,45 @@ flowchart TD
 |---|---|---|
 | DP1 | 중복 데이터에 강한 RAG 구조 선정 | 중복이 많은 코드 데이터에서 Top-K 편향과 Hallucination을 줄이기 위해 어떤 RAG 구조를 사용할 것인가? |
 | DP2 | 권한 기반 Dataset / Retrieval Strategy 선정 | 사용자의 권한 범위 내에서만 검색·답변하기 위해 DB를 어떻게 구성하고 필터링할 것인가? |
-| DP3 | Knowledge Access Strategy 선정 | 기존 Dedup-aware RAG 위에서 QA 속도와 중복 데이터 환경 정확도를 개선하기 위해 어떤 지식 접근 방식을 추가할 것인가? |
+| DP3 | Knowledge Access Strategy 선정 | SPRAG 기반 Evidence Unit RAG 위에서 반복 질의, 답변 일관성, Knowledge 운영성을 개선하기 위해 어떤 지식 접근 방식을 추가할 것인가? |
 
-### 3.1.5 Architecture 핵심 방향
+### 3.1.5 요구사항 / 품질속성 / Design Point 관계
+
+| Driver ID | Driver 유형 | 주요 내용 | 관련 QA | 관련 DP | 설계 연결 |
+|---|---|---|---|---|---|
+| FR-01 | Functional Requirement | 코드/문서 데이터 수집 및 인덱싱 | QA-06, QA-07, QA-10 | DP1, DP2 | Chunk, Metadata, Permission 정보를 함께 생성해야 Dedup 및 권한 기반 Retrieval이 가능하다. |
+| FR-02 | Functional Requirement | 코드 어시스트 질의 처리 | QA-01, QA-02, QA-08 | DP1, DP2, DP3 | 질의 처리 경로는 Dedup-aware Retrieval, Permission Filtering, Knowledge Cache를 순차적으로 활용한다. |
+| FR-03 | Functional Requirement | 권한 기반 검색 및 답변 제어 | QA-03, QA-04, QA-08 | DP2 | 사용자의 권한 범위 안에서만 검색 후보와 답변 Context를 구성해야 한다. |
+| FR-04 | Functional Requirement | 중복 데이터 제어 | QA-01, QA-02, QA-05 | DP1, DP3 | Evidence Unit 기반 Offline Dedup과 Canonical Knowledge를 통해 Top-K 중복 편향과 Context 낭비를 줄인다. |
+| FR-05 | Functional Requirement | 근거 코드/문서 Citation 제공 | QA-01, QA-08 | DP1, DP2, DP3 | Evidence Unit, 원본 Segment, 권한 판단, Wiki Page의 Source Mapping을 추적 가능하게 유지한다. |
+| FR-06 | Functional Requirement | 기존 사내 코드 어시스트 툴 연동 API 제공 | QA-02, QA-06, QA-10 | DP2, DP3 | API Gateway가 사용자 권한, 검색 결과, Citation, Cache/Fallback 결과를 일관된 응답으로 제공한다. |
+| FR-07 | Functional Requirement | Knowledge Cache / Wiki 관리 | QA-02, QA-06, QA-07, QA-08 | DP3 | 반복 질의와 설계 지식을 Wiki 형태로 관리하되, 최신성 검증과 기존 RAG Fallback을 유지한다. |
+| CON-01 | Constraint | 사내 코드 외부 유출 금지 | QA-03, QA-04, QA-08 | DP2 | Permission-aware Pre-filtering과 Audit Logging이 필수 설계 요소가 된다. |
+| CON-02 | Constraint | 별도 코드 어시스트 전용 모델 개발 제외 | QA-06, QA-09 | DP1, DP3 | Fine-tuning보다 Retrieval, Dedup, Cache 기반 구조를 우선한다. |
+
+### 3.1.6 Design Point별 KPI 후보
+
+아래 KPI는 내부 측정값이 아직 없는 설계 단계 기준이므로 모두 `[Expected]`로 표시한다. 실제 PoC 이후에는 측정값으로 대체해야 한다.
+
+| DP | KPI | 의미 | 목표 방향 |
+|---|---|---|---|
+| DP1 | Top-K Duplicate Ratio | Top-K 결과 중 동일/유사 Cluster가 차지하는 비율 | [Expected] 낮을수록 좋음 |
+| DP1 | Context Diversity@K | Top-K 안에 포함된 서로 다른 근거 Cluster 수 | [Expected] 높을수록 좋음 |
+| DP1 | Citation Trace Coverage | 답변 근거가 원본 Segment와 Evidence Unit까지 추적 가능한 비율 | [Expected] 높을수록 좋음 |
+| DP2 | Unauthorized Context Exposure Rate | 권한 없는 Chunk가 검색/Context/답변에 포함되는 비율 | [Expected] 0% 목표 |
+| DP2 | Allowed Result Sufficiency@K | 권한 필터 후 답변 가능한 결과가 충분히 남는 비율 | [Expected] 높을수록 좋음 |
+| DP2 | Permission Filter Latency Overhead | 권한 처리 때문에 추가되는 지연 시간 | [Expected] 낮을수록 좋음 |
+| DP3 | Wiki Cache Hit Rate | Wiki/Cache에서 우선 답변 가능한 질의 비율 | [Expected] 높을수록 좋음 |
+| DP3 | P95 QA Latency | 95% 질의의 End-to-end 응답 시간 | [Expected] 낮을수록 좋음 |
+| DP3 | Stale Answer Rate | 최신 원문과 불일치하는 Cache/Wiki 답변 비율 | [Expected] 낮을수록 좋음 |
+
+### 3.1.7 Architecture 핵심 방향
 
 1. **Model Training보다 RAG 중심**
    - 별도 모델 개발이나 Fine-tuning 대신, 최신 사내 코드 지식을 Retrieval로 제공한다.
 
-2. **Offline Dedup-aware RAG를 Baseline으로 채택**
-   - 중복 코드가 많은 환경을 고려해 Offline 단계에서 중복과 유사성을 제어한다.
+2. **SPRAG 기반 Evidence Unit Offline Dedup-aware RAG를 Baseline으로 채택**
+   - 중복 코드가 많은 환경을 고려해 Offline 단계에서 Evidence Unit을 생성하고, 중복성과 유사성을 제어한다.
 
 3. **권한은 검색 정확도만큼 중요한 Architecture Concern**
    - 검색 결과가 정확하더라도 권한이 맞지 않으면 사용할 수 없다.
@@ -298,3 +328,24 @@ flowchart TD
 
 5. **Citation과 Audit을 기본 기능으로 포함**
    - 코드 어시스트 답변은 근거 코드와 문서가 확인 가능해야 신뢰할 수 있다.
+
+---
+
+## 4. References / Evidence
+
+| ID | 문서명 | 출처 | 본 과제에서의 활용 |
+|---|---|---|---|
+| REF-01 | Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks | Lewis et al., NeurIPS 2020 / arXiv, https://arxiv.org/abs/2005.11401 | RAG를 모델 재학습 없이 외부 지식 검색과 결합하는 기본 접근 근거로 활용 |
+| REF-02 | RAGAS: Automated Evaluation of Retrieval Augmented Generation | Es et al., arXiv, https://arxiv.org/abs/2309.15217 | Context Precision, Context Recall, Faithfulness 등 RAG 평가 KPI 후보 근거로 활용 |
+| REF-03 | OpenSearch Filtering data for vector search | OpenSearch Documentation, https://docs.opensearch.org/latest/vector-search/filter-search-knn/index/ | Vector Search에서 filtering 방식과 post-filtering의 결과 부족 위험을 설명하는 근거로 활용 |
+| REF-04 | Pinecone Filter by metadata | Pinecone Documentation, https://docs.pinecone.io/guides/search/filter-by-metadata | 통합 Index에서 Metadata Filter로 검색 범위를 제한할 수 있다는 구현 가능성 근거로 활용 |
+
+---
+
+## 5. PPT 필수 포함 포인트
+
+| 우선순위 | PPT에 반드시 들어갈 메시지 | 이유 |
+|---|---|---|
+| Must | 본 과제는 구현이 아니라 사내 코드 어시스트용 RAG Architecture 설계 과제이다. | 평가자가 Scope를 혼동하지 않도록 첫 장에서 경계를 잡아야 한다. |
+| Must | 핵심 Driver는 보안/권한, 중복 데이터 강건성, 응답 속도, 근거 추적성이다. | 세 개 DP가 왜 필요한지 설명하는 상위 기준이다. |
+| Must | 전체 설계 흐름은 DP1 SPRAG 기반 중복 제어, DP2 권한 기반 Retrieval, DP3 Knowledge Cache로 이어진다. | 발표의 메인 스토리라인이며, 문서 간 싱크의 중심이다. |
