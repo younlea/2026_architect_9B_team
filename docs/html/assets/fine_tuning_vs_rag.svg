@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="420" viewBox="0 0 1200 420" role="img" aria-labelledby="title desc">
+  <title id="title">Fine-tuning vs RAG</title>
+  <desc id="desc">사내 보안 데이터를 활용하는 Fine-tuning 접근과 RAG 접근 비교</desc>
+  <style>
+    .bg{fill:#f8fbff}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:2}.ft{fill:#fee2e2;stroke:#dc2626;stroke-width:3}.rag{fill:#dcfce7;stroke:#16a34a;stroke-width:3}.mid{fill:#e0f2fe;stroke:#0284c7;stroke-width:3}
+    .t{font:700 24px Arial,sans-serif;fill:#172033}.h{font:700 18px Arial,sans-serif;fill:#243247}.s{font:600 14px Arial,sans-serif;fill:#334155}.small{font:13px Arial,sans-serif;fill:#64748b}.line{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="1200" height="420"/>
+  <text class="t" x="48" y="50">신규 모델 직접 개발 없이 사내 Coding Assist를 제공하는 방법</text>
+  <rect class="mid" x="485" y="92" width="230" height="72" rx="14"/><text class="h" x="533" y="122">Secure Code</text><text class="small" x="528" y="145">사내 코드 / 문서 / 버전</text>
+  <rect class="ft" x="90" y="210" width="360" height="135" rx="16"/><text class="h" x="135" y="245">Fine-tuning 중심</text><text class="small" x="125" y="276">Training + Storage + Custom Inference 비용</text><text class="small" x="125" y="302">권한/버전별 지식 분리 어려움</text><text class="small" x="125" y="328">코드 변경 시 최신성 관리 부담</text>
+  <rect class="rag" x="750" y="210" width="360" height="135" rx="16"/><text class="h" x="808" y="245">RAG 중심</text><text class="small" x="785" y="276">Index / Metadata / Cache 갱신</text><text class="small" x="785" y="302">권한 + 버전 + Citation 제어</text><text class="small" x="785" y="328">Architecture 설계 과제에 적합</text>
+  <path class="line" d="M540 164 C410 190 320 190 270 210"/><path class="line" d="M660 164 C790 190 880 190 930 210"/>
+</svg>

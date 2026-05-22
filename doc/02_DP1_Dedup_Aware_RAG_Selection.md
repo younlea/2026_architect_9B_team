@@ -30,6 +30,39 @@ Top-5 결과:
 
 이 경우 LLM은 충분히 다양한 근거를 받지 못하고, 같은 정보를 여러 번 받은 것처럼 Context를 구성하게 된다. 이는 답변 정확도 저하, Hallucination 증가, 오래된 코드의 최신 구현 오인, Context Token 낭비로 이어질 수 있다.
 
+### 1.3 발표용 배경 태그
+
+| 구분 | 관련 항목 |
+|---|---|
+| Stakeholder | 사내 개발자, Software Architect / Technical Lead, 플랫폼/인프라 운영팀, 교육/양성과정 평가자 |
+| FR | FR-01 코드/문서 데이터 수집 및 인덱싱, FR-02 코드 어시스트 질의 처리, FR-04 중복 데이터 제어, FR-05 Citation 제공 |
+| QA | QA-01 정확도, QA-02 응답 속도, QA-05 중복 데이터 강건성, QA-08 근거 추적성 |
+| 핵심 문제 | Top-K 중복 잠식, Context Token 낭비, Deprecated 코드 오인, 근거 다양성 부족 |
+
+### 1.4 배경 상황 설명
+
+DP1이 필요한 이유는 “RAG를 쓸 것인가?”가 아니라, **코드 데이터처럼 중복이 많은 Corpus에서 어떤 RAG 구조가 검색 근거의 다양성과 신뢰성을 유지할 수 있는가**이다.
+
+사내 코드베이스에서는 동일한 기능이 여러 Repository, Branch, Release, 샘플 코드, Legacy 코드에 반복해서 나타난다. 개발자가 “이 API를 어떻게 써야 해?”라고 질문하면 단순 Top-K 검색은 의미적으로 거의 같은 구현만 여러 개 반환할 수 있다. 이 경우 LLM은 다양한 근거를 받지 못하고, 오래된 구현이나 샘플 코드를 실제 권장 구현으로 오인할 수 있다.
+
+이 문제는 단순히 “중복 결과가 보기 싫다” 수준이 아니다. 코드 어시스트에서는 검색 결과 하나하나가 LLM 답변의 근거가 되고, 그 근거가 실제 코드 작성 방향으로 이어진다. Top-K가 유사한 구현으로만 채워지면 LLM은 대안 구현, 최신 구현, 공식 문서, 주의사항 같은 보완 근거를 함께 보지 못한다. 결과적으로 답변은 그럴듯하지만 특정 복사본에 과적합될 수 있고, Deprecated 코드나 샘플 코드를 실제 운영 코드처럼 설명할 수 있다.
+
+또한 중복 데이터는 비용 문제로도 이어진다. 같은 의미의 Chunk를 여러 번 Prompt에 넣으면 Context Token이 낭비되고, Reranking과 LLM 생성 지연도 증가한다. 따라서 DP1은 중복을 단순 후처리로 지울지, 계층적으로 요약할지, 혹은 인덱싱 단계에서 대표 근거 단위로 압축할지 결정해야 하는 지점이다.
+
+따라서 DP1의 배경 페이지에서는 후보명을 먼저 말하기보다 다음 문제 흐름을 강조한다.
+
+```text
+중복 Source 증가
+ → Top-K가 유사 Chunk로 잠식
+ → Context 다양성 감소
+ → Prompt Token / Rerank 비용 증가
+ → 답변 정확도와 근거 신뢰도 저하
+```
+
+### 1.5 예상 발표 스크립트
+
+사내 코드베이스는 일반 문서보다 중복이 훨씬 많이 발생합니다. 같은 기능이 여러 프로젝트에 복사되어 있거나, 버전별로 거의 같은 파일이 남아 있거나, 샘플 코드와 실제 운영 코드가 함께 검색될 수 있습니다. 이런 상태에서 단순 Top-K 검색을 하면 검색 결과가 모두 비슷한 코드 조각으로 채워질 수 있고, LLM은 충분히 다양한 근거를 보지 못합니다. 특히 오래된 구현이나 샘플 코드를 최신 권장 구현으로 오인하면 코드 어시스트의 신뢰도가 크게 떨어집니다. 또한 같은 의미의 Context가 반복해서 Prompt에 들어가면 Token 비용과 응답 지연도 증가합니다. 그래서 DP1은 중복이 많은 코드 환경에서 검색 근거를 어떻게 다양하고 대표성 있게 구성할지 결정하는 지점입니다.
+
 ---
 
 ## 2. 관련 Quality Attributes
@@ -187,7 +220,7 @@ flowchart TD
 - EU 내 압축 요약 정보를 활용하므로 Prompt 길이와 생성 지연 시간을 줄일 수 있다.
 - Adaptive Summarization으로 중복 제거 후에도 원본 정보의 핵심을 보존할 수 있다.
 - 원본 Segment와 EU의 관계를 유지하면 근거 추적이 가능하다.
-- 이후 LLM Wiki, 권한 필터링, Reranking 전략과 결합하기 좋다.
+- 이후 LLM Wiki, 권한/버전 기반 Source Routing, Reranking 전략과 결합하기 좋다.
 
 ### 6.4 단점
 
@@ -229,6 +262,17 @@ SPRAG 방식의 성능은 Dataset의 중복성 강도와 EU의 구조적 집계 
 ---
 
 ## 7. Trade-off 평가
+
+### 7.0 발표용 비교 기준
+
+DP1 비교 페이지에서는 각 후보를 다음 QA 4개로 비교한다.
+
+| QA | ★☆☆ 기준 | ★★☆ 기준 | ★★★ 기준 | 근거 / 측정 방식 |
+|---|---|---|---|---|
+| QA-01 정확도 | 중복으로 필요한 근거가 자주 누락 | 일부 보완되나 코드 세부 정보 손실 가능 | 중복을 줄이면서 핵심 근거와 다양성을 유지 | EM/F1, RAGAS Faithfulness, Human Eval |
+| QA-02 응답 속도 | 중복 Context와 큰 Prompt로 지연 증가 | 요약/계층화로 일부 감소 | Prompt 길이와 Query-time 처리량을 크게 감소 | P95 Latency, Prompt Length |
+| QA-05 중복 강건성 | Top-K 중복 잠식 위험 큼 | Cluster/Summary로 일부 완화 | 중복 처리를 구조적으로 제어 | Top-K Duplicate Ratio, Context Diversity@K |
+| QA-08 근거 추적성 | Chunk 출처만 추적 | Summary와 원문 연결 유지 필요 | 압축 근거와 원본 Segment Mapping 유지 | Citation Trace Coverage |
 
 평가 기준: ★★★ 매우 우수, ★★☆ 보통 이상, ★☆☆ 제한적
 
@@ -283,7 +327,7 @@ SPRAG 방식의 성능은 Dataset의 중복성 강도와 EU의 구조적 집계 
    중복 Segment를 EU로 압축하고 단일 또는 소수 EU를 우선 제공하면 LLM Prompt를 더 짧고 의미 있는 정보로 구성할 수 있다.
 
 4. **추후 DP와 결합하기 좋다.**  
-   권한 기반 필터링, LLM Wiki Knowledge Cache, Hybrid Retrieval 등의 후속 설계가 Evidence Unit과 Source Mapping을 기반으로 동작할 수 있다.
+   권한/버전 기반 Source Routing, LLM Wiki Knowledge Cache, Hybrid Retrieval 등의 후속 설계가 Evidence Unit과 Source Mapping을 기반으로 동작할 수 있다.
 
 5. **코드 도메인에 적합하다.**  
    코드에서는 동일한 의미의 구현이 여러 파일/버전/프로젝트에 존재할 수 있으므로, 엔트로피 기반 선택과 EU 압축으로 중복성과 다양성의 균형을 관리하는 것이 중요하다.
@@ -318,12 +362,12 @@ SPRAG 방식의 성능은 Dataset의 중복성 강도와 EU의 구조적 집계 
 
 SPRAG 기반 Evidence Unit Offline Dedup-aware RAG는 본 과제의 Baseline Retrieval 구조가 된다.
 
-- DP2에서는 EU와 원본 Segment의 권한 Metadata를 어떻게 결합할지 결정한다.
+- DP2에서는 EU와 원본 Segment의 권한 Metadata 및 Source Version Metadata를 어떻게 결합할지 결정한다.
 - DP3에서는 EU와 Source Mapping 결과를 기반으로 LLM Wiki Knowledge Cache를 생성할지 결정한다.
 
 ```mermaid
 flowchart LR
-    A[DP1<br/>Evidence Unit Offline Dedup-aware RAG] --> B[DP2<br/>Permission-aware Dataset Strategy]
+    A[DP1<br/>Evidence Unit Offline Dedup-aware RAG] --> B[DP2<br/>Permission / Version Strategy]
     A --> C[DP3<br/>Knowledge Access Strategy]
 ```
 

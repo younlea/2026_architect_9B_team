@@ -31,6 +31,15 @@
 - 문서 간 용어, ID, 상태, 링크가 서로 어긋나지 않도록 확인한다.
 - 외부 근거가 필요한 내용은 출처가 확인되기 전까지 확정 정보처럼 쓰지 않는다.
 
+## HTML / PPT 백데이터 동기화 기준
+
+- `doc/01_Project_Overview_Requirements_Overall_Architecture.md`, `doc/02_DP1_Dedup_Aware_RAG_Selection.md`, `doc/03_DP2_Permission_Aware_Dataset_Strategy.md`, `doc/04_DP3_Knowledge_Access_Strategy.md` 중 하나라도 업데이트되면 `docs/html/ppt_content_pages.html`도 같은 작업 범위에서 함께 업데이트한다.
+- Markdown 문서의 요구사항, QA, KPI, Design Point, 선택안, Trade-off, References, PPT 필수 포함 포인트가 바뀌면 HTML의 해당 페이지 탭과 표/다이어그램/발표자용 문구를 함께 맞춘다.
+- HTML에서 참조하는 시각 자료가 변경 필요하면 `docs/html/assets/` 아래 SVG 또는 기타 asset도 함께 업데이트한다.
+- Mermaid 다이어그램은 `docs/html/assets/mermaid.min.js`를 사용하는 로컬 렌더링 방식을 유지한다.
+- `docs/html/ppt_content_pages.html`은 최종 PPT가 아니라 PPT 제작을 위한 백데이터/페이지별 초안이므로, 정보가 다소 밀도 있게 들어가도 된다.
+- `doc/readme.md`와 `doc/RAPTOR_Hierarchical_RAG.pptx`는 사용자가 별도로 요청하지 않는 한 HTML 동기화 대상에서 제외한다.
+
 ## 응답 기준
 
 - 최종 답변은 작업 결과, 변경 파일, 확인한 사항을 간결하게 설명한다.

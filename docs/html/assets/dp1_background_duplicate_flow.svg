@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">DP1 Duplicate Background</title>
+  <desc id="desc">중복 코드가 Top-K를 잠식하고 답변 품질과 지연에 영향을 주는 배경 도식</desc>
+  <style>
+    .bg{fill:#f8fbff}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.dup{fill:#fee2e2;stroke:#dc2626;stroke-width:3}.warn{fill:#fef3c7;stroke:#d97706;stroke-width:3}.target{fill:#dcfce7;stroke:#16a34a;stroke-width:3}
+    .t{font:700 23px Arial,sans-serif;fill:#172033}.h{font:700 16px Arial,sans-serif;fill:#243247}.s{font:600 13px Arial,sans-serif;fill:#334155}.small{font:12px Arial,sans-serif;fill:#64748b}.line{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="1200" height="360"/>
+  <text class="t" x="40" y="48">DP1 배경: 코드 중복은 검색 품질과 생성 비용을 동시에 흔든다</text>
+  <rect class="box" x="60" y="110" width="180" height="105" rx="14"/><text class="h" x="96" y="142">Code Corpus</text><text class="small" x="88" y="170">Repo / Branch / Sample</text><text class="small" x="88" y="193">Legacy / Template</text>
+  <rect class="dup" x="310" y="82" width="220" height="165" rx="14"/><text class="h" x="365" y="116">Top-K 잠식</text><text class="small" x="342" y="150">validateToken v1</text><text class="small" x="342" y="176">validateToken v2</text><text class="small" x="342" y="202">sample validateToken</text><text class="small" x="342" y="228">legacy validateToken</text>
+  <rect class="warn" x="610" y="82" width="210" height="80" rx="14"/><text class="h" x="654" y="116">근거 다양성 감소</text><text class="small" x="644" y="140">문서 / 최신 구현 / 주의사항 누락</text>
+  <rect class="warn" x="610" y="190" width="210" height="80" rx="14"/><text class="h" x="660" y="224">Token / 지연 증가</text><text class="small" x="648" y="248">유사 Context 반복 투입</text>
+  <rect class="dup" x="900" y="115" width="220" height="105" rx="14"/><text class="h" x="947" y="150">답변 위험</text><text class="small" x="940" y="178">Deprecated 오인 / Hallucination</text><text class="small" x="940" y="200">Citation 신뢰도 저하</text>
+  <path class="line" d="M240 162 H310"/><path class="line" d="M530 145 H610"/><path class="line" d="M530 190 C565 218 575 230 610 230"/><path class="line" d="M820 122 H900"/><path class="line" d="M820 230 C858 212 870 190 900 172"/>
+  <rect class="target" x="380" y="292" width="430" height="40" rx="12"/><text class="s" x="438" y="317">DP1 질문: 중복 근거를 어떻게 제어해 다양성과 속도를 유지할 것인가?</text>
+</svg>

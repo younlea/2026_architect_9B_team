@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="450" viewBox="0 0 1200 450" role="img" aria-labelledby="title desc">
+  <title id="title">General Document RAG and Code Assist RAG Focus</title>
+  <desc id="desc">일반 문서용 RAG의 주요 관심사와 코드 어시스트 RAG의 Architecture Driver를 분리해 보여주는 도식</desc>
+  <style>
+    .bg{fill:#f8fbff}.panel{fill:#fff;stroke:#cbd5e1;stroke-width:2}.doc{fill:#e0f2fe;stroke:#0284c7;stroke-width:3}.code{fill:#fef3c7;stroke:#d97706;stroke-width:3}.dp{fill:#dcfce7;stroke:#16a34a;stroke-width:2}.bridge{fill:#f1f5f9;stroke:#64748b;stroke-width:2}
+    .t{font:700 24px Arial,sans-serif;fill:#172033}.h{font:700 18px Arial,sans-serif;fill:#243247}.s{font:600 14px Arial,sans-serif;fill:#334155}.small{font:13px Arial,sans-serif;fill:#64748b}.line{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="1200" height="450"/>
+  <text class="t" x="48" y="50">일반 문서 RAG의 관심사와 코드 어시스트 RAG의 Driver는 다르다</text>
+
+  <rect class="doc" x="55" y="92" width="365" height="285" rx="16"/>
+  <text class="h" x="152" y="128">일반 문서용 RAG</text>
+  <text class="small" x="92" y="168">A. 문서 의미 검색</text>
+  <text class="small" x="92" y="203">B. 요약 품질</text>
+  <text class="small" x="92" y="238">C. 출처 인용</text>
+  <text class="small" x="92" y="273">D. 최신 문서 반영</text>
+  <text class="small" x="92" y="308">E. 질문 의도 파악</text>
+  <text class="small" x="92" y="343">목표: 문서를 잘 찾고 이해하기 쉽게 답변</text>
+
+  <rect class="bridge" x="455" y="168" width="150" height="130" rx="14"/>
+  <text class="s" x="486" y="206">공통 기반</text>
+  <text class="small" x="486" y="237">Retrieval</text>
+  <text class="small" x="486" y="262">Context</text>
+  <text class="small" x="486" y="287">LLM Answer</text>
+
+  <rect class="code" x="640" y="92" width="505" height="285" rx="16"/>
+  <text class="h" x="806" y="128">코드 어시스트 RAG</text>
+  <text class="small" x="680" y="168">중복성: 복사 구현 / 샘플 코드 / 버전별 유사 파일</text>
+  <text class="small" x="680" y="203">권한 민감성: Repository / Project / 보안 모듈 접근 제한</text>
+  <text class="small" x="680" y="238">최신성/버전: Branch / Release / Commit마다 정답이 달라짐</text>
+  <text class="small" x="680" y="273">정확도/속도: 틀린 API 제안은 실제 오류, 느린 응답은 흐름 단절</text>
+  <text class="small" x="680" y="308">근거 추적: File / Symbol / Segment / Commit / 권한 판단 Citation</text>
+
+  <rect class="dp" x="690" y="335" width="120" height="38" rx="9"/><text class="s" x="723" y="360">DP1</text>
+  <rect class="dp" x="835" y="335" width="120" height="38" rx="9"/><text class="s" x="868" y="360">DP2</text>
+  <rect class="dp" x="980" y="335" width="120" height="38" rx="9"/><text class="s" x="1013" y="360">DP3</text>
+
+  <path class="line" d="M420 232 H455"/><path class="line" d="M605 232 H640"/>
+  <text class="small" x="70" y="420">결론: 코드 어시스트 RAG는 일반 문서 RAG의 검색/요약 문제 위에 중복, 권한, 버전, 실행 정확도, 근거 추적 문제가 추가된다.</text>
+</svg>

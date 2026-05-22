@@ -1,54 +1,43 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="780" viewBox="0 0 1400 780" role="img" aria-labelledby="title desc">
-  <title id="title">Overall Architecture DP 영향도</title>
-  <desc id="desc">전체 아키텍처에서 DP1, DP2, DP3가 영향을 주는 컴포넌트 영역을 색상으로 표시</desc>
-  <defs>
-    <style>
-      .bg{fill:#f8fafc}.zone{fill:#fff;stroke:#cbd5e1;stroke-width:2}.c{fill:#ffffff;stroke:#64748b;stroke-width:1.5}.t{font:700 20px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}.s{font:600 14px Arial,'Noto Sans KR',sans-serif;fill:#334155}.l{font:700 15px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}.arrow{stroke:#94a3b8;stroke-width:2;fill:none;marker-end:url(#arrow)}.dp1{fill:#dbeafe;stroke:#2563eb;stroke-width:4;fill-opacity:.52}.dp2{fill:#dcfce7;stroke:#16a34a;stroke-width:4;fill-opacity:.52}.dp3{fill:#fef3c7;stroke:#d97706;stroke-width:4;fill-opacity:.56}.legend{font:700 15px Arial,'Noto Sans KR',sans-serif;fill:#0f172a}
-    </style>
-    <marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L8,3 z" fill="#94a3b8"/></marker>
-  </defs>
-  <rect class="bg" width="1400" height="780" rx="24"/>
-  <rect class="zone" x="45" y="70" width="270" height="520" rx="18"/><text class="t" x="80" y="105">Internal Data Sources</text>
-  <rect class="zone" x="365" y="70" width="365" height="520" rx="18"/><text class="t" x="405" y="105">Offline Processing</text>
-  <rect class="zone" x="780" y="70" width="250" height="520" rx="18"/><text class="t" x="835" y="105">Storage</text>
-  <rect class="zone" x="1080" y="70" width="275" height="520" rx="18"/><text class="t" x="1125" y="105">Online QA</text>
-  <rect class="dp1" x="382" y="218" width="318" height="220" rx="18"/><text class="l" x="402" y="244">DP1: SPRAG / EU 생성</text>
-  <rect class="dp2" x="385" y="410" width="935" height="115" rx="18"/><text class="l" x="405" y="438">DP2: Permission Metadata / Pre-filtering</text>
-  <rect class="dp3" x="505" y="308" width="780" height="190" rx="18"/><text class="l" x="525" y="335">DP3: Wiki Knowledge Cache / Query Routing</text>
-  <g>
-    <rect class="c" x="78" y="145" width="200" height="48" rx="10"/><text class="s" x="113" y="175">Code Repositories</text>
-    <rect class="c" x="78" y="215" width="200" height="48" rx="10"/><text class="s" x="120" y="245">API Documents</text>
-    <rect class="c" x="78" y="285" width="200" height="48" rx="10"/><text class="s" x="104" y="315">Architecture Docs</text>
-    <rect class="c" x="78" y="355" width="200" height="48" rx="10"/><text class="s" x="120" y="385">README / Wiki</text>
-    <rect class="c" x="78" y="425" width="200" height="48" rx="10"/><text class="s" x="103" y="455">Permission / IAM</text>
-  </g>
-  <g>
-    <rect class="c" x="410" y="145" width="260" height="45" rx="10"/><text class="s" x="486" y="173">Collector</text>
-    <rect class="c" x="410" y="218" width="260" height="45" rx="10"/><text class="s" x="462" y="246">Parser / Segmenter</text>
-    <rect class="c" x="410" y="290" width="260" height="45" rx="10"/><text class="s" x="450" y="318">SPRAG EU Builder</text>
-    <rect class="c" x="410" y="362" width="260" height="45" rx="10"/><text class="s" x="457" y="390">Source Mapping</text>
-    <rect class="c" x="410" y="435" width="260" height="45" rx="10"/><text class="s" x="459" y="463">Permission Tagger</text>
-    <rect class="c" x="410" y="508" width="260" height="45" rx="10"/><text class="s" x="460" y="536">Index / Wiki Build</text>
-  </g>
-  <g>
-    <rect class="c" x="812" y="145" width="185" height="45" rx="10"/><text class="s" x="848" y="173">EU Index</text>
-    <rect class="c" x="812" y="215" width="185" height="45" rx="10"/><text class="s" x="850" y="243">Vector Index</text>
-    <rect class="c" x="812" y="285" width="185" height="45" rx="10"/><text class="s" x="850" y="313">Keyword Index</text>
-    <rect class="c" x="812" y="355" width="185" height="45" rx="10"/><text class="s" x="830" y="383">Permission Store</text>
-    <rect class="c" x="812" y="425" width="185" height="45" rx="10"/><text class="s" x="838" y="453">Wiki Cache</text>
-  </g>
-  <g>
-    <rect class="c" x="1110" y="145" width="210" height="45" rx="10"/><text class="s" x="1157" y="173">Query API</text>
-    <rect class="c" x="1110" y="215" width="210" height="45" rx="10"/><text class="s" x="1140" y="243">Permission Resolver</text>
-    <rect class="c" x="1110" y="285" width="210" height="45" rx="10"/><text class="s" x="1152" y="313">Retriever</text>
-    <rect class="c" x="1110" y="355" width="210" height="45" rx="10"/><text class="s" x="1145" y="383">Context Builder</text>
-    <rect class="c" x="1110" y="425" width="210" height="45" rx="10"/><text class="s" x="1159" y="453">Internal LLM</text>
-    <rect class="c" x="1110" y="495" width="210" height="45" rx="10"/><text class="s" x="1147" y="523">Citation / Audit</text>
-  </g>
-  <path class="arrow" d="M278 168 L410 168"/><path class="arrow" d="M670 168 L812 168"/><path class="arrow" d="M997 168 L1110 168"/>
-  <path class="arrow" d="M278 449 L410 449"/><path class="arrow" d="M670 449 L812 449"/><path class="arrow" d="M997 449 L1110 449"/>
-  <rect x="55" y="635" width="1290" height="90" rx="14" fill="#fff" stroke="#cbd5e1"/>
-  <rect x="80" y="660" width="28" height="18" class="dp1"/><text class="legend" x="120" y="675">DP1: 중복 Segment를 Evidence Unit으로 압축하고 검색 단위를 단순화</text>
-  <rect x="80" y="694" width="28" height="18" class="dp2"/><text class="legend" x="120" y="709">DP2: EU/Segment/Index에 권한 Metadata를 부여하고 검색 전 후보 범위를 제한</text>
-  <rect x="720" y="660" width="28" height="18" class="dp3"/><text class="legend" x="760" y="675">DP3: EU/Source Mapping을 Wiki Knowledge로 승격하고 Query Routing/Fallback을 제어</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="760" viewBox="0 0 1400 760" role="img" aria-labelledby="title desc">
+  <title id="title">Overall Architecture DP Impact</title>
+  <desc id="desc">DP1 중복 제어, DP2 권한/버전 제어, DP3 Knowledge Access가 전체 아키텍처에 미치는 영역</desc>
+  <style>
+    .bg{fill:#f8fbff}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.dp1{fill:#dbeafe;stroke:#2563eb;stroke-width:4;opacity:.82}.dp2{fill:#dcfce7;stroke:#16a34a;stroke-width:4;opacity:.82}.dp3{fill:#fef3c7;stroke:#d97706;stroke-width:4;opacity:.86}
+    .t{font:700 25px Arial,sans-serif;fill:#172033}.h{font:700 18px Arial,sans-serif;fill:#243247}.s{font:600 15px Arial,sans-serif;fill:#334155}.l{font:700 17px Arial,sans-serif;fill:#0f172a}.small{font:13px Arial,sans-serif;fill:#64748b}.line{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="1400" height="760"/>
+  <text class="t" x="48" y="55">Overall Architecture에서 DP 영향 영역</text>
+
+  <rect class="box" x="48" y="92" width="260" height="260" rx="16"/><text class="h" x="84" y="128">Internal Sources</text>
+  <rect class="box" x="78" y="155" width="200" height="42" rx="9"/><text class="s" x="112" y="182">Code Repositories</text>
+  <rect class="box" x="78" y="211" width="200" height="42" rx="9"/><text class="s" x="111" y="238">API / Design Docs</text>
+  <rect class="box" x="78" y="267" width="200" height="42" rx="9"/><text class="s" x="103" y="294">IAM / Version Data</text>
+
+  <rect class="box" x="370" y="92" width="330" height="410" rx="16"/><text class="h" x="432" y="128">Offline Processing</text>
+  <rect class="dp1" x="398" y="155" width="250" height="92" rx="12"/><text class="l" x="435" y="190">DP1 중복 제어</text><text class="small" x="425" y="218">Segment / EU / Source Mapping</text>
+  <rect class="dp2" x="398" y="270" width="250" height="92" rx="12"/><text class="l" x="424" y="305">DP2 권한/버전 태깅</text><text class="small" x="421" y="333">Permission + Source Version</text>
+  <rect class="dp3" x="398" y="385" width="250" height="82" rx="12"/><text class="l" x="429" y="420">DP3 지식 계층 생성</text><text class="small" x="437" y="448">Knowledge Cache / Wiki</text>
+
+  <rect class="box" x="770" y="92" width="260" height="410" rx="16"/><text class="h" x="842" y="128">Storage</text>
+  <rect class="dp1" x="800" y="155" width="200" height="58" rx="10"/><text class="s" x="834" y="190">RAG Index</text>
+  <rect class="dp2" x="800" y="235" width="200" height="58" rx="10"/><text class="s" x="824" y="270">Permission / Version</text>
+  <rect class="dp3" x="800" y="315" width="200" height="58" rx="10"/><text class="s" x="839" y="350">Knowledge Cache</text>
+  <rect class="box" x="800" y="395" width="200" height="58" rx="10"/><text class="s" x="846" y="430">Audit Logs</text>
+
+  <rect class="box" x="1090" y="92" width="260" height="410" rx="16"/><text class="h" x="1176" y="128">Online QA</text>
+  <rect class="box" x="1120" y="155" width="200" height="42" rx="9"/><text class="s" x="1162" y="182">Query API</text>
+  <rect class="dp2" x="1120" y="215" width="200" height="62" rx="10"/><text class="s" x="1149" y="242">Auth / Version</text><text class="small" x="1168" y="263">Resolver</text>
+  <rect class="dp3" x="1120" y="300" width="200" height="62" rx="10"/><text class="s" x="1146" y="327">Router / Cache</text><text class="small" x="1160" y="348">Fallback Policy</text>
+  <rect class="box" x="1120" y="385" width="200" height="42" rx="9"/><text class="s" x="1160" y="412">Internal LLM</text>
+  <rect class="box" x="1120" y="445" width="200" height="42" rx="9"/><text class="s" x="1150" y="472">Citation / Audit</text>
+
+  <path class="line" d="M308 220 H370"/><path class="line" d="M700 295 H770"/><path class="line" d="M1030 295 H1090"/>
+  <path class="line" d="M1000 184 C1060 184 1060 176 1120 176"/>
+  <path class="line" d="M1000 264 C1060 264 1060 246 1120 246"/>
+  <path class="line" d="M1000 344 C1060 344 1060 331 1120 331"/>
+
+  <rect x="64" y="570" width="24" height="16" class="dp1"/><text class="small" x="100" y="584">DP1: 중복 데이터 제어와 Source Mapping</text>
+  <rect x="64" y="610" width="24" height="16" class="dp2"/><text class="small" x="100" y="624">DP2: 권한/버전 Metadata, Source Scope Routing/Filtering, Audit</text>
+  <rect x="64" y="650" width="24" height="16" class="dp3"/><text class="small" x="100" y="664">DP3: 반복/정책/설계 지식 접근, Cache, Fallback</text>
 </svg>

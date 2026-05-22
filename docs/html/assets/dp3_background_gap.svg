@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="380" viewBox="0 0 1200 380" role="img" aria-labelledby="title desc">
+  <title id="title">DP3 Background Gap</title>
+  <desc id="desc">중복 제어 RAG 이후에도 반복 질의, 표준 답변, Fallback 정책이 남는 배경</desc>
+  <style>
+    .bg{fill:#f8fbff}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.base{fill:#dbeafe;stroke:#2563eb;stroke-width:3}.gap{fill:#fef3c7;stroke:#d97706;stroke-width:3}.risk{fill:#fee2e2;stroke:#dc2626;stroke-width:3}.target{fill:#dcfce7;stroke:#16a34a;stroke-width:3}
+    .t{font:700 23px Arial,sans-serif;fill:#172033}.h{font:700 16px Arial,sans-serif;fill:#243247}.s{font:600 13px Arial,sans-serif;fill:#334155}.small{font:12px Arial,sans-serif;fill:#64748b}.line{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="1200" height="380"/>
+  <text class="t" x="42" y="48">DP3 배경: 검색 근거가 좋아져도 운영 지식 접근 문제는 남는다</text>
+  <rect class="base" x="70" y="115" width="230" height="90" rx="14"/><text class="h" x="112" y="148">Dedup-aware RAG</text><text class="small" x="105" y="176">중복 근거 압축 / Source Mapping</text>
+  <rect class="gap" x="385" y="75" width="250" height="65" rx="12"/><text class="s" x="415" y="113">반복 질문 비용</text>
+  <rect class="gap" x="385" y="157" width="250" height="65" rx="12"/><text class="s" x="415" y="195">표준 답변 부재</text>
+  <rect class="gap" x="385" y="239" width="250" height="65" rx="12"/><text class="s" x="415" y="277">최신성 / 버전 Fallback 판단</text>
+  <rect class="risk" x="720" y="110" width="190" height="105" rx="14"/><text class="h" x="758" y="148">문제</text><text class="small" x="750" y="176">답변 일관성 흔들림</text><text class="small" x="750" y="198">운영 지식 검토 어려움</text>
+  <rect class="target" x="980" y="110" width="160" height="105" rx="14"/><text class="h" x="1016" y="148">필요</text><text class="small" x="1005" y="176">Knowledge Access</text><text class="small" x="1002" y="198">Cache / Fallback 정책</text>
+  <path class="line" d="M300 160 H385"/><path class="line" d="M635 107 C680 118 690 135 720 150"/><path class="line" d="M635 190 H720"/><path class="line" d="M635 272 C680 250 690 215 720 190"/><path class="line" d="M910 162 H980"/>
+</svg>

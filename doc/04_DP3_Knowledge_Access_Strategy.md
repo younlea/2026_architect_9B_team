@@ -1,10 +1,10 @@
-# 04. DP3 - SPRAG 기반 RAG 이후 Knowledge Access Strategy 선정
+# 04. DP3 - 중복 제어 RAG 이후 Knowledge Access Strategy 선정
 
 ## 1. Decision Point 개요
 
 ### 1.1 결정 주제
 
-본 DP는 이미 DP1에서 SPRAG 기반 Evidence Unit Offline Dedup-aware RAG를 Baseline으로 채택한 상태에서, 중복이 많은 사내 코드/문서 데이터 환경의 QA 속도, 답변 일관성, 반복 지식 재사용성을 추가 개선하기 위한 **Knowledge Access Strategy**를 선정한다.
+본 DP는 이미 DP1에서 중복 제어 RAG 구조를 선정한 상태에서, 중복이 많은 사내 코드/문서 데이터 환경의 QA 속도, 답변 일관성, 반복 지식 재사용성을 추가 개선하기 위한 **Knowledge Access Strategy**를 선정한다.
 
 ### 1.2 본 DP의 위치
 
@@ -12,16 +12,48 @@
 
 ```mermaid
 flowchart LR
-    A[DP1<br/>SPRAG Evidence Unit RAG] --> C[DP3<br/>Knowledge Access Strategy]
-    B[DP2<br/>Permission-aware Dataset Strategy] --> C
+    A[DP1<br/>Dedup-aware RAG] --> C[DP3<br/>Knowledge Access Strategy]
+    B[DP2<br/>Permission / Version Strategy] --> C
 ```
 
 즉, 본 DP는 다음 전제를 가진다.
 
-- 기존 RAG는 Offline 단계에서 Evidence Unit을 생성하여 중복제어와 핵심 정보 압축을 수행한다.
-- 검색 대상 Evidence Unit과 원본 Segment에는 권한 Metadata가 연결된다.
-- 질의 시 사용자의 권한 범위 내 데이터만 검색 또는 답변에 사용한다.
-- 본 DP의 목적은 DP1의 SPRAG 기반 RAG를 대체하는 것이 아니라, 그 위에서 반복 질의, 정책성 지식, 설계 지식의 접근 방식을 더 개선하는 것이다.
+- 기존 RAG는 중복 제어 전략을 통해 Top-K 중복 편향과 Context 낭비를 줄이는 것을 전제로 한다.
+- 검색 대상 Evidence Unit과 원본 Segment에는 권한 Metadata와 Source Version Metadata가 연결된다.
+- 질의 시 사용자의 권한과 요청 Source Version 범위 내 데이터만 검색 또는 답변에 사용한다.
+- 본 DP의 목적은 DP1의 중복 제어 RAG를 대체하는 것이 아니라, 그 위에서 반복 질의, 정책성 지식, 설계 지식의 접근 방식을 더 개선하는 것이다.
+
+### 1.3 발표용 배경 태그
+
+| 구분 | 관련 항목 |
+|---|---|
+| Stakeholder | 사내 개발자, Software Architect / Technical Lead, 플랫폼/인프라 운영팀, 사내 LLM 운영 조직 |
+| FR | FR-02 코드 어시스트 질의 처리, FR-05 Citation 제공, FR-07 Knowledge Cache / Wiki 관리, FR-08 Source Version 기반 검색/답변 제어 |
+| QA | QA-01 정확도, QA-02 응답 속도, QA-06 유지보수성, QA-07 최신성, QA-08 근거 추적성 |
+| 핵심 문제 | 반복 질의 비용, 표준 답변 부재, Wiki Staleness, Fallback 판단, 권한/버전 혼합 |
+
+### 1.4 배경 상황 설명
+
+DP3가 필요한 이유는 중복 제어 RAG가 검색 근거를 효율화하더라도, **반복적으로 묻는 정책/설계/API 질문을 항상 같은 방식으로 빠르고 일관되게 답하는 문제는 별도로 남기 때문**이다.
+
+예를 들어 “이 공통 API는 언제 써야 하는가?”, “Deprecated 구현 대신 무엇을 써야 하는가?”, “이 컴포넌트의 표준 초기화 순서는 무엇인가?” 같은 질문은 단순히 관련 Chunk 몇 개를 찾는 것만으로 충분하지 않다. 검토된 표준 답변, 최신 Source와의 연결, 사람이 수정 가능한 지식 단위, 낮은 Confidence일 때 원문으로 돌아가는 Fallback 정책이 필요하다.
+
+중복 제어 RAG는 “좋은 근거를 더 효율적으로 찾는 문제”에 가깝다. 하지만 개발자들이 반복해서 묻는 질문은 검색 결과보다 “조직에서 합의한 표준 답변”이 더 중요할 때가 있다. 같은 질문에 대해 매번 다른 Chunk 조합이 선택되면 답변 표현과 권장 방향이 조금씩 달라질 수 있고, 이는 개발자 신뢰를 떨어뜨린다.
+
+또한 운영 관점에서는 사람이 검토하고 고칠 수 있는 지식 단위가 필요하다. 검색 Index 안의 Chunk나 Evidence Unit은 기계가 검색하기 좋은 단위지만, Architect나 Tech Lead가 리뷰하기 좋은 문서 단위는 아니다. DP3는 반복 질문, 정책성 지식, 설계 지식을 어떤 Knowledge Layer로 제공하고, 언제 원문 RAG로 되돌아갈지 결정하는 지점이다.
+
+따라서 DP3의 배경 페이지에서는 후보명을 먼저 말하기보다 다음 문제 흐름을 강조한다.
+
+```text
+중복 제어 RAG로 근거 검색 효율화
+ → 반복/정책/설계 질문은 계속 발생
+ → 매번 검색하면 비용과 답변 표현이 흔들림
+ → 검토 가능한 Canonical Knowledge와 Fallback 정책 필요
+```
+
+### 1.5 예상 발표 스크립트
+
+DP3는 DP1에서 중복 근거를 잘 제어했다는 전제 위에서 시작합니다. 중복 제어 RAG를 사용하면 검색 근거는 더 효율적으로 가져올 수 있지만, 개발자들이 반복적으로 묻는 질문에 항상 빠르고 일관되게 답하는 문제는 여전히 남습니다. 예를 들어 공통 API 사용 기준, Deprecated 구현의 대체 방식, 컴포넌트 초기화 순서 같은 질문은 단순히 관련 Source 몇 개를 찾는 것보다 조직에서 합의한 표준 답변이 중요합니다. 매번 검색 결과 조합이 달라지면 답변 표현과 권장 방향도 흔들릴 수 있습니다. 또한 운영자나 Architect가 직접 검토하고 수정할 수 있는 지식 단위가 필요합니다. 그래서 DP3는 검색 결과를 넘어, 반복 지식과 설계 지식을 어떤 방식으로 접근하고 언제 원문 RAG로 되돌아갈지 결정하는 지점입니다.
 
 ---
 
@@ -47,25 +79,26 @@ SPRAG만으로도 중복 근거 압축과 Query-time 단순화 효과를 얻을 
 | 남는 문제 | 설명 |
 |---|---|
 | 반복 질의 비용 | SPRAG가 단일 또는 소수 EU 검색으로 비용을 줄여도, 자주 반복되는 질문은 매번 Retrieval과 답변 구성을 수행하는 것보다 Wiki/Cache Hit가 더 효율적일 수 있다. |
-| 답변 일관성 | Query 표현, 권한 범위, 최신성, Confidence에 따라 선택되는 EU가 달라질 수 있어 동일 질문의 답변 표현과 권장 방향이 흔들릴 수 있다. |
+| 답변 일관성 | Query 표현, 권한 범위, Source Version, Confidence에 따라 선택되는 EU가 달라질 수 있어 동일 질문의 답변 표현과 권장 방향이 흔들릴 수 있다. |
 | Canonical Answer 부족 | “이 API는 언제 써야 하는가?”, “이 컴포넌트의 표준 사용법은 무엇인가?” 같은 질문에는 근거 EU뿐 아니라 검토된 표준 답변이 필요하다. |
 | Knowledge Product 부족 | EU는 증거 단위이지만, 사람이 리뷰하고 수정할 수 있는 운영 지식 문서나 정책 문서 그 자체는 아니다. |
 | Fallback 판단 필요 | Wiki로 답할지, SPRAG EU를 검색할지, 최신 원문 RAG로 Fallback할지 판단하는 Query Routing 정책이 필요하다. |
+| Source Version 정합성 | Wiki Page가 특정 Branch/Release 기준으로 생성되었다면, 다른 버전 질문에는 그대로 재사용하면 안 된다. |
 | 관계형 질문 | 요구사항, 설계 결정, 코드 구현 사이의 연결을 따라가는 Multi-hop 질문은 EU 압축만으로 충분하지 않을 수 있다. |
 
 따라서 본 DP는 다음 질문에 답한다.
 
-> SPRAG 기반 RAG 위에서, 반복 질의와 설계/정책 지식의 답변 일관성을 높이기 위해 어떤 Knowledge Access 방식을 추가할 것인가?
+> 중복 제어 RAG 위에서, 반복 질의와 설계/정책 지식의 답변 일관성을 높이기 위해 어떤 Knowledge Access 방식을 추가할 것인가?
 
 ### 2.3 DP1과 DP3의 역할 구분
 
-| 구분 | DP1: SPRAG 기반 Evidence Unit RAG | DP3: Knowledge Access Strategy |
+| 구분 | DP1: Dedup-aware RAG | DP3: Knowledge Access Strategy |
 |---|---|---|
 | 핵심 질문 | 중복 근거를 어떻게 압축하고 검색할 것인가? | 반복/정책/설계 지식을 어떻게 빠르고 일관되게 제공할 것인가? |
 | 주요 단위 | Evidence Unit, Source Mapping, 원본 Segment | Wiki Page, Cache Entry, Query Router, Fallback Policy |
 | 해결 위치 | Index-time + Retrieval-time | Query Routing + Answer-time + Knowledge Maintenance |
 | 주요 효과 | Prompt 감소, 중복 근거 압축, 검색 단순화 | 반복 질의 속도 개선, Canonical Answer, 사람이 검토 가능한 Knowledge Layer |
-| 남는 위험 | EU Staleness, Multi-hop 한계, 압축 오류 | Wiki Staleness, 권한 혼합, 잘못된 Canonical Answer 재사용 |
+| 남는 위험 | EU Staleness, Multi-hop 한계, 압축 오류 | Wiki Staleness, 권한/버전 혼합, 잘못된 Canonical Answer 재사용 |
 
 ---
 
@@ -176,7 +209,7 @@ flowchart TD
 - 속도 개선보다는 관계형 정확도 개선에 가까운 옵션이다.
 - 본 과제 범위에서 초기 채택하기에는 구현 및 설명 복잡도가 높다.
 - DP1에서 선택한 SPRAG Evidence Unit은 압축된 Evidence 단위이므로, Graph 구축에 필요한 세부 Entity/Relation을 어디까지 원본 Segment에서 다시 추출할지 추가 설계가 필요하다.
-- 권한 Metadata가 EU, 원본 Segment, Graph Node/Edge에 동시에 전파되어야 하므로 DP2와의 결합 복잡도가 크다.
+- 권한 Metadata와 Source Version Metadata가 EU, 원본 Segment, Graph Node/Edge에 동시에 전파되어야 하므로 DP2와의 결합 복잡도가 크다.
 
 ### 5.5 본 과제에서의 의미
 
@@ -184,7 +217,7 @@ HippoRAG-style 접근은 장기적으로 매력적인 확장 후보이다. 하�
 
 발표 Q&A에서는 다음처럼 정리할 수 있다.
 
-> HippoRAG는 관계형 Multi-hop QA에는 강하지만, DP1에서 선택한 SPRAG Evidence Unit 구조와 바로 결합하려면 EU와 원본 Segment, Graph Node/Edge, 권한 Metadata를 모두 동기화해야 한다. 따라서 본 과제의 초기 Architecture에서는 선택하지 않고, 관계형 질의 요구가 커질 때 Appendix 또는 후속 과제로 확장한다.
+> HippoRAG는 관계형 Multi-hop QA에는 강하지만, DP1에서 선택한 Evidence Unit 구조와 바로 결합하려면 EU와 원본 Segment, Graph Node/Edge, 권한 Metadata, Source Version Metadata를 모두 동기화해야 한다. 따라서 본 과제의 초기 Architecture에서는 선택하지 않고, 관계형 질의 요구가 커질 때 Appendix 또는 후속 과제로 확장한다.
 
 ---
 
@@ -212,7 +245,7 @@ flowchart TD
     R -->|반복/정의/정책/설계 질문| I
     I --> WA[Wiki-based Fast Answer]
 
-    R -->|최신성/세부근거/낮은 Confidence| ER[SPRAG / Original Source Fallback]
+    R -->|최신성/버전/세부근거/낮은 Confidence| ER[SPRAG / Original Source Fallback]
     ER --> EA[Evidence-based Answer]
 
     WA --> CV[Citation Validation]
@@ -233,7 +266,7 @@ flowchart TD
 
 - Wiki가 오래되면 Stale Answer가 발생할 수 있다.
 - LLM이 Wiki를 잘못 생성하면 오류가 반복 재사용될 수 있다.
-- Wiki Page와 EU/원본 Segment/Citation 연결을 반드시 유지해야 한다.
+- Wiki Page와 EU/원본 Segment/Source Version/Citation 연결을 반드시 유지해야 한다.
 - 모든 질문에 적합하지 않으며, 최신 코드 확인이나 세부 근거 질문은 기존 RAG가 필요하다.
 
 ### 6.5 본 과제에서의 의미
@@ -253,6 +286,17 @@ flowchart TD
 ---
 
 ## 7. Trade-off 평가
+
+### 7.0 발표용 비교 기준
+
+DP3 비교 페이지에서는 각 후보를 다음 QA 4개로 비교한다.
+
+| QA | ★☆☆ 기준 | ★★☆ 기준 | ★★★ 기준 | 근거 / 측정 방식 |
+|---|---|---|---|---|
+| QA-02 응답 속도 | 매번 전체 Retrieval과 Context 구성이 필요 | 검색 보강으로 일부 개선 | 반복 질의가 Cache/Knowledge Layer에서 빠르게 처리 | P95 QA Latency, Cache Hit Rate |
+| QA-01 정확도/일관성 | Query마다 답변 근거와 표현이 크게 흔들림 | 검색 Recall은 개선되나 표준 답변 관리 부족 | Canonical Answer와 검증된 Source Mapping 유지 | Repeated Answer Consistency, Faithfulness |
+| QA-07 최신성 | 지식 계층 Staleness 관리가 어려움 | Fallback으로 일부 보완 | Source Version, Invalidation, Fallback 정책을 명시 | Stale Answer Rate, Citation Freshness |
+| QA-06 유지보수성 | 별도 Graph/지식 구조 운영 부담 큼 | 기존 검색 레이어와 결합 쉬움 | 사람이 검토 가능한 Knowledge Product로 운영 가능 | Human Reviewability, Maintenance Complexity |
 
 평가 기준: ★★★ 매우 우수, ★★☆ 보통 이상, ★☆☆ 제한적
 
@@ -281,7 +325,7 @@ flowchart TD
 | Stale Answer Rate | 원문 변경 후 오래된 답변이 제공되는 비율 | [Expected] 낮음 | [Expected] 중간 | [Expected] 중간~높음 |
 | Human Reviewability | 사람이 지식 단위를 검토하고 수정하기 쉬운 정도 | [Expected] 낮음 | [Expected] 중간 | [Expected] 높음 |
 | Build / Maintenance Complexity | 구축 및 유지보수 복잡도 | [Expected] 낮음 | [Expected] 높음 | [Expected] 중간 |
-| SPRAG Integration Risk | SPRAG EU / Source Mapping / 권한 Metadata와의 결합 위험 | [Expected] 낮음 | [Expected] 높음 | [Expected] 중간 |
+| SPRAG Integration Risk | SPRAG EU / Source Mapping / 권한/버전 Metadata와의 결합 위험 | [Expected] 낮음 | [Expected] 높음 | [Expected] 중간 |
 
 ### 7.2 KPI 평가 해석
 
@@ -326,8 +370,8 @@ LLM Wiki는 반복적이고 정형화된 질문에 대해 매번 Raw Chunk를 �
 - LLM Context Token
 - 중복 근거 제거 비용
 - 답변 구성 비용
-
 ### 9.2 중복 데이터 환경에 적합
+
 
 SPRAG 기반 RAG가 중복 Segment를 Evidence Unit으로 압축하면, LLM Wiki는 그 결과를 사람이 검토 가능한 Canonical Answer Page로 승격한다.
 
@@ -374,7 +418,7 @@ LLM Wiki는 SPRAG 기반 RAG의 대체재가 아니라 보완재이다.
 | 요약 오류 | LLM이 Canonical Page를 잘못 생성 | Citation 유지, Human Review, Confidence Check |
 | 근거 단절 | Wiki 답변과 EU/원본 Segment 연결이 사라짐 | Wiki Page에 Source ID, EU ID, Segment ID, Commit ID 포함 |
 | 범위 과확장 | 모든 코드를 Wiki화하려다 비용 증가 | 반복 질의, 공통 API, 설계 결정부터 우선 적용 |
-| 권한 문제 | Wiki가 여러 권한 범위의 지식을 섞을 수 있음 | Wiki Page에도 Permission Metadata 부여 |
+| 권한/버전 문제 | Wiki가 여러 권한 범위나 Source Version 범위의 지식을 섞을 수 있음 | Wiki Page에도 Permission Metadata와 Source Version Metadata 부여 |
 
 ---
 
@@ -395,7 +439,7 @@ LLM Wiki는 SPRAG 기반 RAG의 대체재가 아니라 보완재이다.
 
 - 특정 파일/함수의 최신 구현 확인
 - 최근 변경된 코드 설명
-- 권한 경계가 민감한 질문
+- 권한 또는 Source Version 경계가 민감한 질문
 - Wiki에 없는 상세 구현 질문
 - Citation 검증이 필요한 질문
 - Low Confidence 답변
@@ -412,7 +456,7 @@ LLM Wiki는 SPRAG 기반 RAG의 대체재가 아니라 보완재이다.
 
 ```text
 SPRAG Evidence Unit RAG
- + Permission-aware Retrieval
+ + Permission / Version-aware Retrieval
  + LLM Wiki Knowledge Cache
  + SPRAG / Original Source Fallback
 ```
@@ -444,5 +488,5 @@ SPRAG Evidence Unit RAG
 | 우선순위 | PPT에 반드시 들어갈 메시지 | 이유 |
 |---|---|---|
 | Must | DP3는 DP1의 SPRAG를 대체하지 않고, SPRAG 이후 남는 반복 질의/일관성/Knowledge 운영 문제를 해결한다. | “DP1과 DP3가 중복 결정 아닌가?”라는 질문을 방어하는 핵심 메시지이다. |
-| Must | HippoRAG는 Multi-hop QA에는 강하지만 SPRAG EU, 원본 Segment, 권한 Metadata와의 동기화 비용 때문에 초기 선택에서 제외하고 후속 확장으로 둔다. | 후보 제외 또는 유보 사유가 명확해야 Trade-off가 설득된다. |
+| Must | HippoRAG는 Multi-hop QA에는 강하지만 SPRAG EU, 원본 Segment, 권한/버전 Metadata와의 동기화 비용 때문에 초기 선택에서 제외하고 후속 확장으로 둔다. | 후보 제외 또는 유보 사유가 명확해야 Trade-off가 설득된다. |
 | Must | 최종 선택은 LLM Wiki Knowledge Cache이며, SPRAG EU와 Source Mapping을 Canonical Answer로 승격시키는 구조이다. | DP3의 결정과 DP1/DP2 연결을 한 장에서 설명할 수 있다. |

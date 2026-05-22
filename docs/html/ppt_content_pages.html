@@ -6,7 +6,7 @@
 <title>RAG 기반 코드 어시스트 Architecture PPT Content</title>
 <script src="assets/mermaid.min.js"></script>
 <script>
-mermaid.initialize({ startOnLoad: true, securityLevel: 'strict', theme: 'base' });
+mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: 'base' });
 </script>
 <style>
 :root{
@@ -42,6 +42,8 @@ header p{margin:0;color:#d9e8fb}
 .b{background:var(--blue2);color:#1d4ed8}.g{background:var(--green2);color:#15803d}.a{background:var(--amber2);color:#b45309}.r{background:var(--red2);color:#b91c1c}.v{background:var(--violet2);color:#6d28d9}.c{background:var(--cyan2);color:#0e7490}
 table{width:100%;border-collapse:collapse;margin:10px 0 14px;font-size:13px}
 th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:#edf4fb;color:#243247}td.num{text-align:right;white-space:nowrap}
+.refs{font-size:12px;color:#46566b;background:#f8fafc;border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:10px 0}
+.refs a{color:#1d4ed8;text-decoration:none}.refs a:hover{text-decoration:underline}
 .mermaid{background:#fbfdff;border:1px solid var(--line);border-left:5px solid var(--cyan);border-radius:8px;padding:10px;margin:12px 0;overflow:auto;text-align:center}
 .asset{border:1px solid var(--line);background:#fff;border-radius:10px;padding:10px;margin:12px 0;overflow:auto}.asset img{max-width:100%;display:block;margin:0 auto}
 .speaker{background:#0f172a;color:#e5edf7;padding:12px 14px;border-radius:8px;margin-top:12px}.speaker strong{color:#93c5fd}
@@ -61,8 +63,8 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
   <h2>페이지 탭</h2>
   <button class="tabbtn active" data-tab="p01">1. 제목<span>Architecture headline</span></button>
   <button class="tabbtn" data-tab="p02">2. 과제 배경 1<span>보안과 사내 지식</span></button>
-  <button class="tabbtn" data-tab="p03">3. 과제 배경 2<span>중복/권한/최신성</span></button>
-  <button class="tabbtn" data-tab="p04">4. 과제 배경 3<span>왜 RAG인가</span></button>
+  <button class="tabbtn" data-tab="p03">3. 과제 배경 2<span>Fine-tuning vs RAG</span></button>
+  <button class="tabbtn" data-tab="p04">4. 과제 배경 3<span>일반 RAG vs 코드 RAG</span></button>
   <button class="tabbtn" data-tab="p05">5. 과제 소개<span>범위와 목표</span></button>
   <button class="tabbtn" data-tab="p06">6. Stakeholder<span>관심사</span></button>
   <button class="tabbtn" data-tab="p07">7. FR<span>기능 요구사항</span></button>
@@ -71,9 +73,9 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
   <button class="tabbtn" data-tab="p10">10. Overall Architecture<span>DP 영향도</span></button>
   <button class="tabbtn" data-tab="p11">11. DP1 배경<span>중복 데이터</span></button>
   <button class="tabbtn" data-tab="p12">12. DP1 비교<span>SPRAG 선택</span></button>
-  <button class="tabbtn" data-tab="p13">13. DP2 배경<span>권한 정합성</span></button>
-  <button class="tabbtn" data-tab="p14">14. DP2 비교<span>Pre-filtering</span></button>
-  <button class="tabbtn" data-tab="p15">15. DP3 배경<span>SPRAG 이후</span></button>
+  <button class="tabbtn" data-tab="p13">13. DP2 배경<span>권한/버전 정합성</span></button>
+  <button class="tabbtn" data-tab="p14">14. DP2 비교<span>A/B 후보 비교</span></button>
+  <button class="tabbtn" data-tab="p15">15. DP3 배경<span>중복 제어 RAG 이후</span></button>
   <button class="tabbtn" data-tab="p16">16. DP3 비교<span>LLM Wiki Cache</span></button>
 </nav>
 <main>
@@ -84,7 +86,7 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
     <div class="asset"><img src="assets/problem_drivers.svg" alt="과제 배경 드라이버"></div>
     <div class="grid">
       <div class="card must"><h3>핵심 한 줄</h3><p>외부 LLM에 사내 코드를 보내지 않고, 내부 RAG 지식 계층으로 코드 어시스트 품질을 확보한다.</p></div>
-      <div class="card"><h3>3개 Design Point</h3><p><span class="tag b">DP1 SPRAG/EU</span><span class="tag g">DP2 Permission</span><span class="tag a">DP3 Knowledge Cache</span></p></div>
+      <div class="card"><h3>3개 Design Point</h3><p><span class="tag b">DP1 중복 제어</span><span class="tag g">DP2 권한/버전</span><span class="tag a">DP3 Knowledge Access</span></p></div>
       <div class="card"><h3>발표 Tone</h3><p>실제 구현 완료가 아니라 Architecture 판단과 Trade-off를 설명하는 설계 발표다.</p></div>
     </div>
     <div class="speaker"><strong>발표자 노트:</strong> 첫 장에서는 “코드 어시스트를 만들겠다”보다 “사내 코드라는 제약 때문에 일반 LLM 도구를 그대로 쓸 수 없고, 내부 검색/권한/근거 계층이 필요하다”를 먼저 말한다.</div>
@@ -108,91 +110,96 @@ flowchart LR
     D --> E
     F[Fine-tuning] --> G[재학습/운영 비용]
     G --> E
-    classDef risk fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
-    classDef target fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
-    class C,D,G risk;
-    class E target;
+    classDef risk fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef target fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    class C,D,G risk
+    class E target
     </div>
     <div class="callout">PPT 시각화 팁: “외부 LLM 직접 사용”을 막다른 길로 표현하고, 내부 RAG가 현실적인 우회로로 수렴하는 그림을 사용한다.</div>
   </div>
 </section>
 
 <section id="p03" class="slide">
-  <div class="slide-head"><div><h2>과제 배경 2: 코드 어시스트 도메인의 데이터 특성</h2><p>일반 문서 검색보다 중복, 권한, 최신성, 근거 추적 요구가 강하다</p></div><span class="page-no">03</span></div>
+  <div class="slide-head"><div><h2>과제 배경 2: Fine-tuning vs RAG</h2><p>신규 모델을 직접 개발하지 않으면서 사내 보안 데이터를 활용하는 방법 비교</p></div><span class="page-no">03</span></div>
   <div class="body">
+    <div class="asset"><img src="assets/fine_tuning_vs_rag.svg" alt="Fine-tuning과 RAG 비교"></div>
     <table>
-      <tr><th>특성</th><th>설명</th><th>Architecture 영향</th></tr>
-      <tr><td>코드 중복성</td><td>유사 패턴, 복사 구현, 버전별 유사 파일, 샘플 코드가 많음</td><td>DP1: SPRAG 기반 EU 압축 필요</td></tr>
-      <tr><td>권한 민감성</td><td>프로젝트/부서/역할별 접근 가능한 코드가 다름</td><td>DP2: Permission-aware Retrieval 필요</td></tr>
-      <tr><td>최신성</td><td>Repository와 문서가 지속 변경됨</td><td>Wiki/Fallback/Source Mapping 필요</td></tr>
-      <tr><td>정확도</td><td>잘못된 API 제안은 빌드 오류/보안 취약점/설계 위반으로 연결</td><td>Citation, EM/F1, Faithfulness 추적</td></tr>
-      <tr><td>응답 속도</td><td>IDE 흐름 안에서 사용되므로 긴 대기 시간은 생산성 저하</td><td>Prompt Length, P95 Latency 관리</td></tr>
+      <tr><th>구분</th><th>Fine-tuning 중심</th><th>RAG 중심</th></tr>
+      <tr><td>핵심 아이디어</td><td>사내 데이터로 모델 가중치를 추가 학습</td><td>사내 코드/문서를 검색해 LLM Context로 제공</td></tr>
+      <tr><td>최신성</td><td>코드 변경 시 재학습/추가 튜닝 부담 가능</td><td>Index, Metadata, Cache 갱신으로 대응</td></tr>
+      <tr><td>권한/버전</td><td>학습된 지식 안에 사용자별 권한을 분리하기 어려움</td><td>Query-time 권한/버전 제어와 Citation 가능</td></tr>
+      <tr><td>비용 구조</td><td>학습 데이터 준비, Training, Custom Model Storage/Inference 비용</td><td>인덱싱, 검색, LLM 호출, Cache 운영 비용</td></tr>
+      <tr><td>본 과제 적합성</td><td>모델 개발/운영 과제에 가까움</td><td>Architecture 설계 과제 범위에 적합</td></tr>
     </table>
     <div class="mermaid">
-flowchart TD
-    Q[Developer Query] --> R[Retrieval]
-    R --> D1[Duplicate Results]
-    R --> D2[Unauthorized Results]
-    R --> D3[Stale Results]
-    D1 --> P[Poor Context]
-    D2 --> S[Security Incident]
-    D3 --> W[Wrong Answer]
-    P --> X[Low Trust]
-    S --> X
-    W --> X
-    classDef bad fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
-    class D1,D2,D3,P,S,W,X bad;
+flowchart LR
+    A[Internal Secure Code] --> B{활용 방식}
+    B --> F[Fine-tuning]
+    B --> R[RAG]
+    F --> F1[Training / Storage / Custom Inference Cost]
+    F --> F2[권한과 버전 분리 어려움]
+    R --> R1[Index / Metadata / Cache Update]
+    R --> R2[Permission + Version + Citation Control]
+    R2 --> T[사내 Coding Assist]
+    classDef risk fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef target fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    class F1,F2 risk
+    class R1,R2,T target
+    </div>
+    <div class="callout green">공식 근거: AWS Bedrock Pricing은 Fine-tuning 계열 Custom Model에 Training, Model Storage, Inference/Provisioned Throughput 비용이 발생할 수 있음을 설명한다.</div>
+    <div class="refs"><b>References:</b>
+      REF-05 <a href="https://docs.aws.amazon.com/bedrock/latest/userguide/custom-model-fine-tuning.html">AWS Bedrock - Customize a model with fine-tuning</a> /
+      REF-06 <a href="https://aws.amazon.com/bedrock/pricing/">AWS Bedrock Pricing</a> /
+      REF-07 <a href="https://docs.aws.amazon.com/sagemaker/latest/dg/jumpstart-foundation-models-fine-tuning.html">AWS SageMaker - Foundation models and hyperparameters for fine-tuning</a>
     </div>
   </div>
 </section>
 
 <section id="p04" class="slide">
-  <div class="slide-head"><div><h2>과제 배경 3: 왜 RAG 중심 설계인가</h2><p>모델 재학습보다 최신 사내 지식을 검색 계층으로 제공하는 접근</p></div><span class="page-no">04</span></div>
+  <div class="slide-head"><div><h2>과제 배경 3: 일반 문서 RAG와 코드 어시스트 RAG의 관심사</h2><p>일반 문서 RAG의 주요 관심사와 코드 어시스트 RAG의 Architecture Driver는 다르다</p></div><span class="page-no">04</span></div>
   <div class="body">
+    <div class="asset"><img src="assets/general_rag_vs_code_rag.svg" alt="일반 문서 RAG와 코드 어시스트 RAG 비교"></div>
     <div class="twocol">
-      <div class="card"><h3>Fine-tuning 중심 접근의 부담</h3><ul><li>데이터 구축/학습/배포 비용 큼</li><li>코드 변경 때마다 최신성 보장 어려움</li><li>권한별 지식 차이를 모델 파라미터에 반영하기 어려움</li></ul></div>
-      <div class="card"><h3>RAG 중심 접근의 장점</h3><ul><li>모델은 범용으로 유지</li><li>코드/문서는 검색 계층에서 최신화</li><li>권한, 중복, Citation을 Architecture로 통제</li></ul></div>
+      <div class="card"><h3>일반 문서용 RAG에서 주로 중요한 것</h3><ul><li>문서 의미 검색: 질문과 가까운 단락을 찾는 능력</li><li>요약 품질: 긴 문서를 이해하기 쉬운 답변으로 압축</li><li>출처 인용: 어떤 문서에 근거했는지 확인</li><li>최신 문서 반영: 오래된 정책/FAQ 사용 방지</li><li>질문 의도 파악: 필요한 문서 범위 선택</li></ul></div>
+      <div class="card must"><h3>코드 어시스트 RAG에서 강해지는 Driver</h3><ul><li>중복성: 유사 코드가 Top-K를 잠식</li><li>권한 민감성: Repository/Project/보안 모듈별 접근 제한</li><li>최신성/버전: Branch/Release/Commit마다 정답이 다름</li><li>정확도: API Signature와 호출 순서 오류가 실제 장애로 연결</li><li>응답 속도: IDE 흐름 안에서 짧은 지연 필요</li><li>근거 추적: File/Symbol/Segment/Commit/Citation 필요</li></ul></div>
     </div>
-    <div class="mermaid">
-flowchart LR
-    A[Internal Code / Docs] --> B[Index / Evidence Unit / Metadata]
-    B --> C[Permission-aware Retrieval]
-    C --> D[Context Builder]
-    D --> E[Internal LLM]
-    E --> F[Answer + Citation]
-    G[Model Training] -.대상 아님.-> E
-    classDef chosen fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
-    classDef off fill:#f1f5f9,stroke:#94a3b8,stroke-dasharray:5 5;
-    class B,C,D,E,F chosen;
-    class G off;
-    </div>
-    <div class="callout green">핵심 메시지: 본 과제는 “LLM 자체를 잘 만드는 과제”가 아니라, 사내 지식을 안전하고 정확하게 LLM Context로 공급하는 Architecture 설계다.</div>
+    <table>
+      <tr><th>코드 어시스트 Driver</th><th>왜 중요한가</th><th>연결 DP</th></tr>
+      <tr><td>중복성</td><td>복사 구현, 샘플 코드, 버전별 유사 파일이 Top-K를 잠식하면 필요한 근거가 누락된다.</td><td>DP1</td></tr>
+      <tr><td>권한 민감성</td><td>권한 없는 코드가 답변이나 로그에 섞이면 보안 사고가 된다.</td><td>DP2</td></tr>
+      <tr><td>최신성/버전</td><td>요청 Branch/Release/Commit과 다른 구현은 틀린 답변이 될 수 있다.</td><td>DP2, DP3</td></tr>
+      <tr><td>정확도/응답 속도</td><td>틀린 코드 제안은 빌드/런타임 오류로 이어지고, 느린 응답은 개발 흐름을 끊는다.</td><td>DP1, DP3</td></tr>
+      <tr><td>근거 추적</td><td>답변 근거의 파일, Symbol, Segment, Commit, 권한 판단을 확인할 수 있어야 한다.</td><td>DP1, DP2, DP3</td></tr>
+    </table>
+    <div class="callout">핵심 메시지: 코드 어시스트 RAG는 일반 문서 RAG의 검색/요약 문제 위에 중복, 권한, 버전, 실행 정확도, 근거 추적 문제가 추가된다.</div>
   </div>
 </section>
 
 <section id="p05" class="slide">
-  <div class="slide-head"><div><h2>과제 간략 소개: RAG 기반 코드 어시스트 프레임워크</h2><p>수집, 중복 제어, 권한 제어, Knowledge Cache, Citation을 포함한 설계 범위</p></div><span class="page-no">05</span></div>
+  <div class="slide-head"><div><h2>과제 간략 소개: RAG 기반 코드 어시스트 프레임워크</h2><p>수집, 중복 제어, 권한/버전 제어, Knowledge Access, Citation을 포함한 설계 범위</p></div><span class="page-no">05</span></div>
   <div class="body">
     <div class="mermaid">
 flowchart LR
     A[Code / Docs 수집] --> B[Segment / Metadata 생성]
-    B --> C[DP1 SPRAG EU]
-    C --> D[DP2 Permission-aware Retrieval]
-    D --> E[DP3 Wiki Knowledge Cache]
+    B --> C[DP1 중복 제어 RAG]
+    C --> D[DP2 권한/버전 제어]
+    D --> E[DP3 Knowledge Access]
     E --> F[Internal LLM Answer]
     F --> G[Citation / Audit]
-    classDef dp1 fill:#dbeafe,stroke:#2563eb,stroke-width:2px;
-    classDef dp2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
-    classDef dp3 fill:#fef3c7,stroke:#d97706,stroke-width:2px;
-    class C dp1; class D dp2; class E dp3;
+    classDef dp1 fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    classDef dp2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    classDef dp3 fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    class C dp1
+    class D dp2
+    class E dp3
     </div>
     <table>
       <tr><th>프레임워크 역할</th><th>설명</th></tr>
       <tr><td>수집/인덱싱</td><td>Repository, API 문서, 설계 문서, README 등을 검색 가능한 구조로 변환</td></tr>
-      <tr><td>중복 제어</td><td>SPRAG 기반 Evidence Unit으로 유사 Segment를 압축</td></tr>
-      <tr><td>권한 제어</td><td>사용자 권한 범위 내에서만 검색/답변 Context 구성</td></tr>
-      <tr><td>Knowledge Access</td><td>반복/정책/설계 질문은 Wiki Cache로 빠르고 일관되게 응답</td></tr>
-      <tr><td>근거 추적</td><td>EU, 원본 Segment, 버전, 권한 판단 로그를 Citation/Audit로 연결</td></tr>
+      <tr><td>중복 제어</td><td>유사 Segment가 Top-K를 잠식하지 않도록 RAG 구조를 결정</td></tr>
+      <tr><td>권한/버전 제어</td><td>사용자 권한과 요청 Source Version 범위 내에서만 검색/답변 Context 구성</td></tr>
+      <tr><td>Knowledge Access</td><td>반복/정책/설계 질문의 속도와 일관성을 높이는 지식 접근 방식 결정</td></tr>
+      <tr><td>근거 추적</td><td>원본 Segment, Source Version, 권한 판단 로그를 Citation/Audit로 연결</td></tr>
     </table>
   </div>
 </section>
@@ -237,29 +244,55 @@ flowchart LR
       <tr><td>FR-05</td><td>P2</td><td>근거 코드/문서 Citation 제공</td><td>DP1, DP2, DP3</td></tr>
       <tr><td>FR-06</td><td>P2</td><td>기존 사내 코드 어시스트 툴 연동 API 제공</td><td>DP2, DP3</td></tr>
       <tr><td>FR-07</td><td>P3</td><td>Knowledge Cache / Wiki 관리</td><td>DP3</td></tr>
+      <tr><td>FR-08</td><td>P2</td><td>Source Version 기반 검색/답변 제어</td><td>DP2, DP3</td></tr>
     </table>
-    <div class="callout">PPT에서는 요구사항 전체를 한 장에 빽빽하게 넣어도 되지만, 오른쪽에 DP 연결 색상 범례를 넣으면 평가자가 구조를 빠르게 읽을 수 있다.</div>
+    <div class="mermaid">
+flowchart LR
+    P1[1 Source 수집] --> P2[2 Parse / Metadata]
+    P2 --> P3[3 Dedup / Index]
+    P3 --> P4[4 Query / Auth / Version]
+    P4 --> P5[5 Retrieval / Knowledge Access]
+    P5 --> P6[6 Context / LLM Answer]
+    P6 --> P7[7 Citation / Audit]
+    classDef offline fill:#dbeafe,stroke:#2563eb,stroke-width:2px
+    classDef online fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    classDef audit fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    class P1,P2,P3 offline
+    class P4,P5,P6 online
+    class P7 audit
+    </div>
+    <div class="asset"><img src="assets/fr_pipeline_overview.svg" alt="FR 관점 간략 파이프라인"></div>
+    <table>
+      <tr><th>FR</th><th>1 수집</th><th>2 Metadata</th><th>3 Index</th><th>4 Query/Auth/Version</th><th>5 Retrieval/Knowledge</th><th>6 Answer</th><th>7 Citation/Audit</th></tr>
+      <tr><td>FR-01 수집/인덱싱</td><td>O</td><td>O</td><td>O</td><td></td><td></td><td></td><td></td></tr>
+      <tr><td>FR-02 질의 처리</td><td></td><td></td><td></td><td>O</td><td>O</td><td>O</td><td>O</td></tr>
+      <tr><td>FR-03 권한 제어</td><td></td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td></tr>
+      <tr><td>FR-04 중복 제어</td><td></td><td>O</td><td>O</td><td></td><td>O</td><td>O</td><td>O</td></tr>
+      <tr><td>FR-05 Citation</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td></tr>
+      <tr><td>FR-06 Tool API</td><td></td><td></td><td></td><td>O</td><td>O</td><td>O</td><td>O</td></tr>
+      <tr><td>FR-07 Knowledge Cache</td><td></td><td>O</td><td>O</td><td></td><td>O</td><td>O</td><td>O</td></tr>
+      <tr><td>FR-08 Source Version</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td><td>O</td></tr>
+    </table>
+    <div class="callout">PPT 포인트: 위 단계는 실제 Offline/Online 구조를 발표용으로 단순화한 순서형 파이프라인이다. FR-05 Citation과 FR-08 Source Version은 Source 수집부터 Audit까지 거의 전 구간에 걸친다.</div>
   </div>
 </section>
 
 <section id="p08" class="slide">
-  <div class="slide-head"><div><h2>요구사항 3: 제약사항과 설계 원칙</h2><p>외부 유출 금지, 별도 전용 모델 개발 제외</p></div><span class="page-no">08</span></div>
+  <div class="slide-head"><div><h2>요구사항 3: 제약사항과 설계 원칙</h2><p>핵심 제약은 사내 코드와 설계 정보의 외부 유출 금지</p></div><span class="page-no">08</span></div>
   <div class="body">
-    <div class="twocol">
-      <div class="card must"><h3>CON-01 사내 코드 외부 유출 금지</h3><p>사내 소스코드, 설계 문서, 내부 API 정보는 외부 LLM 서비스나 외부 저장소로 전송되어서는 안 된다.</p><p><span class="tag g">DP2 핵심 제약</span><span class="tag v">Audit 필요</span></p></div>
-      <div class="card must"><h3>CON-02 전용 모델 개발 제외</h3><p>대규모 Fine-tuning 대신 사내 승인 LLM과 RAG 기반 구조를 활용한다.</p><p><span class="tag b">DP1 Retrieval</span><span class="tag a">DP3 Cache</span></p></div>
-    </div>
+    <div class="card must"><h3>CON-01 사내 코드 외부 유출 금지</h3><p>사내 소스코드, 설계 문서, 내부 API 정보는 외부 LLM 서비스나 외부 저장소로 전송되어서는 안 된다.</p><p><span class="tag g">권한/버전 제어</span><span class="tag v">Citation/Audit</span><span class="tag b">내부 RAG</span></p></div>
     <div class="mermaid">
 flowchart LR
-    C1[외부 유출 금지] --> P[Permission-aware Retrieval]
-    C2[Fine-tuning 제외] --> R[RAG 중심 구조]
-    R --> D1[DP1 SPRAG]
-    P --> D2[DP2 Pre-filtering]
-    R --> D3[DP3 Wiki Cache]
+    C1[외부 유출 금지] --> P[Permission / Version-aware Retrieval]
+    C1 --> R[내부 RAG 중심 구조]
+    R --> D1[DP1 중복 제어]
+    P --> D2[DP2 Source Scope 제어]
+    R --> D3[DP3 Knowledge Access]
     P --> Audit[Citation / Audit]
-    classDef con fill:#fee2e2,stroke:#dc2626,stroke-width:2px;
-    classDef sol fill:#dcfce7,stroke:#16a34a,stroke-width:2px;
-    class C1,C2 con; class D1,D2,D3,P,R,Audit sol;
+    classDef con fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef sol fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    class C1 con
+    class D1,D2,D3,P,R,Audit sol
     </div>
   </div>
 </section>
@@ -269,14 +302,18 @@ flowchart LR
   <div class="body">
     <div class="asset"><img src="assets/kpi_dashboard.svg" alt="QA KPI 대시보드"></div>
     <table>
-      <tr><th>QA</th><th>Rank</th><th>짧은 시나리오</th><th>KPI 후보</th></tr>
-      <tr><td>QA-01 정확도</td><td>H</td><td>내부 API 사용법 질문에 실제 최신 코드/문서 기반 답변</td><td>EM, F1, Faithfulness</td></tr>
-      <tr><td>QA-02 응답 속도</td><td>H</td><td>IDE 흐름을 방해하지 않는 응답</td><td>P95 Latency, Prompt Length</td></tr>
-      <tr><td>QA-03 보안성</td><td>H</td><td>권한 없는 프로젝트 코드가 답변에 노출되지 않음</td><td>Unauthorized Exposure Rate 0%</td></tr>
-      <tr><td>QA-04 권한 정합성</td><td>H</td><td>사용자 권한에 따라 검색 대상과 근거가 달라짐</td><td>Allowed Result Sufficiency@K</td></tr>
-      <tr><td>QA-05 중복 강건성</td><td>H</td><td>Top-K가 동일 내용으로만 채워지지 않음</td><td>Top-K Duplicate Ratio, Context Diversity@K</td></tr>
-      <tr><td>QA-08 근거 추적성</td><td>M</td><td>EU, 원본 Segment, 버전, 권한 판단 추적</td><td>Citation Trace Coverage</td></tr>
+      <tr><th>QA</th><th>Rank</th><th>한 줄 KPI</th><th>근거</th></tr>
+      <tr><td>QA-01 정확도</td><td>H</td><td>평가 Query Set에서 EM/F1 또는 RAGAS Faithfulness가 Baseline RAG 이상이어야 한다.</td><td>RAGAS 논문 지표 참고</td></tr>
+      <tr><td>QA-02 응답 속도</td><td>H</td><td>일반 QA P95는 5초 이내, Wiki/Cache Hit 질의는 2초 이내를 목표로 한다.</td><td>[Expected, 측정 필요]</td></tr>
+      <tr><td>QA-03 보안성</td><td>H</td><td>권한 없는 Chunk가 검색 결과, Context, 답변, 로그에 포함되는 비율은 0%여야 한다.</td><td>[Required]</td></tr>
+      <tr><td>QA-04 권한/버전 정합성</td><td>H</td><td>권한/버전 Scenario Set에서 Allowed Result Sufficiency@10 90% 이상, Wrong Version Citation 0%를 목표로 한다.</td><td>[Expected, 측정 필요]</td></tr>
+      <tr><td>QA-05 중복 강건성</td><td>H</td><td>중복성 높은 Dataset에서 Top-K Duplicate Ratio 20% 이하 또는 Context Diversity@10 7개 이상을 목표로 한다.</td><td>[Expected, 측정 필요]</td></tr>
+      <tr><td>QA-08 근거 추적성</td><td>M</td><td>답변 근거의 Repository/File/Symbol/Segment/Commit/권한 판단 Citation Trace Coverage 95% 이상을 목표로 한다.</td><td>[Expected, 측정 필요]</td></tr>
     </table>
+    <div class="refs"><b>References:</b>
+      REF-01 <a href="https://arxiv.org/abs/2005.11401">Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks</a> /
+      REF-02 <a href="https://arxiv.org/abs/2309.15217">RAGAS: Automated Evaluation of Retrieval Augmented Generation</a>
+    </div>
   </div>
 </section>
 
@@ -290,22 +327,23 @@ flowchart TD
         A1[Code Repositories]
         A2[API / Architecture Documents]
         A3[Permission / IAM Metadata]
+        A4[Branch / Release / Commit Metadata]
     end
     subgraph Offline[Offline Processing]
         B1[Collector]
         B2[Parser / Segmenter]
-        B3[SPRAG EU Builder]
-        B4[Permission Tagger]
-        B5[Wiki Builder]
+        B3[Dedup-aware RAG Preprocessor]
+        B4[Permission / Version Tagger]
+        B5[Knowledge Access Builder]
     end
     subgraph Storage[Storage]
         C1[EU / Vector / Keyword Index]
-        C2[Permission Store]
-        C3[LLM Wiki Cache]
+        C2[Permission / Version Store]
+        C3[Knowledge Cache]
     end
     subgraph Online[Online QA]
         D1[Query API]
-        D2[Permission Resolver]
+        D2[Auth / Version Resolver]
         D3[Retriever / Router]
         D4[Context Builder]
         D5[Internal LLM]
@@ -313,26 +351,29 @@ flowchart TD
     end
     A1 --> B1 --> B2 --> B3 --> C1
     A3 --> B4 --> C2
+    A4 --> B4
     B3 --> B5 --> C3
     D1 --> D2 --> D3 --> D4 --> D5 --> D6
     C1 --> D3
     C2 --> D2
     C3 --> D3
-    classDef dp1 fill:#dbeafe,stroke:#2563eb,stroke-width:3px;
-    classDef dp2 fill:#dcfce7,stroke:#16a34a,stroke-width:3px;
-    classDef dp3 fill:#fef3c7,stroke:#d97706,stroke-width:3px;
-    class B2,B3,C1 dp1;
-    class A3,B4,C2,D2 dp2;
-    class B5,C3,D3 dp3;
+    classDef dp1 fill:#dbeafe,stroke:#2563eb,stroke-width:3px
+    classDef dp2 fill:#dcfce7,stroke:#16a34a,stroke-width:3px
+    classDef dp3 fill:#fef3c7,stroke:#d97706,stroke-width:3px
+    class B2,B3,C1 dp1
+    class A3,B4,C2,D2 dp2
+    class B5,C3,D3 dp3
     </div>
-    <table><tr><th>색상</th><th>DP</th><th>영향 영역</th></tr><tr><td><span class="tag b">Blue</span></td><td>DP1</td><td>Segment 추출, EU 생성, Source Mapping, 중복 제어 Index</td></tr><tr><td><span class="tag g">Green</span></td><td>DP2</td><td>Permission Metadata, Resolver, Pre-filtering, Audit</td></tr><tr><td><span class="tag a">Amber</span></td><td>DP3</td><td>Wiki Cache, Query Router, Canonical Answer, Fallback</td></tr></table>
+    <table><tr><th>색상</th><th>DP</th><th>영향 영역</th></tr><tr><td><span class="tag b">Blue</span></td><td>DP1</td><td>Segment 추출, 중복 제어 근거 단위, Source Mapping, 중복 제어 Index</td></tr><tr><td><span class="tag g">Green</span></td><td>DP2</td><td>Permission/Version Metadata, Auth/Version Resolver, Source Scope Routing/Filtering, Audit</td></tr><tr><td><span class="tag a">Amber</span></td><td>DP3</td><td>Knowledge Cache, Query Router, Canonical Answer, Fallback</td></tr></table>
   </div>
 </section>
 
 <section id="p11" class="slide">
   <div class="slide-head"><div><h2>DP1 배경: 중복 데이터에 강한 RAG 구조 필요</h2><p>Top-K 편향, Context Token 낭비, Deprecated 코드 오인 위험</p></div><span class="page-no">11</span></div>
   <div class="body">
-    <div class="asset"><img src="assets/dp1_eu_pipeline.svg" alt="SPRAG Evidence Unit Pipeline"></div>
+    <p><span class="tag b">Stakeholder: 개발자 / Architect / 운영팀</span><span class="tag c">FR-01</span><span class="tag c">FR-02</span><span class="tag c">FR-04</span><span class="tag c">FR-05</span><span class="tag v">QA-01 정확도</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-05 중복 강건성</span></p>
+    <div class="asset"><img src="assets/dp1_background_duplicate_flow.svg" alt="중복 코드가 Top-K와 답변 품질에 미치는 영향"></div>
+    <div class="callout">DP1의 출발점은 “RAG를 쓴다”가 아니라 “중복이 많은 코드 Corpus에서 검색 근거의 다양성과 신뢰성을 어떻게 유지할 것인가”이다. 같은 API 구현이 여러 Repository, Branch, 샘플 코드, Legacy 코드에 반복되면 Top-K가 비슷한 Chunk로 채워지고, LLM은 최신 구현이나 주의사항 같은 보완 근거를 놓칠 수 있다.</div>
     <div class="twocol">
       <div class="card"><h3>문제 예시</h3><pre>Top-5:
 1. LoginManager.cpp validateToken()
@@ -342,7 +383,20 @@ flowchart TD
 5. copied/LoginManager.cpp validateToken()</pre></div>
       <div class="card"><h3>설계 질문</h3><p>중복이 많은 코드 데이터에서 Top-K 편향과 Hallucination을 줄이기 위해 어떤 RAG 구조를 사용할 것인가?</p><p><span class="tag b">중복 강건성</span><span class="tag c">Prompt 감소</span><span class="tag v">Citation</span></p></div>
     </div>
-    <table><tr><th>Regime</th><th>Prompt 감소</th><th>처리 시간 단축</th><th>비고</th></tr><tr><td>HIGH-HIGH</td><td>[Provided Summary] 63~82%</td><td>[Provided Summary] 17~81%</td><td>높은 중복성 + 높은 집계</td></tr><tr><td>MID-HIGH</td><td>[Provided Summary] 30~50%</td><td>[Provided Summary] 10~40%</td><td>중간 중복성 + 높은 집계</td></tr></table>
+    <div class="callout amber">중복은 품질 문제이면서 비용 문제다. 같은 의미의 Chunk가 반복 투입되면 Prompt Token, Reranking 비용, 생성 지연이 함께 증가한다.</div>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> 사내 코드베이스는 일반 문서보다 중복이 훨씬 많이 발생합니다. 같은 기능이 여러 프로젝트에 복사되어 있거나, 버전별로 거의 같은 파일이 남아 있거나, 샘플 코드와 실제 운영 코드가 함께 검색될 수 있습니다. 이런 상태에서 단순 Top-K 검색을 하면 검색 결과가 모두 비슷한 코드 조각으로 채워질 수 있고, LLM은 충분히 다양한 근거를 보지 못합니다. 오래된 구현이나 샘플 코드를 최신 권장 구현으로 오인하면 코드 어시스트의 신뢰도도 크게 떨어집니다. 그래서 DP1은 중복이 많은 코드 환경에서 검색 근거를 어떻게 다양하고 대표성 있게 구성할지 결정하는 지점입니다.</div>
+    <div class="mermaid">
+flowchart LR
+    A[중복 코드 / 유사 문서] --> B[Top-K 잠식]
+    B --> C[Context 다양성 감소]
+    B --> D[Prompt Token 낭비]
+    B --> E[Deprecated 코드 오인]
+    C --> F[답변 정확도 저하]
+    D --> G[응답 지연 증가]
+    E --> F
+    classDef risk fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    class B,C,D,E,F,G risk
+    </div>
   </div>
 </section>
 
@@ -358,6 +412,13 @@ A[Chunks]-->B[Cluster]-->C[Summary Node]-->D[Hierarchical Search]-->E[LLM]</div>
 A[Segments]-->B[Clustering]-->C[Entropy Selection]-->D[Adaptive Summary]-->E[EU Index]</div><p><b>장점:</b> Index-time 중복 처리, Prompt/Latency 감소, Source Mapping</p><p><b>단점:</b> Offline 비용, EU 압축 오류, 동적 Corpus 대응 필요</p></div>
     </div>
     <table>
+      <tr><th>QA</th><th>Naive</th><th>RAPTOR</th><th>SPRAG EU</th><th>별점 기준 KPI / 근거</th></tr>
+      <tr><td>정확도</td><td>★☆☆</td><td>★★☆</td><td>★★★</td><td>★ 근거 누락 잦음 / ★★ 일부 완화 / ★★★ EM·F1·Faithfulness Baseline 이상. 근거: RAGAS + 내부 평가 필요</td></tr>
+      <tr><td>응답 속도</td><td>★☆☆</td><td>★★☆</td><td>★★★</td><td>★ 중복 Prompt 증가 / ★★ 요약으로 일부 감소 / ★★★ Prompt Length와 P95 Latency 감소. 근거: SPRAG 제공 요약 + 측정 필요</td></tr>
+      <tr><td>중복 강건성</td><td>★☆☆</td><td>★★☆</td><td>★★★</td><td>★ Top-K Duplicate 높음 / ★★ Cluster로 일부 완화 / ★★★ Duplicate Ratio 20% 이하 목표. 근거: [Expected]</td></tr>
+      <tr><td>근거 추적성</td><td>★★☆</td><td>★★☆</td><td>★★★</td><td>★ Source 연결 약함 / ★★ Chunk 연결 / ★★★ EU와 원본 Segment Mapping 유지. 근거: Citation Trace Coverage</td></tr>
+    </table>
+    <table>
       <tr><th>KPI</th><th>Naive</th><th>RAPTOR</th><th>SPRAG EU</th></tr>
       <tr><td>Top-K Duplicate Ratio</td><td>[Expected] 35~60%</td><td>[Expected] 20~40%</td><td>[Expected] 10~20%</td></tr>
       <tr><td>Context Diversity@10</td><td>[Expected] 4~6</td><td>[Expected] 5~7</td><td>[Expected] 7~9</td></tr>
@@ -369,55 +430,68 @@ A[Segments]-->B[Clustering]-->C[Entropy Selection]-->D[Adaptive Summary]-->E[EU 
 </section>
 
 <section id="p13" class="slide">
-  <div class="slide-head"><div><h2>DP2 배경: 권한 기반 Dataset / Retrieval Strategy</h2><p>정확한 검색도 권한이 맞지 않으면 사용할 수 없다</p></div><span class="page-no">13</span></div>
+  <div class="slide-head"><div><h2>DP2 배경: 권한/버전 기반 Dataset / Retrieval Strategy</h2><p>정확한 검색도 권한과 Source Version이 맞지 않으면 사용할 수 없다</p></div><span class="page-no">13</span></div>
   <div class="body">
-    <div class="asset"><img src="assets/dp2_permission_modes.svg" alt="권한 전략 비교"></div>
+    <p><span class="tag g">Stakeholder: 개발팀 / 보안 / 운영팀</span><span class="tag c">FR-03</span><span class="tag c">FR-05</span><span class="tag c">FR-06</span><span class="tag c">FR-08</span><span class="tag r">QA-03 보안성</span><span class="tag v">QA-04 권한/버전</span><span class="tag v">QA-08 추적성</span></p>
+    <div class="asset"><img src="assets/dp2_background_risk.svg" alt="권한과 버전 불일치 위험 배경"></div>
+    <div class="callout">DP2의 핵심은 “가장 유사한 코드”가 아니라 “이 사용자가 이 버전의 이 Source를 답변 근거로 볼 수 있는가”이다. 의미적으로 맞아 보여도 권한 없는 Repository나 다른 Release의 구현이 Context, Citation, Debug Log에 섞이면 보안 사고나 잘못된 개발 가이드가 된다.</div>
     <table>
       <tr><th>상황</th><th>위험</th><th>필요한 Architecture 대응</th></tr>
-      <tr><td>A 개발자는 A Repository만 접근 가능</td><td>B Repository 코드가 답변에 섞이면 보안 사고</td><td>Query-time Permission Resolver</td></tr>
-      <tr><td>공통 모듈은 여러 프로젝트에서 접근 가능</td><td>중복 관리와 권한 범위가 충돌</td><td>EU/Segment 단위 Metadata</td></tr>
-      <tr><td>동일 API 이름이 여러 프로젝트에 존재</td><td>권한 없는 구현을 Citation으로 제시할 수 있음</td><td>Permission-aware Pre-filtering</td></tr>
+      <tr><td>A 개발자는 A Repository만 접근 가능</td><td>B Repository 코드가 답변에 섞이면 보안 사고</td><td>Query-time Auth Resolver</td></tr>
+      <tr><td>같은 API가 Release 1.x와 2.x에 모두 존재</td><td>요청 버전과 다른 구현을 Citation으로 제시할 수 있음</td><td>Version Resolver / Source Scope</td></tr>
+      <tr><td>통합 검색 결과에 여러 Project/Branch가 섞임</td><td>후속 답변과 로그에 권한 없는 Source가 남을 수 있음</td><td>Source Metadata 기반 검증</td></tr>
     </table>
-    <div class="callout red">핵심 메시지: DP2의 품질속성은 보안성/권한 정합성이다. Unauthorized Context Exposure Rate는 0% 목표로 둔다.</div>
+    <div class="callout red">핵심 메시지: DP2의 품질속성은 보안성, 권한 정합성, 버전 정합성이다. Unauthorized Context Exposure Rate와 Wrong Version Citation Rate는 0% 목표로 둔다.</div>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP2는 검색 정확도만으로는 코드 어시스트를 운영할 수 없다는 문제에서 출발합니다. 사내 코드는 프로젝트, 부서, 역할에 따라 볼 수 있는 범위가 다르고, 같은 API라도 Branch나 Release에 따라 실제 구현이 달라질 수 있습니다. 의미적으로 가장 유사한 코드가 검색되더라도, 그 코드가 사용자 권한 밖에 있거나 요청한 버전과 다르면 답변 근거로 사용할 수 없습니다. 더 위험한 점은 이런 Source가 최종 답변뿐 아니라 중간 검색 결과, Debug Log, Citation에 남을 수 있다는 것입니다. 핵심은 “이 사용자가 이 버전의 이 Source를 답변 근거로 볼 수 있는가”를 Architecture가 보장하는 것입니다.</div>
   </div>
 </section>
 
 <section id="p14" class="slide">
-  <div class="slide-head"><div><h2>DP2 대안 비교: 분리 Index vs Post-filtering vs Pre-filtering</h2><p>선택안은 통합 DB + Permission-aware Pre-filtering, 단 고보안 데이터는 분리 Index 예외</p></div><span class="page-no">14</span></div>
+  <div class="slide-head"><div><h2>DP2 대안 비교: Source Routing vs Post-filtering</h2><p>후보는 A/B 두 개만 비교하고, 권한 + 버전 + 출처 Metadata 관점으로 판단</p></div><span class="page-no">14</span></div>
   <div class="body">
-    <div class="threecol">
-      <div class="card"><h3>A. 권한별 분리 DB</h3><div class="mermaid">flowchart TD
-Q[Query]-->A[Auth]-->I1[Index A]
-A-->I2[Index B]
-I1-->M[Merge]
-I2-->M</div><p><b>장점:</b> 보안 경계 명확</p><p><b>단점:</b> Index 조합 폭발, 병합/정규화 복잡</p></div>
-      <div class="card"><h3>B. Post-filtering</h3><div class="mermaid">flowchart TD
-Q[Query]-->S[Global Search Top-K']
-S-->F[Permission Filter]
-F-->K[Final Top-K]</div><p><b>장점:</b> 운영 단순</p><p><b>단점:</b> 권한 없는 후보가 중간 결과에 들어오고 결과 부족 위험</p></div>
-      <div class="card must"><h3>C. Pre-filtering</h3><div class="mermaid">flowchart TD
-Q[Query]-->A[Auth]
-A-->P[Permission Filter]
-Q-->S[Search within Allowed Scope]
-P-->S</div><p><b>장점:</b> 통합 운영성과 보안성 균형</p><p><b>단점:</b> DB Metadata Filter 성능과 Metadata 품질 의존</p></div>
+    <div class="twocol">
+      <div class="card must"><h3>A. Source Routing / 분리 Index</h3><div class="mermaid">flowchart TD
+Q[Query]-->A[Auth / Version Resolver]
+A-->I1[Project / Release Scope A]
+A-->I2[Common Module Scope]
+I1-->M[Merge / Rerank]
+I2-->M</div><p><b>장점:</b> 검색 전에 권한/버전 경계가 결정되어 보안성과 버전 정합성이 명확</p><p><b>단점:</b> Scope 조합, Index 운영, 결과 병합/정규화 복잡</p></div>
+      <div class="card"><h3>B. Source Metadata Post-filtering</h3><div class="mermaid">flowchart TD
+Q[Query]-->S[Unified Search Top-K Prime]
+S-->F[Source Metadata Filter<br/>Permission + Version]
+F-->K[Final Top-K + Citation]</div><p><b>장점:</b> 통합 운영이 단순하고 Citation Metadata를 재사용하기 좋음</p><p><b>단점:</b> 권한 없는 후보가 중간 결과에 들어오고 결과 부족/로그 노출 위험</p></div>
     </div>
-    <table><tr><th>KPI</th><th>분리 DB</th><th>Post-filtering</th><th>Pre-filtering</th></tr><tr><td>Unauthorized Exposure</td><td>0% 목표</td><td>0% 목표이나 구현 오류 위험</td><td>0% 목표</td></tr><tr><td>Allowed Result Sufficiency@10</td><td>80~95%</td><td>50~80%</td><td>85~95%</td></tr><tr><td>운영 Index 수</td><td>권한 그룹 수에 비례</td><td>1개 중심</td><td>1개 중심 + 예외 분리</td></tr><tr><td>Audit Explainability</td><td>중간</td><td>중간</td><td>높음</td></tr></table>
-    <div class="callout green">Decision: 일반 데이터는 통합 DB + Permission-aware Pre-filtering, 고보안 데이터는 별도 Secure Index로 분리한다.</div>
+    <table>
+      <tr><th>QA</th><th>A. Source Routing</th><th>B. Post-filtering</th><th>별점 기준 KPI / 근거</th></tr>
+      <tr><td>보안성</td><td>★★★</td><td>★★☆</td><td>★ 중간 결과 노출 위험 큼 / ★★ 최종 답변 통제 / ★★★ Unauthorized Exposure 0%와 검색 Scope 제한. 근거: 보안 요구 [Required]</td></tr>
+      <tr><td>권한/버전 정합성</td><td>★★★</td><td>★★☆</td><td>★ Wrong Version 잦음 / ★★ Metadata 의존 / ★★★ Wrong Version Citation 0%, Routing Accuracy 95%+. 근거: [Expected, 측정 필요]</td></tr>
+      <tr><td>근거 추적성</td><td>★★☆</td><td>★★★</td><td>★ Trace 부족 / ★★ Scope Audit 가능 / ★★★ Source Metadata 기반 Citation Trace 95%+. 근거: FR-05/FR-08</td></tr>
+      <tr><td>운영성/확장성</td><td>★★☆</td><td>★★★</td><td>★ Index 조합 폭발 / ★★ Scope 재사용 필요 / ★★★ 단일 Index 중심 운영. 근거: Index Operation Count</td></tr>
+    </table>
+    <table><tr><th>KPI</th><th>A. Source Routing / 분리 Index</th><th>B. Post-filtering</th></tr><tr><td>Unauthorized Exposure</td><td>[Required] 0% 목표</td><td>[Required] 0% 목표이나 중간 결과 통제 필요</td></tr><tr><td>Wrong Version Citation</td><td>[Required] 0% 목표</td><td>[Required] 0% 목표이나 Metadata 품질 의존</td></tr><tr><td>Allowed Result Sufficiency@10</td><td>[Expected] 80~95%</td><td>[Expected] 50~80%</td></tr><tr><td>운영 Index/Scope 수</td><td>권한/버전 Scope 수에 비례</td><td>1개 중심</td></tr><tr><td>Citation Trace Coverage</td><td>[Expected] 90% 이상</td><td>[Expected] 95% 이상</td></tr></table>
+    <div class="callout green">Decision: 권한/버전 기반 Source Routing을 기본 전략으로 선택한다. Post-filtering은 통합 운영성이 중요한 구간의 보조 전략으로 둔다.</div>
+    <div class="refs"><b>References:</b>
+      REF-DP2-01 <a href="https://docs.opensearch.org/latest/vector-search/filter-search-knn/index/">OpenSearch - Filtering data for vector search</a> /
+      REF-DP2-02 <a href="https://docs.pinecone.io/guides/search/filter-by-metadata">Pinecone - Filter by metadata</a>
+    </div>
   </div>
 </section>
 
 <section id="p15" class="slide">
-  <div class="slide-head"><div><h2>DP3 배경: SPRAG 이후에도 Knowledge Access가 필요한 이유</h2><p>SPRAG는 Evidence 검색 최적화이고, DP3는 반복 지식/일관성/운영 지식 계층 문제</p></div><span class="page-no">15</span></div>
+  <div class="slide-head"><div><h2>DP3 배경: 중복 제어 RAG 이후에도 Knowledge Access가 필요한 이유</h2><p>근거 검색 최적화 이후에도 반복 지식/일관성/운영 지식 계층 문제는 남는다</p></div><span class="page-no">15</span></div>
   <div class="body">
-    <div class="asset"><img src="assets/dp3_knowledge_layers.svg" alt="Knowledge Layer 구조"></div>
+    <p><span class="tag a">Stakeholder: 개발자 / Architect / 운영팀 / LLM 운영 조직</span><span class="tag c">FR-02</span><span class="tag c">FR-05</span><span class="tag c">FR-07</span><span class="tag c">FR-08</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-06 유지보수성</span><span class="tag v">QA-07 최신성</span></p>
+    <div class="asset"><img src="assets/dp3_background_gap.svg" alt="중복 제어 RAG 이후 남는 Knowledge Access 문제"></div>
+    <div class="callout">DP3는 검색 알고리즘만의 문제가 아니다. 반복적으로 묻는 API 사용법, Deprecated 대체 방향, 컴포넌트 표준 초기화 절차 같은 질문은 매번 검색 결과를 조합하기보다, 검토 가능한 표준 지식과 원문 Fallback 정책이 있어야 안정적으로 운영된다.</div>
     <table>
-      <tr><th>SPRAG가 해결</th><th>그래도 남는 문제</th><th>DP3의 역할</th></tr>
+      <tr><th>중복 제어 RAG가 해결</th><th>그래도 남는 문제</th><th>DP3의 역할</th></tr>
       <tr><td>중복 Segment를 EU로 압축</td><td>자주 묻는 질문도 매번 Retrieval/답변 구성 필요</td><td>Wiki/Cache Hit로 반복 QA 비용 절감</td></tr>
       <tr><td>Prompt 길이와 생성 지연 감소</td><td>동일 질문의 표준 답변/권장 방향이 흔들릴 수 있음</td><td>Canonical Answer 관리</td></tr>
       <tr><td>Source Mapping 유지</td><td>EU는 운영 지식 문서 그 자체는 아님</td><td>사람이 검토 가능한 Wiki Page 생성</td></tr>
-      <tr><td>단일/소수 EU 검색</td><td>최신성/상세근거/낮은 Confidence 질문 판단 필요</td><td>Query Router와 Fallback 정책</td></tr>
+      <tr><td>단일/소수 EU 검색</td><td>최신성/버전/상세근거/낮은 Confidence 질문 판단 필요</td><td>Query Router와 Fallback 정책</td></tr>
     </table>
-    <div class="callout amber">Q&amp;A 방어 문장: DP3는 DP1을 대체하지 않는다. SPRAG의 EU를 사람이 검토 가능한 Knowledge Product로 승격하고, 언제 Wiki로 답하고 언제 원문으로 돌아갈지 결정한다.</div>
+    <div class="callout amber">Q&amp;A 방어 문장: DP3는 DP1을 대체하지 않는다. DP1의 근거 단위와 Source Mapping을 사람이 검토 가능한 Knowledge Product로 승격하고, 언제 캐시로 답하고 언제 원문으로 돌아갈지 결정한다.</div>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP3는 DP1에서 중복 근거를 잘 제어했다는 전제 위에서 시작합니다. 중복 제어 RAG를 사용하면 검색 근거는 더 효율적으로 가져올 수 있지만, 개발자들이 반복적으로 묻는 질문에 항상 빠르고 일관되게 답하는 문제는 여전히 남습니다. 공통 API 사용 기준, Deprecated 구현의 대체 방식, 컴포넌트 초기화 순서 같은 질문은 관련 Source 몇 개보다 조직에서 합의한 표준 답변이 더 중요할 수 있습니다. 매번 검색 결과 조합이 달라지면 답변 표현과 권장 방향도 흔들릴 수 있습니다. 그래서 DP3는 반복 지식과 설계 지식을 어떤 방식으로 접근하고 언제 원문 RAG로 되돌아갈지 결정하는 지점입니다.</div>
   </div>
 </section>
 
@@ -435,7 +509,7 @@ F-->R[Rerank]</div><p><b>장점:</b> API명/파일명/에러 메시지 검색 �
 EU[EU / Segments]-->E[Entity]
 E-->G[Graph]
 Q[Query]-->T[Traversal]
-G-->T</div><p><b>장점:</b> 관계형 Multi-hop QA에 강함</p><p><b>단점:</b> EU/원본 Segment/Graph/권한 Metadata 동기화 복잡</p></div>
+G-->T</div><p><b>장점:</b> 관계형 Multi-hop QA에 강함</p><p><b>단점:</b> EU/원본 Segment/Graph/권한/버전 Metadata 동기화 복잡</p></div>
       <div class="card must"><h3>C. LLM Wiki Cache</h3><div class="mermaid">flowchart TD
 EU[Evidence Units]-->W[Wiki Builder]
 W-->P[Canonical Pages]
@@ -443,6 +517,13 @@ Q[Query]-->R[Router]
 R-->P
 R-->F[Fallback]</div><p><b>장점:</b> 반복 질문 속도, 답변 일관성, 사람이 검토 가능한 Knowledge Layer</p><p><b>단점:</b> Staleness, 요약 오류, 권한 혼합 관리 필요</p></div>
     </div>
+    <table>
+      <tr><th>QA</th><th>Dense+BM25</th><th>HippoRAG</th><th>LLM Wiki Cache</th><th>별점 기준 KPI / 근거</th></tr>
+      <tr><td>응답 속도</td><td>★★☆</td><td>★☆☆</td><td>★★★</td><td>★ Graph Traversal/전체 검색 지연 / ★★ 검색 보강 / ★★★ Cache Hit 질의 P95 2초 목표. 근거: RAGCache/GPTCache 참고 + 측정 필요</td></tr>
+      <tr><td>정확도/일관성</td><td>★★☆</td><td>★★☆</td><td>★★★</td><td>★ 답변 흔들림 / ★★ Recall 또는 관계성 개선 / ★★★ Repeated Answer Consistency 높음. 근거: [Expected]</td></tr>
+      <tr><td>최신성</td><td>★★★</td><td>★★☆</td><td>★★☆</td><td>★ Stale 위험 큼 / ★★ Invalidation 필요 / ★★★ 원문 검색 중심 또는 Fallback 명확. 근거: Stale Answer Rate</td></tr>
+      <tr><td>유지보수성</td><td>★★★</td><td>★☆☆</td><td>★★☆</td><td>★ Graph 운영 복잡 / ★★ Wiki 검토 필요 / ★★★ 기존 검색 레이어 중심. 근거: Maintenance Complexity</td></tr>
+    </table>
     <table><tr><th>KPI</th><th>Dense+BM25</th><th>HippoRAG</th><th>LLM Wiki Cache</th></tr><tr><td>Wiki / Cache Hit Rate</td><td>0%</td><td>0~10%</td><td>30~60%</td></tr><tr><td>P95 QA Latency</td><td>중간</td><td>높음</td><td>낮음~중간</td></tr><tr><td>Repeated Answer Consistency</td><td>중간</td><td>중간</td><td>높음</td></tr><tr><td>SPRAG Integration Risk</td><td>낮음</td><td>높음</td><td>중간</td></tr><tr><td>Multi-hop QA</td><td>중간</td><td>높음</td><td>중간</td></tr></table>
     <div class="callout green">Decision: LLM Wiki Knowledge Cache를 채택한다. HippoRAG는 관계형 QA 요구가 커질 때 후속 확장 또는 Appendix 후보로 둔다.</div>
   </div>
@@ -453,10 +534,26 @@ R-->F[Fallback]</div><p><b>장점:</b> 반복 질문 속도, 답변 일관성, �
 <script>
 const buttons = Array.from(document.querySelectorAll('.tabbtn'));
 const slides = Array.from(document.querySelectorAll('.slide'));
+function renderSlide(id){
+  const slide = document.getElementById(id);
+  if(!slide) return;
+  const nodes = Array.from(slide.querySelectorAll('.mermaid:not([data-rendered="true"])'));
+  if(!nodes.length) return;
+  nodes.reduce((chain, node) => {
+    return chain.then(() => mermaid.run({ nodes: [node] }).then(() => {
+      node.dataset.rendered = 'true';
+    }).catch((error) => {
+      console.error('Mermaid render failed:', error);
+      node.dataset.rendered = 'error';
+      node.innerHTML = '<pre style="white-space:pre-wrap;text-align:left;color:#b91c1c;margin:0">Mermaid rendering failed. Check this diagram syntax in the HTML source.</pre>';
+    }));
+  }, Promise.resolve());
+}
 function activate(id){
   buttons.forEach(b => b.classList.toggle('active', b.dataset.tab === id));
   slides.forEach(s => s.classList.toggle('active', s.id === id));
   history.replaceState(null, '', '#' + id);
+  window.setTimeout(() => renderSlide(id), 30);
   window.scrollTo({top:0, behavior:'smooth'});
 }
 buttons.forEach(btn => btn.addEventListener('click', () => activate(btn.dataset.tab)));

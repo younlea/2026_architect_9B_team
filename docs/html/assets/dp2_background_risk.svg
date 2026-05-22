@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">DP2 Background Risk</title>
+  <desc id="desc">권한과 버전이 맞지 않는 Source가 답변과 Citation에 섞이는 위험 상황</desc>
+  <style>
+    .bg{fill:#f8fbff}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2}.risk{fill:#fee2e2;stroke:#dc2626;stroke-width:3}.ok{fill:#dcfce7;stroke:#16a34a;stroke-width:3}.meta{fill:#e0f2fe;stroke:#0284c7;stroke-width:3}
+    .t{font:700 23px Arial,sans-serif;fill:#172033}.h{font:700 16px Arial,sans-serif;fill:#243247}.s{font:600 13px Arial,sans-serif;fill:#334155}.small{font:12px Arial,sans-serif;fill:#64748b}.line{stroke:#64748b;stroke-width:2;fill:none;marker-end:url(#arrow)}
+  </style>
+  <defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="1200" height="360"/>
+  <text class="t" x="40" y="48">DP2 배경: 유사한 Source라도 권한/버전이 틀리면 사용할 수 없다</text>
+  <rect class="box" x="60" y="105" width="180" height="70" rx="12"/><text class="h" x="102" y="133">User Query</text><text class="small" x="88" y="156">Project A / Release 2.x</text>
+  <rect class="box" x="305" y="75" width="230" height="180" rx="14"/><text class="h" x="354" y="110">검색 후보 Source</text>
+  <rect class="ok" x="335" y="135" width="170" height="38" rx="8"/><text class="small" x="358" y="159">A Repo / Release 2.x</text>
+  <rect class="risk" x="335" y="185" width="170" height="38" rx="8"/><text class="small" x="358" y="209">B Repo / Release 2.x</text>
+  <rect class="risk" x="335" y="235" width="170" height="38" rx="8"/><text class="small" x="358" y="259">A Repo / Release 1.x</text>
+  <rect class="meta" x="615" y="115" width="220" height="100" rx="14"/><text class="h" x="660" y="148">Source Metadata</text><text class="small" x="647" y="174">권한 + Branch/Release/Commit</text>
+  <rect class="risk" x="915" y="105" width="220" height="90" rx="14"/><text class="h" x="950" y="138">잘못된 답변 위험</text><text class="small" x="945" y="166">Unauthorized / Wrong Version</text>
+  <rect class="ok" x="915" y="225" width="220" height="70" rx="14"/><text class="h" x="955" y="253">목표</text><text class="small" x="942" y="276">허용 Source만 Context/Citation</text>
+  <path class="line" d="M240 140 H305"/><path class="line" d="M535 165 H615"/><path class="line" d="M835 165 H915"/><path class="line" d="M725 215 C790 260 845 260 915 260"/>
+</svg>
