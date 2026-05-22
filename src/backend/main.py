@@ -3,7 +3,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 from pathlib import Path
 from backend.db.database import init_db
-from backend.routers import chat, rag_compare, agent, threads, benchmark
+from backend.routers import chat, rag_compare, agent, threads, benchmark, swebench
 
 app = FastAPI(title="RAG Compare POC")
 
@@ -16,6 +16,7 @@ app.include_router(rag_compare.router)
 app.include_router(agent.router)
 app.include_router(threads.router)
 app.include_router(benchmark.router)
+app.include_router(swebench.router)
 
 # 정적 파일 서빙
 FRONTEND_DIR = Path(__file__).parent.parent / "frontend"
@@ -43,3 +44,8 @@ def chat_page():
 @app.get("/compare")
 def compare_page():
     return _no_cache_response(str(FRONTEND_DIR / "compare.html"))
+
+
+@app.get("/swebench")
+def swebench_page():
+    return _no_cache_response(str(FRONTEND_DIR / "swebench.html"))

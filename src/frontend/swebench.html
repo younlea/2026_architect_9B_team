@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SWE-bench PoC — RAG 구조 비교</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+  <style>
+    .poc-desc {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-left: 4px solid var(--primary);
+      border-radius: 8px;
+      padding: 18px 24px;
+      margin: 24px 0 20px;
+      font-size: 0.93rem;
+      color: var(--text-muted);
+      line-height: 1.7;
+    }
+    .poc-desc strong { color: var(--text); }
+
+    .top-bar {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    .issue-select-wrap { flex: 1; min-width: 260px; }
+    .issue-select-wrap label { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 6px; display: block; }
+    select {
+      width: 100%;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.9rem;
+    }
+
+    .issue-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .issue-box h3 { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }
+    .issue-meta { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+    .badge {
+      font-size: 0.75rem;
+      padding: 3px 10px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+    .badge-repo { background: #1e3a5f; color: #60a5fa; }
+    .badge-ver  { background: #1e3a1e; color: #4ade80; }
+    .badge-ans  { background: #3b1f1f; color: #f87171; }
+    .issue-text {
+      font-size: 0.87rem;
+      color: var(--text);
+      white-space: pre-wrap;
+      max-height: 180px;
+      overflow-y: auto;
+      line-height: 1.6;
+      border-top: 1px solid var(--border);
+      padding-top: 10px;
+      margin-top: 6px;
+    }
+
+    /* 결과 그리드 — 최대 3열 */
+    .results-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+    }
+    @media (max-width: 1100px) { .results-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 700px)  { .results-grid { grid-template-columns: 1fr; } }
+
+    .result-col {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .result-header {
+      padding: 12px 16px 10px;
+      border-bottom: 1px solid var(--border);
+    }
+    .result-header-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+      flex-wrap: wrap;
+    }
+    .result-header h3 { font-size: 0.92rem; flex: 1; margin: 0; }
+    .combo-tags {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 5px;
+    }
+    .combo-tag {
+      font-size: 0.68rem;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 700;
+      border: 1px solid currentColor;
+    }
+    .hit-badge {
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 20px;
+    }
+    .hit-yes { background: #1a3a1a; color: #4ade80; }
+    .hit-no  { background: #3a1a1a; color: #f87171; }
+    .latency-badge {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      background: var(--surface2);
+      padding: 2px 7px;
+      border-radius: 10px;
+    }
+
+    /* 플로우차트 토글 버튼 */
+    .flow-toggle {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 7px;
+      background: var(--surface2);
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .flow-toggle:hover { color: var(--text); border-color: var(--primary); }
+
+    /* 플로우차트 모달 */
+    .flow-modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.72);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      backdrop-filter: blur(3px);
+    }
+    .flow-modal-overlay.open { display: flex; }
+    .flow-modal {
+      background: #0d1117;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 28px 36px 24px;
+      min-width: 560px;
+      max-width: 900px;
+      width: 92vw;
+      max-height: 85vh;
+      overflow: auto;
+      position: relative;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.6);
+    }
+    .flow-modal-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    .flow-modal-subtitle {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+    .flow-modal-close {
+      position: absolute;
+      top: 16px;
+      right: 20px;
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+      line-height: 1;
+      padding: 4px 8px;
+      border-radius: 6px;
+      transition: color 0.15s, background 0.15s;
+    }
+    .flow-modal-close:hover { color: var(--text); background: var(--surface2); }
+    .flow-section-title {
+      font-size: 0.78rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 10px;
+    }
+    .flow-two-col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 700px) { .flow-two-col { grid-template-columns: 1fr; } }
+    .flow-modal .mermaid { display: flex; justify-content: center; }
+    .flow-modal svg { max-width: 100%; height: auto; }
+
+    .result-body { padding: 12px 16px; }
+    .chunk-card {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 10px 12px;
+      margin-bottom: 10px;
+      font-size: 0.8rem;
+    }
+    .chunk-file {
+      font-size: 0.75rem;
+      color: var(--primary);
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+    .chunk-file .is-answer { color: #4ade80; font-weight: 700; }
+    .chunk-file .line-info { color: var(--text-muted); }
+    .chunk-code {
+      font-family: 'Consolas', 'Monaco', monospace;
+      white-space: pre-wrap;
+      word-break: break-word;
+      color: var(--text);
+      max-height: 160px;
+      overflow-y: auto;
+      font-size: 0.75rem;
+      line-height: 1.5;
+    }
+    .no-chunks { color: var(--text-muted); font-size: 0.85rem; padding: 12px 0; text-align: center; }
+    .db-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* 인덱싱 패널 */
+    .index-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 16px;
+    }
+    .index-panel h3 { font-size: 0.9rem; margin-bottom: 12px; }
+    .panel-log {
+      font-family: monospace;
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      background: var(--surface2);
+      border-radius: 6px;
+      padding: 10px 12px;
+      max-height: 140px;
+      overflow-y: auto;
+      display: none;
+      margin-top: 10px;
+    }
+    .panel-progress {
+      height: 6px;
+      background: var(--surface2);
+      border-radius: 3px;
+      margin-top: 10px;
+      display: none;
+    }
+    .panel-progress-bar {
+      height: 100%;
+      background: var(--primary);
+      border-radius: 3px;
+      transition: width 0.3s;
+      width: 0%;
+    }
+
+    /* 데이터셋 선택 */
+    .dataset-row {
+      display: flex;
+      gap: 20px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 12px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .dataset-row label { font-size: 0.83rem; color: var(--text-muted); }
+    .dataset-row .radio-group { display: flex; gap: 16px; }
+    .radio-opt {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .radio-opt input { accent-color: var(--primary); }
+    .num-input {
+      width: 80px;
+      padding: 5px 10px;
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.85rem;
+    }
+
+    /* 2-row 선택기 (RAG 방식 + 검색 전략) */
+    .matrix-selector {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      margin-bottom: 14px;
+    }
+    .matrix-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .matrix-row + .matrix-row { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+    .matrix-row-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-weight: 700;
+      min-width: 110px;
+      white-space: nowrap;
+    }
+    .matrix-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+    .matrix-hint {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Legacy 칩 색상 */
+    .retriever-chip.active.chip-legacy { border-color: #94a3b8; background: rgba(148,163,184,0.12); color: #94a3b8; }
+
+    /* 칩 스타일 */
+    .retriever-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 13px;
+      border-radius: 20px;
+      border: 2px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-muted);
+      font-size: 0.81rem;
+      font-weight: 600;
+      cursor: pointer;
+      user-select: none;
+      transition: all 0.15s;
+      opacity: 0.5;
+    }
+    .retriever-chip.active { opacity: 1; color: var(--text); }
+    .retriever-chip:not(.active):hover { opacity: 0.75; }
+    .retriever-chip.active.chip-basic-rag  { border-color: #fb923c; background: rgba(251,146,60,0.12);  color: #fb923c; }
+    .retriever-chip.active.chip-raptor-rag { border-color: #22d3ee; background: rgba(34,211,238,0.12);  color: #22d3ee; }
+    .retriever-chip.active.chip-roi-rag    { border-color: #f472b6; background: rgba(244,114,182,0.12); color: #f472b6; }
+    .retriever-chip.active.chip-flat       { border-color: #60a5fa; background: rgba(96,165,250,0.12);  color: #60a5fa; }
+    .retriever-chip.active.chip-postfilter { border-color: #a78bfa; background: rgba(167,139,250,0.12); color: #a78bfa; }
+    .retriever-chip.active.chip-routed     { border-color: #34d399; background: rgba(52,211,153,0.12);  color: #34d399; }
+    .retriever-chip .chip-dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.8;
+    }
+
+    /* RAGAS 평가 결과 테이블 */
+    .eval-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+      margin-top: 16px;
+    }
+    .eval-table th {
+      text-align: left;
+      padding: 7px 11px;
+      background: var(--surface2);
+      color: var(--text-muted);
+      font-weight: 600;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    .eval-table td {
+      padding: 7px 11px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+    .eval-table tr:last-child td { border-bottom: none; }
+    .eval-table .metric-name { color: var(--text-muted); font-size: 0.78rem; }
+    .score-cell { font-weight: 700; font-family: monospace; }
+    .score-high { color: #4ade80; }
+    .score-mid  { color: #fbbf24; }
+    .score-low  { color: #f87171; }
+
+    #statusBadge {
+      font-size: 0.78rem;
+      padding: 4px 12px;
+      border-radius: 20px;
+      background: var(--surface2);
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+<nav class="nav">
+  <span class="logo">⚡ RAG Compare POC</span>
+  <a href="/">홈</a>
+  <a href="/chat">채팅</a>
+  <a href="/compare">RAG 비교</a>
+  <a href="/swebench" style="color:var(--text);">SWE-bench PoC</a>
+  <a href="https://github.com/younlea/2026_architect_9B_team" target="_blank" rel="noopener" style="margin-left:auto;">GitHub</a>
+</nav>
+
+<div style="max-width:1500px; margin:0 auto; padding:24px 28px;">
+
+  <!-- PoC 설명 -->
+  <div class="poc-desc">
+    <strong>SWE-bench 기반 RAG 파이프라인 × 검색 전략 매트릭스 비교 PoC</strong><br>
+    실제 GitHub 이슈(버그 리포트)를 쿼리로 사용하여 수정된 코드 파일을 얼마나 잘 찾는지
+    <strong>RAG 인덱싱 방식 × 검색 전략</strong> 조합(최대 4 × 3 = 12가지)으로 비교합니다.<br>
+    <span style="font-size:0.88rem;">
+    <strong style="color:#fb923c;">Basic RAG</strong>: 고정 청킹 &nbsp;|&nbsp;
+    <strong style="color:#22d3ee;">RAPTOR RAG</strong>: DBSCAN 계층 노드 &nbsp;|&nbsp;
+    <strong style="color:#f472b6;">ROI-RAG</strong>: kNN EU 구성 &nbsp;—&nbsp;
+    각 RAG 방식으로 구축된 벡터 DB를
+    <strong style="color:#60a5fa;">Flat</strong> / <strong style="color:#a78bfa;">Post-Filter</strong> / <strong style="color:#34d399;">Routed</strong> 전략으로 검색
+    </span><br>
+    <span style="color:var(--text-muted); font-size:0.82rem;">
+    RAGAS 스타일 메트릭: Context Precision@3 · Context Recall@3 · MRR · Hit@3
+    </span>
+  </div>
+
+  <!-- ① 인덱싱 패널 -->
+  <div class="index-panel">
+    <h3>📦 데이터 인덱싱</h3>
+
+    <div class="dataset-row">
+      <label>데이터셋:</label>
+      <div class="radio-group">
+        <label class="radio-opt">
+          <input type="radio" name="dataset" value="lite" checked>
+          SWE-bench Lite <span style="color:var(--text-muted); font-size:0.78rem;">(~300건, 빠름)</span>
+        </label>
+        <label class="radio-opt">
+          <input type="radio" name="dataset" value="full">
+          SWE-bench Full <span style="color:var(--text-muted); font-size:0.78rem;">(~2294건, 느림)</span>
+        </label>
+      </div>
+      <label style="margin-left:8px;">최대 이슈 수:</label>
+      <input type="number" id="maxIssues" class="num-input" value="300" min="1" max="5000">
+    </div>
+
+    <!-- 인덱싱할 RAG 방식 -->
+    <div style="margin-bottom:12px;">
+      <div style="font-size:0.8rem; color:var(--text-muted); margin-bottom:8px;">⚙️ 인덱싱할 방식 선택</div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;" id="engineIndexSel">
+        <label class="radio-opt" style="font-size:0.83rem;">
+          <input type="checkbox" name="eng" value="Legacy" checked style="accent-color:#94a3b8;">
+          <span style="color:#94a3b8; font-weight:600;">Legacy</span>
+          <span style="color:var(--text-muted); font-size:0.75rem;">AST 청킹</span>
+        </label>
+        <label class="radio-opt" style="font-size:0.83rem;">
+          <input type="checkbox" name="eng" value="BasicRAG" checked style="accent-color:#fb923c;">
+          <span style="color:#fb923c; font-weight:600;">Basic RAG</span>
+        </label>
+        <label class="radio-opt" style="font-size:0.83rem;">
+          <input type="checkbox" name="eng" value="RaptorRAG" checked style="accent-color:#22d3ee;">
+          <span style="color:#22d3ee; font-weight:600;">RAPTOR RAG</span>
+        </label>
+        <label class="radio-opt" style="font-size:0.83rem;">
+          <input type="checkbox" name="eng" value="ROIRAG" checked style="accent-color:#f472b6;">
+          <span style="color:#f472b6; font-weight:600;">ROI-RAG</span>
+        </label>
+      </div>
+    </div>
+
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+      <span id="statusBadge">상태 확인 중...</span>
+      <button class="btn btn-outline" onclick="checkStatus()" style="padding:7px 16px; font-size:0.85rem;">새로고침</button>
+      <button class="btn btn-primary" id="btnIndex" onclick="startIndex()" style="padding:7px 16px; font-size:0.85rem;">▶ 인덱싱 시작</button>
+      <button class="btn btn-outline" id="btnIndexStop" onclick="stopIndex()" style="padding:7px 16px; font-size:0.85rem; display:none; border-color:#f87171; color:#f87171;">⏹ 중지</button>
+      <button class="btn btn-outline" id="btnClear" onclick="clearIndex()" style="padding:7px 16px; font-size:0.85rem; border-color:#f87171; color:#f87171;">🗑 전체 삭제</button>
+      <span style="font-size:0.78rem; color:var(--text-muted);">※ 최초 1회 필요 (Lite: 약 2~5분)</span>
+    </div>
+    <div class="panel-progress" id="indexProgress"><div class="panel-progress-bar" id="indexProgressBar"></div></div>
+    <div class="panel-log" id="indexLog"></div>
+  </div>
+
+  <!-- ② RAGAS 평가 패널 -->
+  <div class="index-panel">
+    <h3>📊 RAGAS 스타일 평가</h3>
+
+    <div class="matrix-selector">
+      <div class="matrix-row">
+        <div class="matrix-row-label">RAG 인덱싱 방식</div>
+        <div class="matrix-chips" id="evalRagMethodSel">
+          <span class="retriever-chip chip-legacy active"     data-key="Legacy"    onclick="toggleChip(this)"><span class="chip-dot"></span>Legacy</span>
+          <span class="retriever-chip chip-basic-rag active"  data-key="BasicRAG"  onclick="toggleChip(this)"><span class="chip-dot"></span>Basic RAG</span>
+          <span class="retriever-chip chip-raptor-rag active" data-key="RaptorRAG" onclick="toggleChip(this)"><span class="chip-dot"></span>RAPTOR RAG</span>
+          <span class="retriever-chip chip-roi-rag active"    data-key="ROIRAG"    onclick="toggleChip(this)"><span class="chip-dot"></span>ROI-RAG</span>
+        </div>
+      </div>
+      <div class="matrix-row">
+        <div class="matrix-row-label">검색 전략</div>
+        <div class="matrix-chips" id="evalStratSel">
+          <span class="retriever-chip chip-flat active"       data-key="Flat"        onclick="toggleChip(this)"><span class="chip-dot"></span>Flat</span>
+          <span class="retriever-chip chip-postfilter active" data-key="PostFilter"  onclick="toggleChip(this)"><span class="chip-dot"></span>Post-Filter</span>
+          <span class="retriever-chip chip-routed active"     data-key="Routed"      onclick="toggleChip(this)"><span class="chip-dot"></span>Routed</span>
+        </div>
+      </div>
+      <div class="matrix-hint" id="evalComboCount"></div>
+    </div>
+
+    <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+      <label style="font-size:0.85rem; color:var(--text-muted);">평가 이슈 수:</label>
+      <input type="number" id="evalCount" class="num-input" value="50" min="1" max="2000">
+      <button class="btn btn-primary" id="btnEval" onclick="runEval()" style="padding:7px 16px; font-size:0.85rem;">▶ 평가 실행</button>
+      <button class="btn btn-outline" id="btnEvalStop" onclick="stopEval()" style="padding:7px 16px; font-size:0.85rem; display:none; border-color:#f87171; color:#f87171;">⏹ 중지</button>
+      <span style="font-size:0.78rem; color:var(--text-muted);">Context Precision@3 · Recall@3 · MRR · Hit@3</span>
+    </div>
+    <div class="panel-progress" id="evalProgress"><div class="panel-progress-bar" id="evalProgressBar"></div></div>
+    <div class="panel-log" id="evalLog"></div>
+    <div id="evalResults"></div>
+  </div>
+
+  <!-- ③ 이슈 + Retriever 선택 -->
+  <div class="index-panel" style="padding:14px 20px;">
+    <div style="font-size:0.88rem; font-weight:700; margin-bottom:12px;">🔬 RAG 방식 × 검색 전략 선택</div>
+
+    <div class="matrix-selector" style="margin-bottom:0;">
+      <div class="matrix-row">
+        <div class="matrix-row-label">RAG 인덱싱 방식</div>
+        <div class="matrix-chips" id="runRagMethodSel">
+          <span class="retriever-chip chip-legacy active"     data-key="Legacy"    onclick="toggleChip(this)"><span class="chip-dot"></span>Legacy</span>
+          <span class="retriever-chip chip-basic-rag active"  data-key="BasicRAG"  onclick="toggleChip(this)"><span class="chip-dot"></span>Basic RAG</span>
+          <span class="retriever-chip chip-raptor-rag active" data-key="RaptorRAG" onclick="toggleChip(this)"><span class="chip-dot"></span>RAPTOR RAG</span>
+          <span class="retriever-chip chip-roi-rag active"    data-key="ROIRAG"    onclick="toggleChip(this)"><span class="chip-dot"></span>ROI-RAG</span>
+        </div>
+      </div>
+      <div class="matrix-row">
+        <div class="matrix-row-label">검색 전략</div>
+        <div class="matrix-chips" id="runStratSel">
+          <span class="retriever-chip chip-flat active"       data-key="Flat"        onclick="toggleChip(this)"><span class="chip-dot"></span>Flat</span>
+          <span class="retriever-chip chip-postfilter active" data-key="PostFilter"  onclick="toggleChip(this)"><span class="chip-dot"></span>Post-Filter</span>
+          <span class="retriever-chip chip-routed active"     data-key="Routed"      onclick="toggleChip(this)"><span class="chip-dot"></span>Routed</span>
+        </div>
+      </div>
+      <div class="matrix-hint" id="runComboCount"></div>
+    </div>
+  </div>
+
+  <!-- 이슈 선택 + 실행 버튼 -->
+  <div class="top-bar">
+    <div class="issue-select-wrap">
+      <label>SWE-bench 이슈 선택</label>
+      <select id="issueSelect" onchange="loadIssue(this.value)">
+        <option value="">— 이슈를 선택하세요 —</option>
+      </select>
+    </div>
+    <div style="display:flex; align-items:flex-end;">
+      <button class="btn btn-primary" id="btnRun" onclick="runRetrieve()" style="padding:10px 24px;">
+        🔍 선택된 조합 실행
+      </button>
+    </div>
+  </div>
+
+  <!-- 이슈 내용 -->
+  <div class="issue-box" id="issueBox" style="display:none;">
+    <h3>이슈 내용</h3>
+    <div class="issue-meta" id="issueMeta"></div>
+    <div class="issue-text" id="issueText"></div>
+  </div>
+
+  <!-- 결과 -->
+  <div class="results-grid" id="resultsGrid" style="display:none;"></div>
+</div>
+
+<!-- 플로우차트 팝업 모달 -->
+<div class="flow-modal-overlay" id="flowModalOverlay" onclick="closeFlowModal(event)">
+  <div class="flow-modal" id="flowModal">
+    <button class="flow-modal-close" onclick="closeFlowModal()">✕</button>
+    <div class="flow-modal-title" id="flowModalTitle"></div>
+    <div class="flow-modal-subtitle" id="flowModalSubtitle"></div>
+    <div class="flow-two-col" id="flowModalBody"></div>
+  </div>
+</div>
+
+<script>
+mermaid.initialize({
+  startOnLoad: false,
+  theme: 'dark',
+  themeVariables: {
+    fontSize: '11px',
+    primaryColor: '#1e3a5f',
+    primaryTextColor: '#e2e8f0',
+    primaryBorderColor: '#60a5fa',
+    lineColor: '#60a5fa',
+    background: '#0d1117',
+    mainBkg: '#0d1117',
+    nodeBorder: '#334155',
+    clusterBkg: '#1e293b',
+    titleColor: '#e2e8f0',
+  },
+  flowchart: { curve: 'basis', htmlLabels: true, padding: 6 },
+});
+
+let _currentIssue = null;
+let _running = false;
+const _renderedFlowIds = new Set();
+let _indexAbortCtrl = null;
+let _evalAbortCtrl = null;
+
+// ── RAG 방식 메타 (인덱싱) ──────────────────────────────────────────────
+const RAG_METHOD_META = {
+  Legacy: {
+    name: 'Legacy (벡터 DB)',
+    color: '#94a3b8',
+    desc: 'Python AST 청킹 → 직접 벡터 검색 (RAG 파이프라인 없음)',
+    flow: `graph TD
+P[패치 파싱] --> A["Python AST 파싱\n함수/클래스 단위"]
+A -->|"성공"| C["AST 기반 청크"]
+A -->|"SyntaxError"| C2["텍스트 분할 폴백"]
+C & C2 --> E["임베딩\nall-MiniLM-L6-v2"]
+E --> DB[("swebench_flat\n전체 통합 DB")]
+DB -.->|파티션| PDB[("swebench_part_*\n레포별 DB")]`,
+  },
+  BasicRAG: {
+    name: 'Basic RAG',
+    color: '#fb923c',
+    desc: '고정 크기 청킹 → 임베딩 → 코사인 검색',
+    flow: `graph TD
+P[패치 파싱] --> C["고정 청킹<br>512chars + 80 overlap"]
+C --> E["임베딩<br>all-MiniLM-L6-v2"]
+E --> DB[("sweb_basicrag_flat<br>sweb_basicrag_{repo_ver}")]`,
+  },
+  RaptorRAG: {
+    name: 'RAPTOR RAG',
+    color: '#22d3ee',
+    desc: 'DBSCAN 클러스터링 → 계층 노드 구성',
+    flow: `graph TD
+P[패치 파싱] --> C[청킹 → 임베딩]
+C --> DB["DBSCAN 클러스터링<br>(코사인 거리)"]
+DB --> L0[("리프 노드 lv.0<br>개별 청크")]
+DB --> L1[("클러스터 노드 lv.1<br>관련 청크 집합")]
+L0 & L1 --> IDX[("sweb_raptorrag_flat<br>sweb_raptorrag_{repo_ver}")]`,
+  },
+  ROIRAG: {
+    name: 'ROI-RAG',
+    color: '#f472b6',
+    desc: 'kNN 기반 EU 구성 → 평균 풀링 임베딩',
+    flow: `graph TD
+P[패치 파싱] --> C[청킹 → 임베딩]
+C --> K[코사인 유사도 행렬]
+K --> EU["kNN 그루핑<br>EU 구성"]
+EU --> EP["EU 임베딩<br>(평균 풀링)"]
+EP --> IDX[("sweb_roirag_flat<br>sweb_roirag_{repo_ver}")]`,
+  },
+};
+
+// ── 검색 전략 메타 ─────────────────────────────────────────────────────
+const STRATEGY_META = {
+  Flat: {
+    name: 'Flat',
+    color: '#60a5fa',
+    desc: '통합 DB에서 코사인 Top-K 직접 추출',
+    flow: `graph LR
+Q([쿼리]) --> QE[임베딩]
+QE --> DB[("통합 flat DB<br>전체 이슈")]
+DB --> T["코사인 Top-K"]
+T --> R([결과])`,
+  },
+  PostFilter: {
+    name: 'Post-Filter',
+    color: '#a78bfa',
+    desc: 'Top-N 후 repo+version 메타 필터 → Top-K',
+    flow: `graph LR
+Q([쿼리]) --> QE[임베딩]
+QE --> DB[("통합 flat DB")]
+DB --> P["Top-N (10)"]
+P --> F{"repo+ver<br>메타 필터"}
+F -->|"매칭"| T["Top-K"]
+F -->|"미매칭"| T2["유사도 Top-K"]
+T --> R([결과])
+T2 --> R`,
+  },
+  Routed: {
+    name: 'Routed',
+    color: '#34d399',
+    desc: 'repo+version으로 파티션 DB 직접 선택',
+    flow: `graph LR
+Q([쿼리]) --> RT{"repo+ver<br>라우팅"}
+RT --> PDB[("파티션 DB<br>{repo_ver}")]
+PDB --> T["코사인 Top-K"]
+T --> R([결과])`,
+  },
+};
+
+function getComboMeta(comboKey) {
+  const parts = comboKey.split('+');
+  const rag   = RAG_METHOD_META[parts[0]] || { name: parts[0], color: 'var(--text)', desc: '' };
+  const strat = STRATEGY_META[parts[1]]   || { name: parts[1], color: 'var(--text)', desc: '' };
+  return { rag, strat };
+}
+
+// ── 칩 토글 ────────────────────────────────────────────────────────────
+
+function toggleChip(chip) {
+  const group = chip.closest('.matrix-chips');
+  const active = group.querySelectorAll('.retriever-chip.active');
+  if (chip.classList.contains('active') && active.length === 1) return;
+  chip.classList.toggle('active');
+  updateComboCount();
+}
+
+function getSelectedChips(groupId) {
+  return [...document.getElementById(groupId).querySelectorAll('.retriever-chip.active')]
+    .map(c => c.dataset.key);
+}
+
+function updateComboCount() {
+  ['run', 'eval'].forEach(prefix => {
+    const methods = getSelectedChips(prefix + 'RagMethodSel').length;
+    const strats  = getSelectedChips(prefix + 'StratSel').length;
+    const el = document.getElementById(prefix + 'ComboCount');
+    if (el) el.textContent = `선택된 조합: ${methods} × ${strats} = ${methods * strats}가지`;
+  });
+}
+
+// ── 상태 확인 ──────────────────────────────────────────────────────────
+
+async function checkStatus() {
+  const badge = document.getElementById('statusBadge');
+  try {
+    const r = await fetch('/api/swebench/status');
+    const d = await r.json();
+    if (d.indexed) {
+      badge.textContent = `✅ 이슈 DB: ${d.issue_count}개`;
+      badge.style.color = '#4ade80';
+      loadIssueList();
+    } else {
+      badge.textContent = '⚠️ 미인덱싱 — 인덱싱 먼저 실행';
+      badge.style.color = '#fbbf24';
+    }
+    if (d.engines) {
+      const colors = { BasicRAG: '#fb923c', RaptorRAG: '#22d3ee', ROIRAG: '#f472b6' };
+      const labels = { BasicRAG: 'Basic RAG', RaptorRAG: 'RAPTOR RAG', ROIRAG: 'ROI-RAG' };
+      let html = '<div style="margin-top:8px; display:flex; gap:10px; flex-wrap:wrap;">';
+      for (const [k, info] of Object.entries(d.engines)) {
+        const c = info.indexed ? colors[k] : 'var(--text-muted)';
+        const icon = info.indexed ? '✅' : '○';
+        html += `<span style="font-size:0.74rem; color:${c};">${icon} ${labels[k] || k}${info.indexed ? ' ('+info.chunk_count+'청크)' : ''}</span>`;
+      }
+      html += '</div>';
+      let el = document.getElementById('engineStatusRow');
+      if (!el) {
+        el = document.createElement('div');
+        el.id = 'engineStatusRow';
+        badge.parentElement.appendChild(el);
+      }
+      el.innerHTML = html;
+    }
+  } catch {
+    badge.textContent = '❌ 서버 연결 실패';
+    badge.style.color = '#f87171';
+  }
+}
+
+// ── 인덱싱 ─────────────────────────────────────────────────────────────
+
+function stopIndex() {
+  if (_indexAbortCtrl) { _indexAbortCtrl.abort(); }
+}
+
+async function clearIndex() {
+  if (!confirm('⚠️ 모든 인덱스 데이터(ChromaDB 컬렉션 + 이슈 DB)를 삭제합니다.\n재인덱싱이 필요합니다. 계속하시겠습니까?')) return;
+  const btn = document.getElementById('btnClear');
+  const log = document.getElementById('indexLog');
+  btn.disabled = true;
+  btn.textContent = '삭제 중...';
+  log.textContent = '데이터 삭제 중...';
+  try {
+    const resp = await fetch('/api/swebench/clear', { method: 'POST' });
+    const data = await resp.json();
+    if (resp.ok) {
+      log.textContent = `✅ 삭제 완료: 컬렉션 ${data.deleted_collection_count}개, 이슈 ${data.deleted_issues}건`;
+      checkStatus();
+    } else {
+      log.textContent = `❌ 삭제 실패: ${JSON.stringify(data)}`;
+    }
+  } catch (e) {
+    log.textContent = `❌ 오류: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑 전체 삭제';
+  }
+}
+
+async function startIndex() {
+  const btn     = document.getElementById('btnIndex');
+  const stopBtn = document.getElementById('btnIndexStop');
+  const log     = document.getElementById('indexLog');
+  const prog    = document.getElementById('indexProgress');
+  const bar     = document.getElementById('indexProgressBar');
+
+  const dataset = document.querySelector('input[name="dataset"]:checked').value;
+  const maxIssues = document.getElementById('maxIssues').value;
+  const ragEngines = [...document.querySelectorAll('#engineIndexSel input[name="eng"]:checked')]
+    .map(cb => cb.value).join(',');
+
+  _indexAbortCtrl = new AbortController();
+  const signal = _indexAbortCtrl.signal;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 인덱싱 중...';
+  stopBtn.style.display = 'inline-flex';
+  log.style.display = 'block';
+  prog.style.display = 'block';
+  log.textContent = '';
+  bar.style.width = '0%';
+
+  try {
+    const resp = await fetch(
+      `/api/swebench/index?dataset=${dataset}&max_issues=${maxIssues}&rag_engines=${ragEngines}`,
+      { method: 'POST', signal }
+    );
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (!signal.aborted) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        const m = line.match(/^data: (.+)$/m);
+        if (!m) continue;
+        try {
+          const ev = JSON.parse(m[1]);
+          if (ev.type === 'progress') {
+            const pct = Math.round((ev.current / ev.total) * 100);
+            bar.style.width = pct + '%';
+            const counts = ev.chunk_counts ? Object.entries(ev.chunk_counts).map(([k,v]) => `${k}:${v}`).join(' ') : '';
+            log.textContent = `[${ev.current}/${ev.total}] ${ev.instance_id} ${counts}`;
+            log.scrollTop = log.scrollHeight;
+          } else if (ev.type === 'log') {
+            log.textContent = ev.message;
+          } else if (ev.type === 'done') {
+            log.textContent = '✅ ' + ev.message;
+            bar.style.width = '100%';
+            checkStatus();
+            loadIssueList();
+          } else if (ev.type === 'cancelled') {
+            log.textContent = '⏹ ' + ev.message;
+            bar.style.background = '#f87171';
+          } else if (ev.type === 'error') {
+            log.textContent = '❌ ' + ev.message;
+          }
+        } catch {}
+      }
+    }
+    if (signal.aborted) {
+      reader.cancel();
+      log.textContent = `⏹ 인덱싱을 중지했습니다.`;
+      bar.style.background = '#f87171';
+      checkStatus();
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      log.textContent = '⏹ 인덱싱을 중지했습니다.';
+      bar.style.background = '#f87171';
+    } else {
+      log.textContent = '❌ 오류: ' + e.message;
+    }
+  } finally {
+    _indexAbortCtrl = null;
+    btn.disabled = false;
+    btn.textContent = '▶ 인덱싱 시작';
+    stopBtn.style.display = 'none';
+    bar.style.background = '';  // 색상 초기화
+  }
+}
+
+// ── RAGAS 평가 ─────────────────────────────────────────────────────────
+
+function stopEval() {
+  if (_evalAbortCtrl) { _evalAbortCtrl.abort(); }
+}
+
+async function runEval() {
+  const btn     = document.getElementById('btnEval');
+  const stopBtn = document.getElementById('btnEvalStop');
+  const log     = document.getElementById('evalLog');
+  const prog    = document.getElementById('evalProgress');
+  const bar     = document.getElementById('evalProgressBar');
+  const results = document.getElementById('evalResults');
+  const maxEval = document.getElementById('evalCount').value;
+
+  const ragMethods = getSelectedChips('evalRagMethodSel');
+  const strategies = getSelectedChips('evalStratSel');
+
+  _evalAbortCtrl = new AbortController();
+  const signal = _evalAbortCtrl.signal;
+
+  btn.disabled = true;
+  btn.textContent = '⏳ 평가 중...';
+  stopBtn.style.display = 'inline-flex';
+  log.style.display = 'block';
+  prog.style.display = 'block';
+  results.innerHTML = '';
+  log.textContent = '';
+  bar.style.width = '0%';
+
+  // 중간 누적 데이터 (중지 시 지금까지 결과 표시)
+  let _partialMetrics = null;
+  let _partialTotal = 0;
+
+  try {
+    const resp = await fetch(
+      `/api/swebench/evaluate?max_eval=${maxEval}&rag_methods=${ragMethods.join(',')}&strategies=${strategies.join(',')}`,
+      { method: 'POST', signal }
+    );
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+
+    while (!signal.aborted) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        const m = line.match(/^data: (.+)$/m);
+        if (!m) continue;
+        try {
+          const ev = JSON.parse(m[1]);
+          if (ev.type === 'progress') {
+            const pct = Math.round((ev.current / ev.total) * 100);
+            bar.style.width = pct + '%';
+            log.textContent = `[${ev.current}/${ev.total}] ${ev.instance_id}`;
+            log.scrollTop = log.scrollHeight;
+            _partialTotal = ev.current;
+          } else if (ev.type === 'log') {
+            log.textContent = ev.message;
+          } else if (ev.type === 'done') {
+            bar.style.width = '100%';
+            log.textContent = `✅ ${ev.total}개 이슈 평가 완료`;
+            _partialMetrics = ev.metrics;
+            renderEvalResults(ev.metrics, ev.total);
+          } else if (ev.type === 'cancelled') {
+            log.textContent = '⏹ ' + ev.message;
+            bar.style.background = '#f87171';
+          } else if (ev.type === 'error') {
+            log.textContent = '❌ ' + ev.message;
+          }
+        } catch {}
+      }
+    }
+    if (signal.aborted) {
+      reader.cancel();
+      log.textContent = `⏹ 평가를 중지했습니다. (${_partialTotal}개 처리됨)`;
+      bar.style.background = '#f87171';
+    }
+  } catch (e) {
+    if (e.name === 'AbortError') {
+      log.textContent = `⏹ 평가를 중지했습니다. (${_partialTotal}개 처리됨)`;
+      bar.style.background = '#f87171';
+    } else {
+      log.textContent = '❌ 오류: ' + e.message;
+    }
+  } finally {
+    _evalAbortCtrl = null;
+    btn.disabled = false;
+    btn.textContent = '▶ 평가 실행';
+    stopBtn.style.display = 'none';
+    bar.style.background = '';
+  }
+}
+
+function scoreClass(v) {
+  if (v >= 0.6) return 'score-high';
+  if (v >= 0.35) return 'score-mid';
+  return 'score-low';
+}
+
+function renderEvalResults(metrics, total) {
+  const names = Object.keys(metrics);
+  const metricDefs = [
+    { key: 'hit_at_k',          label: 'Hit@3',                tip: '정답 파일이 Top-3에 포함된 이슈 비율' },
+    { key: 'context_precision', label: 'Context Precision@3',  tip: 'Top-3 청크 중 정답 파일 비율 (평균)' },
+    { key: 'context_recall',    label: 'Context Recall@3',     tip: '정답 파일 중 Top-3에 포함된 비율 (평균)' },
+    { key: 'mrr',               label: 'MRR',                  tip: 'Mean Reciprocal Rank' },
+  ];
+
+  // 헤더: RAG 방식 레이블 (rowspan으로 묶기는 어려우니 단순 표 사용)
+  const headerCells = names.map(n => {
+    const { rag, strat } = getComboMeta(n);
+    return `<th>
+      <span style="color:${rag.color}; display:block; font-size:0.78rem;">${rag.name}</span>
+      <span style="color:${strat.color}; font-size:0.72rem;">+ ${strat.name}</span>
+    </th>`;
+  }).join('');
+
+  let html = `
+    <div style="margin-top:16px; overflow-x:auto;">
+    <div style="font-size:0.78rem; color:var(--text-muted); margin-bottom:8px;">
+      📋 평가 이슈 수: <strong>${total}</strong>개 &nbsp;|&nbsp; K=3
+    </div>
+    <table class="eval-table">
+      <thead>
+        <tr>
+          <th>메트릭</th>
+          ${headerCells}
+        </tr>
+      </thead>
+      <tbody>`;
+
+  for (const md of metricDefs) {
+    html += `<tr>
+      <td class="metric-name" title="${md.tip}">${md.label}</td>
+      ${names.map(n => {
+        const v = metrics[n]?.[md.key];
+        if (v === null || v === undefined) return '<td>—</td>';
+        return `<td class="score-cell ${scoreClass(v)}">${(v * 100).toFixed(1)}%</td>`;
+      }).join('')}
+    </tr>`;
+  }
+
+  html += `<tr>
+    <td class="metric-name">평가 이슈 수</td>
+    ${names.map(n => `<td style="color:var(--text-muted);">${metrics[n]?.evaluated ?? 0}</td>`).join('')}
+  </tr>`;
+
+  html += `</tbody></table>
+    <div style="font-size:0.72rem; color:var(--text-muted); margin-top:8px;">
+      🟢 ≥60% &nbsp; 🟡 35~59% &nbsp; 🔴 &lt;35%
+    </div></div>`;
+
+  document.getElementById('evalResults').innerHTML = html;
+}
+
+// ── 이슈 목록 ──────────────────────────────────────────────────────────
+
+async function loadIssueList() {
+  const sel = document.getElementById('issueSelect');
+  try {
+    const r = await fetch('/api/swebench/issues');
+    const issues = await r.json();
+    sel.innerHTML = '<option value="">— 이슈를 선택하세요 —</option>';
+    issues.forEach(issue => {
+      const opt = document.createElement('option');
+      opt.value = issue.instance_id;
+      opt.textContent = `[${issue.repo}@${issue.version}] ${issue.instance_id}`;
+      sel.appendChild(opt);
+    });
+  } catch {}
+}
+
+async function loadIssue(instance_id) {
+  const box = document.getElementById('issueBox');
+  if (!instance_id) { box.style.display = 'none'; _currentIssue = null; return; }
+  try {
+    const r = await fetch(`/api/swebench/issues/${instance_id}`);
+    const issue = await r.json();
+    _currentIssue = issue;
+    document.getElementById('issueMeta').innerHTML = `
+      <span class="badge badge-repo">📦 ${issue.repo}</span>
+      <span class="badge badge-ver">v${issue.version}</span>
+      <span class="badge badge-ans">🎯 정답: ${issue.answer_files.join(', ') || '없음'}</span>
+    `;
+    document.getElementById('issueText').textContent = issue.problem_statement;
+    box.style.display = 'block';
+    document.getElementById('resultsGrid').style.display = 'none';
+  } catch (e) { console.error(e); }
+}
+
+// ── 검색 실행 ──────────────────────────────────────────────────────────
+
+async function runRetrieve() {
+  if (!_currentIssue) { alert('이슈를 먼저 선택하세요.'); return; }
+  if (_running) return;
+
+  const ragMethods = getSelectedChips('runRagMethodSel');
+  const strategies = getSelectedChips('runStratSel');
+
+  const btn = document.getElementById('btnRun');
+  const grid = document.getElementById('resultsGrid');
+  _running = true;
+  btn.disabled = true;
+  btn.textContent = '⏳ 검색 중...';
+  grid.innerHTML = '<p style="color:var(--text-muted); padding:16px;">검색 중...</p>';
+  grid.style.display = 'block';
+
+  try {
+    const r = await fetch('/api/swebench/retrieve', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        instance_id: _currentIssue.instance_id,
+        rag_methods: ragMethods,
+        strategies: strategies,
+      }),
+    });
+    const data = await r.json();
+    if (!r.ok) { grid.innerHTML = `<p style="color:#f87171;">${data.detail}</p>`; return; }
+    renderResults(data);
+  } catch (e) {
+    grid.innerHTML = `<p style="color:#f87171;">오류: ${e.message}</p>`;
+  } finally {
+    _running = false;
+    btn.disabled = false;
+    btn.textContent = '🔍 선택된 조합 실행';
+  }
+}
+
+function renderResults(data) {
+  const grid = document.getElementById('resultsGrid');
+  const answerSet = new Set(data.answer_files || []);
+
+  grid.innerHTML = data.results.map(res => {
+    const comboKey = res.retriever;
+    const { rag, strat } = getComboMeta(comboKey);
+
+    const hitHtml = res.error
+      ? `<span class="hit-badge hit-no" title="${escHtml(res.error)}">ERR</span>`
+      : res.hit
+        ? '<span class="hit-badge hit-yes">O 정답 포함</span>'
+        : '<span class="hit-badge hit-no">X 미포함</span>';
+
+    const chunksHtml = res.chunks && res.chunks.length
+      ? res.chunks.map((c, i) => {
+          const fps = c.file_paths || (c.file_path ? [c.file_path] : []);
+          const isAns = fps.some(f => answerSet.has(f));
+          const fileLabel = isAns
+            ? `<span class="is-answer">★ ${fps.join(', ')}</span>`
+            : fps.join(', ');
+          return `
+            <div class="chunk-card">
+              <div class="chunk-file">#${i+1} ${fileLabel}</div>
+              <div class="chunk-code">${escHtml(c.content)}</div>
+            </div>`;
+        }).join('')
+      : '<div class="no-chunks">검색 결과 없음</div>';
+
+    const dbLabel = res.db_searched
+      ? `<div class="db-label">🗄 검색 DB: <code>${res.db_searched}</code></div>` : '';
+    const filterNote = res.filter_matched === false
+      ? '<div style="font-size:0.74rem;color:#fbbf24;margin-top:4px;">⚠️ 필터 미매칭 — 유사도 결과 반환</div>' : '';
+
+    return `
+      <div class="result-col">
+        <div class="result-header" style="border-top: 3px solid ${rag.color};">
+          <div class="combo-tags">
+            <span class="combo-tag" style="color:${rag.color};">${rag.name}</span>
+            <span style="font-size:0.72rem; color:var(--text-muted); align-self:center;">+</span>
+            <span class="combo-tag" style="color:${strat.color};">${strat.name}</span>
+          </div>
+          <div class="result-header-top">
+            ${hitHtml}
+            <span class="latency-badge">${res.latency_ms ?? 0}ms</span>
+            <span class="flow-toggle" onclick="openFlowModal('${comboKey}')">⬡ 동작 흐름</span>
+          </div>
+        </div>
+        <div class="result-body">
+          ${chunksHtml}
+          ${filterNote}
+          ${dbLabel}
+        </div>
+      </div>`;
+  }).join('');
+
+  // 조합 수에 따라 그리드 열 수 조정
+  const n = data.results.length;
+  const cols = n <= 3 ? n : n <= 6 ? 3 : 3;
+  grid.style.gridTemplateColumns = `repeat(${cols}, 1fr)`;
+  grid.style.display = 'grid';
+}
+
+// ── 플로우차트 모달 ────────────────────────────────────────────────────
+
+async function openFlowModal(comboKey) {
+  const { rag, strat } = getComboMeta(comboKey);
+  const overlay = document.getElementById('flowModalOverlay');
+  const title   = document.getElementById('flowModalTitle');
+  const subtitle = document.getElementById('flowModalSubtitle');
+  const body    = document.getElementById('flowModalBody');
+
+  title.innerHTML = `<span style="color:${rag.color};">${rag.name}</span> <span style="color:var(--text-muted); font-size:0.85em;">+</span> <span style="color:${strat.color};">${strat.name}</span>`;
+  subtitle.textContent = `인덱싱: ${rag.desc}  |  검색: ${strat.desc}`;
+
+  const ragId   = 'flow_rag_'   + comboKey.replace(/[^a-zA-Z0-9]/g, '_');
+  const stratId = 'flow_strat_' + comboKey.replace(/[^a-zA-Z0-9]/g, '_');
+
+  body.innerHTML = `
+    <div>
+      <div class="flow-section-title" style="color:${rag.color};">RAG 인덱싱 방식 — ${rag.name}</div>
+      <div class="mermaid" id="${ragId}">${rag.flow || ''}</div>
+    </div>
+    <div>
+      <div class="flow-section-title" style="color:${strat.color};">검색 전략 — ${strat.name}</div>
+      <div class="mermaid" id="${stratId}">${strat.flow || ''}</div>
+    </div>`;
+
+  overlay.classList.add('open');
+
+  requestAnimationFrame(async () => {
+    const nodes = [];
+    if (!_renderedFlowIds.has(ragId)) {
+      const el = document.getElementById(ragId);
+      if (el) { nodes.push(el); _renderedFlowIds.add(ragId); }
+    }
+    if (!_renderedFlowIds.has(stratId)) {
+      const el = document.getElementById(stratId);
+      if (el) { nodes.push(el); _renderedFlowIds.add(stratId); }
+    }
+    if (nodes.length) {
+      await mermaid.run({ nodes });
+    }
+  });
+}
+
+function closeFlowModal(e) {
+  if (e && e.target !== document.getElementById('flowModalOverlay')) return;
+  document.getElementById('flowModalOverlay').classList.remove('open');
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') document.getElementById('flowModalOverlay').classList.remove('open');
+});
+
+function escHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
+// ── 초기화 ─────────────────────────────────────────────────────────────
+checkStatus();
+updateComboCount();
+</script>
+</body>
+</html>

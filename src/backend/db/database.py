@@ -103,6 +103,16 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     raptor_correct INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- SWE-bench Lite 이슈 메타데이터
+CREATE TABLE IF NOT EXISTS swebench_issues (
+    instance_id TEXT PRIMARY KEY,
+    repo TEXT,
+    version TEXT,
+    problem_statement TEXT,
+    answer_files TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
 """
 
 
