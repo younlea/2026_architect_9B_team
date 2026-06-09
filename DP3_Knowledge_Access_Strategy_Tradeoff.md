@@ -1,4 +1,4 @@
-# 04. DP3 - Semantic Answer Cache vs LLM Wiki Knowledge Cache Trade-off
+# DP3. Semantic Answer Cache vs LLM Wiki Knowledge Cache Trade-off
 
 ## 1. DP3 주제
 
@@ -96,14 +96,19 @@ Semantic Answer Cache는 과거에 처리한 질문과 답변을 저장해두고
 flowchart TD
     A[User Query] --> B[Query Normalizer]
     B --> C[Query Embedding]
-    C --> D[Answer Cache Lookup]
-    D --> E{Hit + Metadata Valid?}
-    E -->|Yes| F[Cached Answer]
-    E -->|No| G[EU RAG Retrieval]
-    G --> H[LLM Answer]
-    H --> I[Store Answer Cache]
-    F --> J[Final Answer]
-    H --> J
+    C --> D[Semantic Answer Cache Lookup]
+    D --> E{Similar Answer Hit?}
+    E -->|Yes| F[Cache Metadata Check<br/>scope / version / TTL]
+    F --> G{Valid?}
+    G -->|Yes| H[Cached Answer]
+    G -->|No| I[EU RAG Retrieval]
+    E -->|No| I
+    I --> J[Context Builder]
+    J --> K[LLM Answer]
+    K --> L[Cache Eligibility Check]
+    L --> M[Store Answer Cache]
+    H --> N[Final Answer]
+    K --> N
 ```
 
 ### 3.4 장점
@@ -221,27 +226,36 @@ Wiki-1: AuthClient Usage Guide
 flowchart TD
     subgraph Offline[Offline Build]
         A[Source Code / Docs]
-        B[SPRAG EU Store]
-        C[Topic Miner<br/>API / Component / FAQ]
-        D[LLM Wiki Builder]
-        E[Wiki Page Index]
-        F[EU Index]
+        B[SPRAG EU Builder]
+        C[Evidence Unit Store]
+        D[Topic Miner<br/>API / Component / FAQ]
+        E[LLM Wiki Builder]
+        F[Source Metadata Binder<br/>EU IDs / Version / Scope]
+        G[Wiki Page Index]
+        H[EU Index]
     end
 
     subgraph Online[Online Retrieval]
-        Q[User Query + Metadata Filter]
-        S[Wiki/EU Parallel Search]
-        P[Merge/Rerank + Context Policy<br/>Wiki max + EU min]
+        Q[User Query]
+        M[Metadata Filter<br/>permission / version]
+        W[Wiki Index Search]
+        U[EU Index Search]
+        R[Merge / Rerank]
+        P[Context Policy<br/>Wiki max + EU min]
         L[LLM Answer]
     end
 
-    A --> B
-    B --> C --> D --> E
-    B --> F
-    Q --> S
-    E --> S
-    F --> S
-    S --> P --> L
+    A --> B --> C
+    C --> D --> E --> F --> G
+    C --> H
+    Q --> M
+    M --> W
+    M --> U
+    G --> W
+    H --> U
+    W --> R
+    U --> R
+    R --> P --> L
 ```
 
 ### 4.5 Top-K 슬롯 효율 관점
@@ -328,23 +342,7 @@ Final Context Policy:
 | 운영 리스크 | Wrong cache hit | Stale wiki | 둘 다 metadata validation이 필요하다. |
 | Coding Assist 적합성 | FAQ성 질문에 빠름 | 사용법/설계 규칙/Deprecated 설명에 강함 | Wiki가 표준 지식 운영에 유리하다. |
 
-### 5.3 QA 기반 Trade-off
-
-| QA | Semantic Answer Cache | LLM Wiki Knowledge Cache | 별점 기준 KPI / 근거 |
-|---|---|---|---|
-| QA-02 응답 속도 | ★★★ | ★★☆ | ★ Cache hit 이후 RAG/LLM 생략 가능 / ★★ Wiki+EU 검색으로 Context token 감소 기대 / ★★★ P95 Latency 2초 이내 또는 Baseline 대비 30%+ 감소. Answer Cache는 hit 이후 최단 latency가 강점이다. |
-| QA-06 유지보수성 | ★★☆ | ★★★ | ★ 과거 답변 entry만 축적되어 지식 운영성이 낮음 / ★★ TTL·metadata 관리 가능 / ★★★ Topic-level Wiki Page, source_eu_ids, last_verified_commit으로 지식 단위 관리 가능. |
-| QA-08 근거 추적성 | ★★☆ | ★★★ | ★ Citation 저장 누락 위험 / ★★ cached answer에 citation metadata 보존 / ★★★ Wiki source_eu_ids와 EU 보강으로 Citation Trace Coverage 95%+ 목표. |
-| QA-01 정확도 | ★★☆ | ★★★ | ★ Wrong cache hit 위험 큼 / ★★ threshold·metadata 검증으로 완화 / ★★★ Wiki는 과거 답변 재사용이 아니라 EU 기반 지식을 근거로 질문별 답변 생성. Required Key Point Coverage와 Faithfulness로 검증. |
-| QA-04 권한/버전 정합성 | ★★☆ | ★★☆ | 두 후보 모두 metadata validation이 필수다. Semantic Cache는 cache key와 TTL, Wiki는 release_range와 last_verified_commit 관리가 핵심이다. Wrong Version Citation 0%를 목표로 한다. |
-
-별점 해석은 다음과 같다.
-
-- ★☆☆: 해당 QA를 만족하려면 추가 보완이 많이 필요하다.
-- ★★☆: 기본 구조로 대응 가능하지만 운영 metadata와 검증 정책이 중요하다.
-- ★★★: 후보의 구조적 강점이 해당 QA에 직접 연결된다.
-
-### 5.4 Trade-off 해석
+### 5.3 Trade-off 해석
 
 Semantic Answer Cache는 “반복 질문이 충분히 쌓인 후” 가장 단순하고 빠른 후보이다. 하지만 과거 답변을 재사용하기 때문에 질문 의도가 조금만 달라져도 잘못된 답변을 재사용할 수 있다. 또한 cache entry는 운영 지식 문서가 아니라 과거 실행 결과이므로 표준 지식 관리에는 약하다.
 
@@ -352,7 +350,7 @@ LLM Wiki Knowledge Cache는 Retrieval을 완전히 생략하지 않는다. 대�
 
 ---
 
-## 6. Appendix DP3 - PoC 설계와 방어 논리
+## 6. PoC 설계
 
 ### 6.1 PoC 목적
 
@@ -631,3 +629,4 @@ Top-K = Wiki-AuthClient-Usage, EU-1, EU-4
 | REF-DP3-TR-02 | GPTCache Documentation | https://gptcache.readthedocs.io/ | Semantic cache 구조와 사용 방식 참고 |
 | REF-DP3-TR-03 | RAGCache: Efficient Knowledge Caching for Retrieval-Augmented Generation | https://arxiv.org/abs/2404.12457 | RAG knowledge/context cache 계열 비교 근거 |
 | REF-DP3-TR-04 | Microsoft GraphRAG Documentation | https://microsoft.github.io/graphrag/ | Offline에서 구조화/요약 지식을 생성하고 query에 활용하는 패턴 참고 |
+

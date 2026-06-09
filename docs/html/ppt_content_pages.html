@@ -56,7 +56,7 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
 <body>
 <header>
   <h1>RAG 기반 코드 어시스트 프레임워크 Architecture PPT Content</h1>
-  <p>Markdown 백데이터를 기반으로 PPT 제작에 바로 재배치할 수 있도록 16개 페이지 탭으로 구성한 HTML 초안</p>
+  <p>Markdown 백데이터를 기반으로 PPT 제작에 바로 재배치할 수 있도록 17개 페이지 탭으로 구성한 HTML 초안</p>
 </header>
 <div class="app">
 <nav class="tabs" aria-label="PPT pages">
@@ -75,8 +75,9 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
   <button class="tabbtn" data-tab="p12">12. DP1 비교<span>SPRAG 선택</span></button>
   <button class="tabbtn" data-tab="p13">13. DP2 배경<span>권한/버전 정합성</span></button>
   <button class="tabbtn" data-tab="p14">14. DP2 비교<span>A/B 후보 비교</span></button>
-  <button class="tabbtn" data-tab="p15">15. DP3 배경<span>중복 제어 RAG 이후</span></button>
-  <button class="tabbtn" data-tab="p16">16. DP3 비교<span>LLM Wiki Cache</span></button>
+  <button class="tabbtn" data-tab="p15">15. DP3 배경<span>EU-only 이후</span></button>
+  <button class="tabbtn" data-tab="p16">16. DP3 비교<span>Answer Cache vs Wiki</span></button>
+  <button class="tabbtn" data-tab="p17">17. Appendix DP3<span>Mechanism & PoC</span></button>
 </nav>
 <main>
 
@@ -334,17 +335,17 @@ flowchart TD
         B2[Parser / Segmenter]
         B3[Dedup-aware RAG Preprocessor]
         B4[Permission / Version Tagger]
-        B5[Knowledge Access Builder]
+        B5[Wiki / Cache Builder]
     end
     subgraph Storage[Storage]
         C1[EU / Vector / Keyword Index]
         C2[Permission / Version Store]
-        C3[Knowledge Cache]
+        C3[Wiki Index / Answer Cache]
     end
     subgraph Online[Online QA]
         D1[Query API]
         D2[Auth / Version Resolver]
-        D3[Retriever / Router]
+        D3[Wiki/EU Retriever]
         D4[Context Builder]
         D5[Internal LLM]
         D6[Citation / Audit]
@@ -364,7 +365,7 @@ flowchart TD
     class A3,B4,C2,D2 dp2
     class B5,C3,D3 dp3
     </div>
-    <table><tr><th>색상</th><th>DP</th><th>영향 영역</th></tr><tr><td><span class="tag b">Blue</span></td><td>DP1</td><td>Segment 추출, 중복 제어 근거 단위, Source Mapping, 중복 제어 Index</td></tr><tr><td><span class="tag g">Green</span></td><td>DP2</td><td>Permission/Version Metadata, Auth/Version Resolver, Source Scope Routing/Filtering, Audit</td></tr><tr><td><span class="tag a">Amber</span></td><td>DP3</td><td>Knowledge Cache, Query Router, Canonical Answer, Fallback</td></tr></table>
+    <table><tr><th>색상</th><th>DP</th><th>영향 영역</th></tr><tr><td><span class="tag b">Blue</span></td><td>DP1</td><td>Segment 추출, 중복 제어 근거 단위, Source Mapping, 중복 제어 Index</td></tr><tr><td><span class="tag g">Green</span></td><td>DP2</td><td>Permission/Version Metadata, Auth/Version Resolver, Source Scope Routing/Filtering, Audit</td></tr><tr><td><span class="tag a">Amber</span></td><td>DP3</td><td>Answer Cache, Wiki Page Index, Wiki/EU Retrieval, Context Policy</td></tr></table>
   </div>
 </section>
 
@@ -478,62 +479,108 @@ F-->K[Final Top-K + Citation]</div><p><b>장점:</b> 통합 운영이 단순하�
 </section>
 
 <section id="p15" class="slide">
-  <div class="slide-head"><div><h2>DP3 배경: 반복 질문을 위한 Knowledge Access Strategy</h2><p>매번 Retrieval 결과를 새로 조합하지 않고 빠르고 일관된 표준 답변을 제공하는 문제</p></div><span class="page-no">15</span></div>
+  <div class="slide-head"><div><h2>DP3 배경: EU-only RAG 이후 남는 반복 질문 문제</h2><p>정확한 근거 조각은 확보했지만, 반복 질문마다 여러 EU를 다시 조합해야 한다</p></div><span class="page-no">15</span></div>
   <div class="body">
-    <p><span class="tag a">Stakeholder: 개발자 / Architect / 운영팀 / LLM 운영 조직</span><span class="tag c">FR-02</span><span class="tag c">FR-05</span><span class="tag c">FR-07</span><span class="tag c">FR-08</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-06 유지보수성</span><span class="tag v">QA-07 최신성</span></p>
+    <p><span class="tag a">Stakeholder: 개발자 / Architect / 운영팀 / LLM 운영 조직</span><span class="tag c">FR-02</span><span class="tag c">FR-05</span><span class="tag c">FR-07</span><span class="tag c">FR-08</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-06 유지보수성</span><span class="tag v">QA-08 추적성</span></p>
     <div class="asset"><img src="assets/dp3_background_gap.svg" alt="중복 제어 RAG 이후 남는 Knowledge Access 문제"></div>
-    <div class="callout">DP3는 전체 코드베이스의 관계형 영향도 분석을 1차 목표로 하지 않는다. 핵심은 반복적으로 묻는 API 사용법, Deprecated 대체 방향, 설계 규칙, 운영 정책 질문에 대해 재사용 가능한 지식 계층을 두고 빠르고 일관된 답변을 제공하는 것이다.</div>
+    <div class="callout">DP1의 SPRAG 기반 Evidence Unit은 중복 Segment를 줄이고 원본 Source Mapping을 유지한다. 하지만 사용법, 설계 규칙, Deprecated 대체 방향처럼 반복되는 질문은 여전히 여러 EU를 매번 검색하고 조합해야 한다.</div>
+    <div class="twocol">
+      <div class="card"><h3>EU-only RAG에서 반복되는 조합</h3><pre>AuthClient 질문 예시
+EU-1 init() signature
+EU-2 validation behavior
+EU-3 deprecated note
+EU-4 release/2.x migration
+EU-5 sample usage</pre></div>
+      <div class="card must"><h3>DP3의 핵심 질문</h3><p>반복 질문에 대해 기존 답변을 재사용할 것인가, 아니면 EU 기반으로 미리 정리한 Topic-level Knowledge를 검색 근거로 추가할 것인가?</p><p><span class="tag a">Top-K 슬롯 효율</span><span class="tag v">답변 일관성</span><span class="tag c">Citation 유지</span></p></div>
+    </div>
     <table>
-      <tr><th>남는 문제</th><th>위험</th><th>DP3의 설계 질문</th></tr>
-      <tr><td>반복 질의 비용</td><td>같은 API/정책 질문마다 Retrieval, Rerank, LLM 생성을 반복</td><td>어떤 지식 계층을 재사용할 것인가?</td></tr>
-      <tr><td>답변 일관성 부족</td><td>Top-K 조합이 바뀌며 권장 방향과 표현이 흔들림</td><td>Canonical Answer를 어떻게 관리할 것인가?</td></tr>
-      <tr><td>운영 지식 단위 부족</td><td>Evidence Unit은 검색 근거이지 사람이 검토하는 표준 지식 문서가 아님</td><td>검토 가능한 지식 단위를 둘 것인가?</td></tr>
-      <tr><td>Staleness / 권한 위험</td><td>Cache나 Wiki가 오래되거나 다른 Source Scope를 섞을 수 있음</td><td>Metadata 검증과 Fallback을 어떻게 둘 것인가?</td></tr>
+      <tr><th>남는 문제</th><th>왜 중요한가</th><th>DP3 평가 기준</th></tr>
+      <tr><td>반복 질의 비용</td><td>같은 주제 질문마다 EU 검색, rerank, context 구성, LLM 생성을 반복</td><td>Cache/Wiki hit 시 비용 절감 여부</td></tr>
+      <tr><td>Top-K 슬롯 비효율</td><td>여러 EU가 같은 Topic의 하위 정보로 소비되어 보완 근거를 넣기 어려움</td><td>Context token, Topic Coverage@K</td></tr>
+      <tr><td>답변 일관성 부족</td><td>매번 선택되는 EU 조합이 달라지면 권장 방향과 표현이 흔들릴 수 있음</td><td>Repeated Answer Consistency</td></tr>
+      <tr><td>근거 추적 필요</td><td>코드 어시스트 답변은 원본 EU/source까지 추적되어야 함</td><td>Citation Trace Coverage</td></tr>
     </table>
-    <div class="callout amber">Q&amp;A 방어 문장: Graph 기반 영향도 분석은 장기 확장 후보지만, 본 DP의 1차 목표는 반복 API/설계/정책 질문의 속도와 일관성이다. 따라서 후보는 모두 재사용 가능한 표준 답변 계층을 중심으로 비교한다.</div>
-    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP3는 DP1에서 중복 근거를 줄이고 DP2에서 권한과 버전 범위를 제한했다는 전제 위에서 시작합니다. 그럼에도 개발자들이 반복적으로 묻는 API 사용법이나 Deprecated 대체 방향, 설계 규칙은 매번 Retrieval 결과를 새로 조합하면 비용이 들고 답변 표현도 흔들릴 수 있습니다. 그래서 DP3의 질문은 관계형 지식 전체를 그래프로 탐색하자는 것이 아니라, 반복 질문에 대해 어떤 재사용 가능한 지식 계층을 둘 것인가입니다. 단, 빠른 답변이 stale하거나 권한/버전을 침범하지 않도록 Source Mapping, Metadata 검증, Fallback 정책을 함께 설계해야 합니다.</div>
+    <div class="callout amber">비교 초점: Semantic Answer Cache는 과거 최종 답변을 재사용하고, LLM Wiki는 EU 기반 Topic-level 지식 근거를 재사용한다. 즉 Answer reuse와 Knowledge reuse의 trade-off다.</div>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP1을 통해 중복 제거된 EU를 만들면 정확한 근거 조각은 확보됩니다. 하지만 반복적인 사용법 질문은 여러 EU를 매번 다시 조합해야 하므로 비용과 답변 변동성이 남습니다. DP3는 이 문제를 해결하기 위해 두 접근을 비교합니다. 하나는 비슷한 과거 질문의 답변을 재사용하는 Semantic Answer Cache이고, 다른 하나는 EU를 기반으로 Wiki Page를 offline 생성한 뒤 Wiki Index와 EU Index를 함께 검색하는 LLM Wiki Knowledge Cache입니다.</div>
   </div>
 </section>
 
 <section id="p16" class="slide">
-  <div class="slide-head"><div><h2>DP3 대안 비교: Answer Cache vs Knowledge Card vs LLM Wiki</h2><p>선택안은 Evidence Unit과 Source Mapping을 활용하는 LLM Wiki Knowledge Cache</p></div><span class="page-no">16</span></div>
+  <div class="slide-head"><div><h2>DP3 대안 비교: Semantic Answer Cache vs LLM Wiki</h2><p>선택안은 EU 기반 Wiki Page Index를 추가하는 LLM Wiki Knowledge Cache</p></div><span class="page-no">16</span></div>
   <div class="body">
-    <div class="threecol">
+    <div class="twocol">
       <div class="card"><h3>A. Semantic Answer Cache</h3><div class="mermaid">flowchart TD
-Q[Query]-->N[Normalize]
-N-->E[Embedding]
-E-->C[Cache Lookup]
-C-->V[Metadata Check]
+Q[User Query]-->N[Query Normalizer]
+N-->E[Query Embedding]
+E-->C[Answer Cache Lookup]
+C-->H{Similar Answer Hit?}
+H-->|Yes|V[Metadata Check]
 V-->A[Cached Answer]
-V-->F[Fallback RAG]</div><p><b>장점:</b> 구현이 쉽고 반복/유사 질문 속도 개선이 직접적</p><p><b>단점:</b> 과거 답변 재사용이라 표준 지식 운영성이 약함</p></div>
-      <div class="card"><h3>B. Versioned Knowledge Card</h3><div class="mermaid">flowchart TD
-L[Query Logs]-->M[Card Miner]
-EU[Evidence Units]-->M
-M-->D[Draft Card]
-D-->R[Owner Review]
-R-->C[Card Registry]
-Q[Query]-->I[Intent Match]
-I-->C</div><p><b>장점:</b> 승인된 작은 지식 단위로 권한/버전/감사 통제가 강함</p><p><b>단점:</b> 초기 커버리지와 Review Workflow 부담</p></div>
-      <div class="card must"><h3>C. LLM Wiki Cache</h3><div class="mermaid">flowchart TD
-EU[Evidence Units]-->T[Topic Miner]
-T-->W[Wiki Builder]
-W-->M[Metadata Binder]
-M-->P[Wiki Pages]
-Q[Query]-->R[Router]
-R-->P
-P-->V[Validity Check]
-V-->F[Fallback]</div><p><b>장점:</b> 속도, 답변 일관성, 설명형 지식, 검토 가능성의 균형</p><p><b>단점:</b> Staleness, 생성 오류, 권한/버전 혼합 관리 필요</p></div>
+H-->|No|R[EU RAG Retrieval]
+R-->L[LLM Answer]
+L-->S[Store Answer Cache]</div><p><b>핵심:</b> 과거 질문의 최종 답변을 재사용한다.</p><p><b>장점:</b> 구현이 쉽고 cache hit 이후 매우 빠름</p><p><b>위험:</b> cold-start와 wrong answer reuse</p></div>
+      <div class="card must"><h3>B. LLM Wiki Knowledge Cache</h3><div class="mermaid">flowchart TD
+SRC[Source / Docs]-->EU[SPRAG EU Store]
+EU-->T[Topic Miner]
+T-->W[LLM Wiki Builder]
+W-->WI[Wiki Index]
+EU-->EI[EU Index]
+Q[Query + Metadata Filter]-->S[Wiki/EU Parallel Search]
+WI-->S
+EI-->S
+S-->P[Merge/Rerank + Context Policy]
+P-->A[LLM Answer]</div><p><b>핵심:</b> EU 기반 Topic-level 지식 근거를 추가한다.</p><p><b>장점:</b> Top-K 슬롯 효율, 답변 일관성, cold-start 대응</p><p><b>위험:</b> stale wiki와 손실 요약</p></div>
     </div>
     <table>
-      <tr><th>QA</th><th>Semantic Answer Cache</th><th>Knowledge Card</th><th>LLM Wiki Cache</th><th>판단</th></tr>
-      <tr><td>응답 속도</td><td>★★★</td><td>★★★</td><td>★★★</td><td>세 후보 모두 Hit 시 빠르지만 Answer Cache가 가장 단순하다.</td></tr>
-      <tr><td>답변 일관성</td><td>★★☆</td><td>★★★</td><td>★★★</td><td>Card/Wiki는 Canonical Knowledge를 명시적으로 관리한다.</td></tr>
-      <tr><td>표준 지식 관리</td><td>★☆☆</td><td>★★★</td><td>★★★</td><td>Answer Cache는 과거 답변 재사용에 가까워 운영 지식 계층으로 약하다.</td></tr>
-      <tr><td>권한/버전 안전성</td><td>★★☆</td><td>★★★</td><td>★★☆</td><td>Card는 작은 단위라 Scope/Version 통제가 가장 쉽다.</td></tr>
-      <tr><td>설명형 지식 표현력</td><td>★☆☆</td><td>★★☆</td><td>★★★</td><td>Wiki는 API 사용 가이드, 설계 의도, Deprecated 이유를 담기 좋다.</td></tr>
+      <tr><th>기준</th><th>Semantic Answer Cache</th><th>LLM Wiki + EU RAG</th></tr>
+      <tr><td>재사용 대상</td><td>과거 질문의 최종 답변</td><td>EU 기반 Topic-level Wiki Page</td></tr>
+      <tr><td>Cold-start</td><td>과거 질문이 없으면 약함</td><td>offline Wiki 생성으로 첫 질문부터 사용 가능</td></tr>
+      <tr><td>질문 변형 대응</td><td>Embedding threshold에 의존, wrong hit 위험</td><td>같은 Wiki Topic을 근거로 질문별 답변 생성</td></tr>
+      <tr><td>Top-K 효율</td><td>개선 제한적</td><td>Wiki 하나가 여러 EU의 핵심을 압축해 슬롯 효율 개선</td></tr>
+      <tr><td>Citation</td><td>Cached answer에 별도 저장 필요</td><td>Wiki metadata의 source_eu_ids와 EU 보강으로 유지</td></tr>
+      <tr><td>성능 이득</td><td>Hit 시 RAG/LLM 생략 가능</td><td>Context token 감소, Topic Coverage@K, 답변 일관성 개선</td></tr>
     </table>
-    <table><tr><th>KPI</th><th>Semantic Answer Cache</th><th>Knowledge Card</th><th>LLM Wiki Cache</th></tr><tr><td>Hit Rate</td><td>반복 질문 Set에서 높음</td><td>승인 Card 범위 내 높음</td><td>Wiki Topic 범위 내 높음</td></tr><tr><td>P95 QA Latency</td><td>낮음</td><td>낮음</td><td>낮음~중간</td></tr><tr><td>Repeated Answer Consistency</td><td>중간</td><td>높음</td><td>높음</td></tr><tr><td>Human Reviewability</td><td>낮음</td><td>높음</td><td>높음</td></tr><tr><td>Stale Answer Rate</td><td>TTL/Metadata 의존</td><td>Card invalidation 의존</td><td>Wiki invalidation 의존</td></tr></table>
-    <div class="callout green">Decision: LLM Wiki Knowledge Cache를 채택한다. Answer Cache보다 Architecture Decision답고, Knowledge Card보다 설명형 지식 표현력이 좋아 DP3 범위에서 가장 균형 잡힌 선택이다.</div>
+    <table>
+      <tr><th>QA</th><th>A. Semantic Answer Cache</th><th>B. LLM Wiki + EU RAG</th><th>별점 기준 KPI / 근거</th></tr>
+      <tr><td>QA-02 응답 속도</td><td>★★★</td><td>★★☆</td><td>★ 기본 개선 제한 / ★★ Context token 감소 / ★★★ Hit 후 RAG·LLM 생략 또는 P95 2초 이내. Answer Cache는 hit 이후 최단 latency가 강점</td></tr>
+      <tr><td>QA-06 유지보수성</td><td>★★☆</td><td>★★★</td><td>★ 과거 답변 축적 중심 / ★★ TTL·metadata 관리 / ★★★ Topic Wiki, source_eu_ids, last_verified_commit으로 지식 단위 관리</td></tr>
+      <tr><td>QA-08 근거 추적성</td><td>★★☆</td><td>★★★</td><td>★ Citation 누락 위험 / ★★ cached answer metadata 보존 / ★★★ Wiki source_eu_ids + EU 보강으로 Citation Trace Coverage 95%+ 목표</td></tr>
+      <tr><td>QA-01 정확도</td><td>★★☆</td><td>★★★</td><td>★ Wrong cache hit 위험 / ★★ threshold·metadata 검증 / ★★★ EU 기반 Wiki 근거로 질문별 답변 생성, Faithfulness·Key Point Coverage 측정</td></tr>
+      <tr><td>QA-04 권한/버전</td><td>★★☆</td><td>★★☆</td><td>두 후보 모두 metadata validation 필수. Cache는 key·TTL, Wiki는 release_range·last_verified_commit 관리. Wrong Version Citation 0% 목표</td></tr>
+    </table>
+    <table><tr><th>PoC 지표</th><th>비교 의미</th><th>기대 관찰</th></tr><tr><td>First Query Success Rate</td><td>과거 cache가 없는 첫 질문 대응</td><td>LLM Wiki 우위</td></tr><tr><td>Wrong Cache Hit Rate</td><td>비슷하지만 다른 질문에 기존 답변을 재사용하는 비율</td><td>Semantic Cache 리스크 확인</td></tr><tr><td>Topic Coverage@K</td><td>Top-K가 필요한 하위 주제를 얼마나 포함하는지</td><td>LLM Wiki + EU 우위</td></tr><tr><td>Repeated Answer Consistency</td><td>같은 Topic 질문의 권장 방향 일관성</td><td>LLM Wiki 우위 기대</td></tr><tr><td>Context Token Count</td><td>LLM 입력 Context 크기</td><td>Wiki+EU에서 반복 설명 질문 감소 기대</td></tr></table>
+    <div class="callout green">Decision: LLM Wiki Knowledge Cache를 채택한다. Semantic Answer Cache는 hit 이후 빠르지만 과거 답변 재사용 위험이 있고, LLM Wiki는 EU 기반 Wiki Page를 추가해 첫 질문부터 Topic-level 근거와 EU citation을 함께 제공할 수 있다.</div>
+  </div>
+</section>
+
+<section id="p17" class="slide">
+  <div class="slide-head"><div><h2>Appendix DP3: Mechanism & PoC Design</h2><p>LLM Wiki 생성 방식, Context 정책, 비교 테스트 시나리오를 PoC 기준으로 정리</p></div><span class="page-no">17</span></div>
+  <div class="body">
+    <div class="grid">
+      <div class="card"><h3>LLM Wiki 자동 생성</h3><ol><li>EU metadata와 text에서 Topic 후보 추출</li><li>관련 EU 묶음을 LLM Wiki Builder에 입력</li><li>사용 시점, 권장 방식, Deprecated note, version note 생성</li><li>source_eu_ids, release_range, allowed_scope를 metadata로 연결</li><li>Wiki Page를 embedding해 Wiki Index 저장</li></ol></div>
+      <div class="card"><h3>Context 구성 정책</h3><pre>Final Context Policy
+- Wiki result max: 1
+- EU result min: 3
+- usage/guideline: best Wiki + EU evidence
+- implementation/exact code: EU 중심, Wiki optional</pre></div>
+      <div class="card must"><h3>핵심 방어 문장</h3><p>LLM Wiki는 RAG를 우회하지 않는다. SPRAG EU에서 생성한 Wiki Page를 별도 Index로 추가하고, Online에서는 Wiki Index와 EU Index를 함께 검색한다.</p></div>
+    </div>
+    <table>
+      <tr><th>테스트 시나리오</th><th>질문 예시</th><th>측정값</th></tr>
+      <tr><td>Cold-start 반복 질문</td><td>AuthClient는 언제 써야 해? / 초기화는 어떻게 해?</td><td>First Query Success, Latency, Citation Coverage</td></tr>
+      <tr><td>질문 표현 변형</td><td>인증 클라이언트 사용 기준 / 로그인 처리에서 쓰는 이유</td><td>Same-topic Grounding, Answer Consistency</td></tr>
+      <tr><td>비슷하지만 다른 질문</td><td>언제 써야 해? vs 쓰면 안 되는 경우는?</td><td>Wrong Cache Hit, Contradiction Rate</td></tr>
+      <tr><td>Top-K 슬롯 효율</td><td>EU-only Top-K와 Wiki+EU Top-K 비교</td><td>Topic Coverage@K, Context Token, Completeness</td></tr>
+    </table>
+    <div class="twocol">
+      <div class="card"><h3>Semantic Cache가 유리한 경우</h3><ul><li>같은 질문이 매우 자주 반복됨</li><li>질문 의도가 거의 동일함</li><li>최단 latency가 가장 중요함</li><li>과거 답변의 citation metadata가 안정적으로 저장됨</li></ul></div>
+      <div class="card"><h3>LLM Wiki가 유리한 경우</h3><ul><li>첫 질문부터 표준 사용법 답변이 필요함</li><li>질문 표현은 다르지만 같은 Topic을 묻는 경우가 많음</li><li>여러 EU의 핵심을 압축한 대표 근거가 필요함</li><li>EU citation과 함께 답변 일관성을 높여야 함</li></ul></div>
+    </div>
+    <div class="refs"><b>References:</b>
+      REF-DP3-TR-01 <a href="https://aclanthology.org/2023.nlposs-1.24/">GPTCache: An Open-Source Semantic Cache for LLM Applications</a> /
+      REF-DP3-TR-03 <a href="https://arxiv.org/abs/2404.12457">RAGCache: Efficient Knowledge Caching for Retrieval-Augmented Generation</a> /
+      REF-DP3-TR-04 <a href="https://microsoft.github.io/graphrag/">Microsoft GraphRAG Documentation</a>
+    </div>
   </div>
 </section>
 
