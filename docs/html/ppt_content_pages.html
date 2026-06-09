@@ -478,54 +478,62 @@ F-->K[Final Top-K + Citation]</div><p><b>장점:</b> 통합 운영이 단순하�
 </section>
 
 <section id="p15" class="slide">
-  <div class="slide-head"><div><h2>DP3 배경: 중복 제어 RAG 이후에도 Knowledge Access가 필요한 이유</h2><p>근거 검색 최적화 이후에도 반복 지식/일관성/운영 지식 계층 문제는 남는다</p></div><span class="page-no">15</span></div>
+  <div class="slide-head"><div><h2>DP3 배경: 반복 질문을 위한 Knowledge Access Strategy</h2><p>매번 Retrieval 결과를 새로 조합하지 않고 빠르고 일관된 표준 답변을 제공하는 문제</p></div><span class="page-no">15</span></div>
   <div class="body">
     <p><span class="tag a">Stakeholder: 개발자 / Architect / 운영팀 / LLM 운영 조직</span><span class="tag c">FR-02</span><span class="tag c">FR-05</span><span class="tag c">FR-07</span><span class="tag c">FR-08</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-06 유지보수성</span><span class="tag v">QA-07 최신성</span></p>
     <div class="asset"><img src="assets/dp3_background_gap.svg" alt="중복 제어 RAG 이후 남는 Knowledge Access 문제"></div>
-    <div class="callout">DP3는 검색 알고리즘만의 문제가 아니다. 반복적으로 묻는 API 사용법, Deprecated 대체 방향, 컴포넌트 표준 초기화 절차 같은 질문은 매번 검색 결과를 조합하기보다, 검토 가능한 표준 지식과 원문 Fallback 정책이 있어야 안정적으로 운영된다.</div>
+    <div class="callout">DP3는 전체 코드베이스의 관계형 영향도 분석을 1차 목표로 하지 않는다. 핵심은 반복적으로 묻는 API 사용법, Deprecated 대체 방향, 설계 규칙, 운영 정책 질문에 대해 재사용 가능한 지식 계층을 두고 빠르고 일관된 답변을 제공하는 것이다.</div>
     <table>
-      <tr><th>중복 제어 RAG가 해결</th><th>그래도 남는 문제</th><th>DP3의 역할</th></tr>
-      <tr><td>중복 Segment를 EU로 압축</td><td>자주 묻는 질문도 매번 Retrieval/답변 구성 필요</td><td>Wiki/Cache Hit로 반복 QA 비용 절감</td></tr>
-      <tr><td>Prompt 길이와 생성 지연 감소</td><td>동일 질문의 표준 답변/권장 방향이 흔들릴 수 있음</td><td>Canonical Answer 관리</td></tr>
-      <tr><td>Source Mapping 유지</td><td>EU는 운영 지식 문서 그 자체는 아님</td><td>사람이 검토 가능한 Wiki Page 생성</td></tr>
-      <tr><td>단일/소수 EU 검색</td><td>최신성/버전/상세근거/낮은 Confidence 질문 판단 필요</td><td>Query Router와 Fallback 정책</td></tr>
+      <tr><th>남는 문제</th><th>위험</th><th>DP3의 설계 질문</th></tr>
+      <tr><td>반복 질의 비용</td><td>같은 API/정책 질문마다 Retrieval, Rerank, LLM 생성을 반복</td><td>어떤 지식 계층을 재사용할 것인가?</td></tr>
+      <tr><td>답변 일관성 부족</td><td>Top-K 조합이 바뀌며 권장 방향과 표현이 흔들림</td><td>Canonical Answer를 어떻게 관리할 것인가?</td></tr>
+      <tr><td>운영 지식 단위 부족</td><td>Evidence Unit은 검색 근거이지 사람이 검토하는 표준 지식 문서가 아님</td><td>검토 가능한 지식 단위를 둘 것인가?</td></tr>
+      <tr><td>Staleness / 권한 위험</td><td>Cache나 Wiki가 오래되거나 다른 Source Scope를 섞을 수 있음</td><td>Metadata 검증과 Fallback을 어떻게 둘 것인가?</td></tr>
     </table>
-    <div class="callout amber">Q&amp;A 방어 문장: DP3는 DP1을 대체하지 않는다. DP1의 근거 단위와 Source Mapping을 사람이 검토 가능한 Knowledge Product로 승격하고, 언제 캐시로 답하고 언제 원문으로 돌아갈지 결정한다.</div>
-    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP3는 DP1에서 중복 근거를 잘 제어했다는 전제 위에서 시작합니다. 중복 제어 RAG를 사용하면 검색 근거는 더 효율적으로 가져올 수 있지만, 개발자들이 반복적으로 묻는 질문에 항상 빠르고 일관되게 답하는 문제는 여전히 남습니다. 공통 API 사용 기준, Deprecated 구현의 대체 방식, 컴포넌트 초기화 순서 같은 질문은 관련 Source 몇 개보다 조직에서 합의한 표준 답변이 더 중요할 수 있습니다. 매번 검색 결과 조합이 달라지면 답변 표현과 권장 방향도 흔들릴 수 있습니다. 그래서 DP3는 반복 지식과 설계 지식을 어떤 방식으로 접근하고 언제 원문 RAG로 되돌아갈지 결정하는 지점입니다.</div>
+    <div class="callout amber">Q&amp;A 방어 문장: Graph 기반 영향도 분석은 장기 확장 후보지만, 본 DP의 1차 목표는 반복 API/설계/정책 질문의 속도와 일관성이다. 따라서 후보는 모두 재사용 가능한 표준 답변 계층을 중심으로 비교한다.</div>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP3는 DP1에서 중복 근거를 줄이고 DP2에서 권한과 버전 범위를 제한했다는 전제 위에서 시작합니다. 그럼에도 개발자들이 반복적으로 묻는 API 사용법이나 Deprecated 대체 방향, 설계 규칙은 매번 Retrieval 결과를 새로 조합하면 비용이 들고 답변 표현도 흔들릴 수 있습니다. 그래서 DP3의 질문은 관계형 지식 전체를 그래프로 탐색하자는 것이 아니라, 반복 질문에 대해 어떤 재사용 가능한 지식 계층을 둘 것인가입니다. 단, 빠른 답변이 stale하거나 권한/버전을 침범하지 않도록 Source Mapping, Metadata 검증, Fallback 정책을 함께 설계해야 합니다.</div>
   </div>
 </section>
 
 <section id="p16" class="slide">
-  <div class="slide-head"><div><h2>DP3 대안 비교: Hybrid Retrieval vs HippoRAG vs LLM Wiki Cache</h2><p>선택안은 SPRAG EU와 Source Mapping을 활용하는 LLM Wiki Knowledge Cache</p></div><span class="page-no">16</span></div>
+  <div class="slide-head"><div><h2>DP3 대안 비교: Answer Cache vs Knowledge Card vs LLM Wiki</h2><p>선택안은 Evidence Unit과 Source Mapping을 활용하는 LLM Wiki Knowledge Cache</p></div><span class="page-no">16</span></div>
   <div class="body">
     <div class="threecol">
-      <div class="card"><h3>A. Dense + BM25</h3><div class="mermaid">flowchart TD
-Q[Query]-->B[BM25]
-Q-->V[Dense]
-B-->F[Fusion]
-V-->F
-F-->R[Rerank]</div><p><b>장점:</b> API명/파일명/에러 메시지 검색 보강</p><p><b>단점:</b> 반복 QA와 Canonical Answer를 직접 해결하지 않음</p></div>
-      <div class="card"><h3>B. HippoRAG-style</h3><div class="mermaid">flowchart TD
-EU[EU / Segments]-->E[Entity]
-E-->G[Graph]
-Q[Query]-->T[Traversal]
-G-->T</div><p><b>장점:</b> 관계형 Multi-hop QA에 강함</p><p><b>단점:</b> EU/원본 Segment/Graph/권한/버전 Metadata 동기화 복잡</p></div>
+      <div class="card"><h3>A. Semantic Answer Cache</h3><div class="mermaid">flowchart TD
+Q[Query]-->N[Normalize]
+N-->E[Embedding]
+E-->C[Cache Lookup]
+C-->V[Metadata Check]
+V-->A[Cached Answer]
+V-->F[Fallback RAG]</div><p><b>장점:</b> 구현이 쉽고 반복/유사 질문 속도 개선이 직접적</p><p><b>단점:</b> 과거 답변 재사용이라 표준 지식 운영성이 약함</p></div>
+      <div class="card"><h3>B. Versioned Knowledge Card</h3><div class="mermaid">flowchart TD
+L[Query Logs]-->M[Card Miner]
+EU[Evidence Units]-->M
+M-->D[Draft Card]
+D-->R[Owner Review]
+R-->C[Card Registry]
+Q[Query]-->I[Intent Match]
+I-->C</div><p><b>장점:</b> 승인된 작은 지식 단위로 권한/버전/감사 통제가 강함</p><p><b>단점:</b> 초기 커버리지와 Review Workflow 부담</p></div>
       <div class="card must"><h3>C. LLM Wiki Cache</h3><div class="mermaid">flowchart TD
-EU[Evidence Units]-->W[Wiki Builder]
-W-->P[Canonical Pages]
+EU[Evidence Units]-->T[Topic Miner]
+T-->W[Wiki Builder]
+W-->M[Metadata Binder]
+M-->P[Wiki Pages]
 Q[Query]-->R[Router]
 R-->P
-R-->F[Fallback]</div><p><b>장점:</b> 반복 질문 속도, 답변 일관성, 사람이 검토 가능한 Knowledge Layer</p><p><b>단점:</b> Staleness, 요약 오류, 권한 혼합 관리 필요</p></div>
+P-->V[Validity Check]
+V-->F[Fallback]</div><p><b>장점:</b> 속도, 답변 일관성, 설명형 지식, 검토 가능성의 균형</p><p><b>단점:</b> Staleness, 생성 오류, 권한/버전 혼합 관리 필요</p></div>
     </div>
     <table>
-      <tr><th>QA</th><th>Dense+BM25</th><th>HippoRAG</th><th>LLM Wiki Cache</th><th>별점 기준 KPI / 근거</th></tr>
-      <tr><td>응답 속도</td><td>★★☆</td><td>★☆☆</td><td>★★★</td><td>★ Graph Traversal/전체 검색 지연 / ★★ 검색 보강 / ★★★ Cache Hit 질의 P95 2초 목표. 근거: RAGCache/GPTCache 참고 + 측정 필요</td></tr>
-      <tr><td>정확도/일관성</td><td>★★☆</td><td>★★☆</td><td>★★★</td><td>★ 답변 흔들림 / ★★ Recall 또는 관계성 개선 / ★★★ Repeated Answer Consistency 높음. 근거: [Expected]</td></tr>
-      <tr><td>최신성</td><td>★★★</td><td>★★☆</td><td>★★☆</td><td>★ Stale 위험 큼 / ★★ Invalidation 필요 / ★★★ 원문 검색 중심 또는 Fallback 명확. 근거: Stale Answer Rate</td></tr>
-      <tr><td>유지보수성</td><td>★★★</td><td>★☆☆</td><td>★★☆</td><td>★ Graph 운영 복잡 / ★★ Wiki 검토 필요 / ★★★ 기존 검색 레이어 중심. 근거: Maintenance Complexity</td></tr>
+      <tr><th>QA</th><th>Semantic Answer Cache</th><th>Knowledge Card</th><th>LLM Wiki Cache</th><th>판단</th></tr>
+      <tr><td>응답 속도</td><td>★★★</td><td>★★★</td><td>★★★</td><td>세 후보 모두 Hit 시 빠르지만 Answer Cache가 가장 단순하다.</td></tr>
+      <tr><td>답변 일관성</td><td>★★☆</td><td>★★★</td><td>★★★</td><td>Card/Wiki는 Canonical Knowledge를 명시적으로 관리한다.</td></tr>
+      <tr><td>표준 지식 관리</td><td>★☆☆</td><td>★★★</td><td>★★★</td><td>Answer Cache는 과거 답변 재사용에 가까워 운영 지식 계층으로 약하다.</td></tr>
+      <tr><td>권한/버전 안전성</td><td>★★☆</td><td>★★★</td><td>★★☆</td><td>Card는 작은 단위라 Scope/Version 통제가 가장 쉽다.</td></tr>
+      <tr><td>설명형 지식 표현력</td><td>★☆☆</td><td>★★☆</td><td>★★★</td><td>Wiki는 API 사용 가이드, 설계 의도, Deprecated 이유를 담기 좋다.</td></tr>
     </table>
-    <table><tr><th>KPI</th><th>Dense+BM25</th><th>HippoRAG</th><th>LLM Wiki Cache</th></tr><tr><td>Wiki / Cache Hit Rate</td><td>0%</td><td>0~10%</td><td>30~60%</td></tr><tr><td>P95 QA Latency</td><td>중간</td><td>높음</td><td>낮음~중간</td></tr><tr><td>Repeated Answer Consistency</td><td>중간</td><td>중간</td><td>높음</td></tr><tr><td>SPRAG Integration Risk</td><td>낮음</td><td>높음</td><td>중간</td></tr><tr><td>Multi-hop QA</td><td>중간</td><td>높음</td><td>중간</td></tr></table>
-    <div class="callout green">Decision: LLM Wiki Knowledge Cache를 채택한다. HippoRAG는 관계형 QA 요구가 커질 때 후속 확장 또는 Appendix 후보로 둔다.</div>
+    <table><tr><th>KPI</th><th>Semantic Answer Cache</th><th>Knowledge Card</th><th>LLM Wiki Cache</th></tr><tr><td>Hit Rate</td><td>반복 질문 Set에서 높음</td><td>승인 Card 범위 내 높음</td><td>Wiki Topic 범위 내 높음</td></tr><tr><td>P95 QA Latency</td><td>낮음</td><td>낮음</td><td>낮음~중간</td></tr><tr><td>Repeated Answer Consistency</td><td>중간</td><td>높음</td><td>높음</td></tr><tr><td>Human Reviewability</td><td>낮음</td><td>높음</td><td>높음</td></tr><tr><td>Stale Answer Rate</td><td>TTL/Metadata 의존</td><td>Card invalidation 의존</td><td>Wiki invalidation 의존</td></tr></table>
+    <div class="callout green">Decision: LLM Wiki Knowledge Cache를 채택한다. Answer Cache보다 Architecture Decision답고, Knowledge Card보다 설명형 지식 표현력이 좋아 DP3 범위에서 가장 균형 잡힌 선택이다.</div>
   </div>
 </section>
 
