@@ -58,7 +58,7 @@ AWS Bedrock Pricing은 fine-tuning 계열 Custom Model에서 training, model sto
 | 코드 어시스트 RAG | 응답 속도 | IDE나 코드 리뷰 흐름 안에서 사용되므로 응답이 느리면 개발 흐름을 방해한다. |
 | 코드 어시스트 RAG | 근거 추적 | 답변 근거가 Repository, 파일, Symbol, Segment, Commit, 권한 판단까지 추적되어야 신뢰할 수 있다. |
 
-이 차이 때문에 본 Architecture는 코드 어시스트 RAG의 주요 Driver를 DP1의 중복 제어, DP2의 권한/버전 제어, DP3의 Knowledge Access Strategy로 나누어 다룬다.
+이 차이 때문에 본 Architecture는 코드 어시스트 RAG의 주요 Driver를 DP1의 중복 제어, DP2의 권한/버전 제어, DP3의 Knowledge Access Strategy, DP4의 RAG Cache Strategy로 나누어 다룬다.
 
 ---
 
@@ -101,8 +101,9 @@ AWS Bedrock Pricing은 fine-tuning 계열 Custom Model에서 training, model sto
 3. 중복이 많은 코드 데이터에서 검색 품질을 유지할 수 있도록 중복 제어 RAG 구조를 비교·선정한다.
 4. 사용자 권한과 코드/문서 버전에 따라 접근 가능한 지식만 검색 또는 답변에 사용한다.
 5. QA 속도와 정확도를 높이기 위해 Knowledge Access Strategy를 정의한다.
-6. 사내 코드 어시스트 툴이 사용할 수 있는 질의 API를 제공한다.
-7. 답변과 함께 근거 코드/문서 Citation을 제공한다.
+6. 반복 질의에서 RAG 산출물을 안전하게 재사용하기 위한 Cache Strategy를 정의한다.
+7. 사내 코드 어시스트 툴이 사용할 수 있는 질의 API를 제공한다.
+8. 답변과 함께 근거 코드/문서 Citation을 제공한다.
 
 #### 1.2.3 과제 구성
 
@@ -122,6 +123,7 @@ AWS Bedrock Pricing은 fine-tuning 계열 Custom Model에서 training, model sto
   3-2. DP1: 중복 데이터에 강한 RAG 구조 선정
   3-3. DP2: 권한/버전 기반 Dataset / Retrieval Strategy 선정
   3-4. DP3: Knowledge Access Strategy 선정
+  3-5. DP4: RAG Cache Strategy 선정
 ```
 
 ---
@@ -227,7 +229,7 @@ flowchart LR
 | QA-06 | M | 유지보수성 | 코드 Repository와 권한 체계가 변경되어도 인덱스와 Knowledge Layer를 재구성 가능한 구조여야 한다. | [Expected, 측정 필요] 변경 Repository/권한 반영 Batch가 24시간 이내, 긴급 권한 변경은 Query-time Resolver로 즉시 반영되어야 한다. |
 | QA-07 | M | 최신성 | 코드 변경, 문서 변경, 권한 변경이 발생하면 일정한 정책에 따라 검색 결과와 답변에 반영되어야 한다. | [Expected, 측정 필요] 최근 변경 코드의 Citation Freshness가 정책 SLA 이내이며 Stale Answer Rate 5% 이하를 목표로 한다. |
 | QA-08 | M | 근거 추적성 | 답변에 사용된 코드 파일, 문서, Segment, Repository 버전, 권한 판단 근거를 추적할 수 있어야 한다. | [Expected, 측정 필요] Citation Trace Coverage 95% 이상을 목표로 한다. |
-| QA-09 | M | 개발 난이도 | 제한된 과제 기간 내 설계 및 PoC 수준으로 설명 가능한 복잡도를 유지해야 한다. | [Expected] 핵심 Pipeline은 3개 DP와 5개 이하 주요 Runtime 컴포넌트로 설명 가능해야 한다. |
+| QA-09 | M | 개발 난이도 | 제한된 과제 기간 내 설계 및 PoC 수준으로 설명 가능한 복잡도를 유지해야 한다. | [Expected] 핵심 Pipeline은 4개 DP와 5개 이하 주요 Runtime 컴포넌트로 설명 가능해야 한다. |
 | QA-10 | M | 확장성 | 프로젝트, Repository, 사용자 수, Chunk 수가 증가해도 검색/권한/응답 구조를 확장할 수 있어야 한다. | [Expected, 측정 필요] Repository/Index 증가 시 수평 확장 가능한 Storage/Retrieval 경로를 유지한다. |
 
 ---
@@ -277,6 +279,7 @@ flowchart TD
         C3[Keyword Index]
         C4[Permission / Version Metadata Store]
         C5[LLM Wiki / Knowledge Cache]
+        C6[Answer / Context Cache]
     end
 
     subgraph Online[Online QA Pipeline]
@@ -286,7 +289,8 @@ flowchart TD
         D4[Retriever]
         D5[Permission / Version Scope Filter]
         D6[Dedup / Reranker]
-        D7[Context Builder]
+        D7[Cache Lookup / Guard]
+        D10[Context Builder]
         D8[Internal LLM]
         D9[Citation / Audit Logger]
     end
@@ -321,7 +325,10 @@ flowchart TD
     D4 --> D5
     D5 --> D6
     D6 --> D7
-    D7 --> D8
+    C6 --> D7
+    D7 --> D10
+    D10 --> C6
+    D10 --> D8
     D8 --> D9
     D9 --> D1
 ```
@@ -337,11 +344,13 @@ flowchart TD
 | Permission / Version Tagger | 각 Segment 또는 근거 단위에 프로젝트/부서/역할 기반 접근 권한과 Branch/Release/Commit 등 Source Version 메타데이터를 연결한다. |
 | Embedding / Index Builder | Vector Index와 Keyword Index를 생성한다. |
 | Knowledge Cache Builder | 반복적으로 사용될 설계 지식, 정책, API 요약을 LLM Wiki 형태로 생성한다. |
+| Answer / Context Cache | 반복 질의에서 재사용 가능한 최종 답변 또는 검증된 Context Pack을 저장한다. |
 | Query API Gateway | 사내 코드 어시스트 툴의 질의를 수신하고 인증/권한/검색 파이프라인을 호출한다. |
 | Auth / Permission Resolver | 사용자의 접근 권한을 확인하고 검색 또는 필터링에 필요한 권한 정보를 생성한다. |
 | Retriever | Vector, Keyword, Wiki, 또는 Graph 기반 Retrieval을 수행한다. |
 | Permission / Version Filter | 검색 결과 중 사용자가 접근 가능하고 요청 버전 범위에 맞는 근거만 남긴다. |
 | Dedup / Reranker | 중복 결과를 제거하고 질문 관련도, 다양성, 최신성 기준으로 재정렬한다. |
+| Cache Lookup / Guard | Cache 후보의 embedding similarity, Symbol overlap, 권한/버전/최신성 metadata를 검증한다. |
 | Context Builder | 최종 Chunk와 Citation 정보를 LLM Prompt에 포함할 Context로 구성한다. |
 | Internal LLM | 사내에서 승인된 범용 LLM을 사용하여 답변을 생성한다. |
 | Citation / Audit Logger | 답변 근거, 사용된 Chunk, 사용자, 권한 판단, 요청 로그를 기록한다. |
@@ -353,19 +362,20 @@ flowchart TD
 | DP1 | 중복 데이터에 강한 RAG 구조 선정 | 중복이 많은 코드 데이터에서 Top-K 편향과 Hallucination을 줄이기 위해 어떤 RAG 구조를 사용할 것인가? |
 | DP2 | 권한/버전 기반 Dataset / Retrieval Strategy 선정 | 사용자의 권한과 요청 Source Version 범위 내에서만 검색·답변하기 위해 Dataset을 어떻게 구성하고 필터링할 것인가? |
 | DP3 | Knowledge Access Strategy 선정 | 중복 제어 RAG 위에서 반복 질의, 답변 일관성, Knowledge 운영성을 개선하기 위해 어떤 지식 접근 방식을 추가할 것인가? |
+| DP4 | RAG Cache Strategy 선정 | 반복 질의에서 최종 답변을 재사용할 것인가, 검증된 Evidence Context를 재사용할 것인가? |
 
 ### 3.1.5 요구사항 / 품질속성 / Design Point 관계
 
 | Driver ID | Driver 유형 | 주요 내용 | 관련 QA | 관련 DP | 설계 연결 |
 |---|---|---|---|---|---|
 | FR-01 | Functional Requirement | 코드/문서 데이터 수집 및 인덱싱 | QA-06, QA-07, QA-10 | DP1, DP2 | Segment, Metadata, Permission, Source Version 정보를 함께 생성해야 Dedup 및 권한/버전 기반 Retrieval이 가능하다. |
-| FR-02 | Functional Requirement | 코드 어시스트 질의 처리 | QA-01, QA-02, QA-08 | DP1, DP2, DP3 | 질의 처리 경로는 중복 제어 Retrieval, Permission/Version Filtering, Knowledge Cache를 순차적으로 활용한다. |
+| FR-02 | Functional Requirement | 코드 어시스트 질의 처리 | QA-01, QA-02, QA-08 | DP1, DP2, DP3, DP4 | 질의 처리 경로는 중복 제어 Retrieval, Permission/Version Filtering, Knowledge Access, RAG Cache를 순차적으로 활용한다. |
 | FR-03 | Functional Requirement | 권한 기반 검색 및 답변 제어 | QA-03, QA-04, QA-08 | DP2 | 사용자의 권한 범위 안에서만 검색 후보와 답변 Context를 구성해야 한다. |
 | FR-04 | Functional Requirement | 중복 데이터 제어 | QA-01, QA-02, QA-05 | DP1, DP3 | Offline Dedup과 Canonical Knowledge를 통해 Top-K 중복 편향과 Context 낭비를 줄인다. |
-| FR-05 | Functional Requirement | 근거 코드/문서 Citation 제공 | QA-01, QA-08 | DP1, DP2, DP3 | 검색 근거, 원본 Segment, 권한/버전 판단, Wiki Page의 Source Mapping을 추적 가능하게 유지한다. |
-| FR-06 | Functional Requirement | 기존 사내 코드 어시스트 툴 연동 API 제공 | QA-02, QA-06, QA-10 | DP2, DP3 | API Gateway가 사용자 권한, 검색 결과, Citation, Cache/Fallback 결과를 일관된 응답으로 제공한다. |
+| FR-05 | Functional Requirement | 근거 코드/문서 Citation 제공 | QA-01, QA-08 | DP1, DP2, DP3, DP4 | 검색 근거, 원본 Segment, 권한/버전 판단, Wiki Page와 Context Cache의 Source Mapping을 추적 가능하게 유지한다. |
+| FR-06 | Functional Requirement | 기존 사내 코드 어시스트 툴 연동 API 제공 | QA-02, QA-06, QA-10 | DP2, DP3, DP4 | API Gateway가 사용자 권한, 검색 결과, Citation, Cache/Fallback 결과를 일관된 응답으로 제공한다. |
 | FR-07 | Functional Requirement | Knowledge Cache / Wiki 관리 | QA-02, QA-06, QA-07, QA-08 | DP3 | 반복 질의와 설계 지식을 Wiki 형태로 관리하되, 최신성 검증과 기존 RAG Fallback을 유지한다. |
-| FR-08 | Functional Requirement | Source Version 기반 검색/답변 제어 | QA-04, QA-07, QA-08 | DP2, DP3 | Branch/Release/Commit 기준으로 검색 범위를 제한하고 Citation에 버전 정보를 포함한다. |
+| FR-08 | Functional Requirement | Source Version 기반 검색/답변 제어 | QA-04, QA-07, QA-08 | DP2, DP3, DP4 | Branch/Release/Commit 기준으로 검색 범위를 제한하고 Citation 및 Cache validity에 버전 정보를 포함한다. |
 | CON-01 | Constraint | 사내 코드 외부 유출 금지 | QA-03, QA-04, QA-08 | DP2 | 권한/버전 기반 Routing 또는 Filtering과 Audit Logging이 필수 설계 요소가 된다. |
 
 ### 3.1.6 Design Point별 KPI 후보
@@ -384,6 +394,10 @@ flowchart TD
 | DP3 | Wiki Cache Hit Rate | Wiki/Cache에서 우선 답변 가능한 질의 비율 | [Expected] 높을수록 좋음 |
 | DP3 | P95 QA Latency | 95% 질의의 End-to-end 응답 시간 | [Expected] 낮을수록 좋음 |
 | DP3 | Stale Answer Rate | 최신 원문과 불일치하는 Cache/Wiki 답변 비율 | [Expected] 낮을수록 좋음 |
+| DP4 | Cache Hit Rate | Answer Cache 또는 Context Cache에서 재사용 가능한 질의 비율 | [Expected] 높을수록 좋음 |
+| DP4 | Wrong Answer Reuse Rate | 잘못된 최종 답변을 재사용한 비율 | [Expected] 낮을수록 좋음 |
+| DP4 | RAG Call Count Reduction | EU-only RAG 대비 검색/filtering/rerank/context build 생략 비율 | [Expected] 높을수록 좋음 |
+| DP4 | Invalid Cache Rejection Rate | 권한/버전/최신성 불일치 Cache를 거부한 비율 | [Expected] 높을수록 좋음 |
 
 ### 3.1.7 Architecture 핵심 방향
 
@@ -427,4 +441,4 @@ flowchart TD
 |---|---|---|
 | Must | 본 과제는 구현이 아니라 사내 코드 어시스트용 RAG Architecture 설계 과제이다. | 평가자가 Scope를 혼동하지 않도록 첫 장에서 경계를 잡아야 한다. |
 | Must | 핵심 Driver는 보안/권한, 중복 데이터 강건성, 응답 속도, 근거 추적성이다. | 세 개 DP가 왜 필요한지 설명하는 상위 기준이다. |
-| Must | 전체 설계 흐름은 DP1 중복 데이터 제어, DP2 권한/버전 기반 Retrieval, DP3 Knowledge Access로 이어진다. | 발표의 메인 스토리라인이며, 문서 간 싱크의 중심이다. |
+| Must | 전체 설계 흐름은 DP1 중복 데이터 제어, DP2 권한/버전 기반 Retrieval, DP3 Knowledge Access, DP4 RAG Cache Strategy로 이어진다. | 발표의 메인 스토리라인이며, 문서 간 싱크의 중심이다. |

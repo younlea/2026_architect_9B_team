@@ -1,8 +1,8 @@
-# 04. DP3 - RAG Cache Strategy: Answer Reuse vs Context Reuse
+# 05. DP4 - RAG Cache Strategy: Answer Reuse vs Context Reuse
 
-## 1. DP3 주제
+## 1. DP4 주제
 
-DP3의 주제는 **중복 제어 RAG 이후에도 반복적으로 발생하는 API/설계/정책 질문에 대해, 어떤 RAG 산출물을 캐시하고 재사용할 것인지 결정하는 것**이다.
+DP4의 주제는 **중복 제어 RAG 이후에도 반복적으로 발생하는 API/설계/정책 질문에 대해, 어떤 RAG 산출물을 캐시하고 재사용할 것인지 결정하는 것**이다.
 
 구체적으로는 응답속도를 개선하면서도 답변 일관성, 근거 신뢰성, 권한/버전 정합성을 유지하기 위해 다음 두 전략을 비교한다.
 
@@ -13,7 +13,7 @@ Context Reuse = 검증된 Evidence Context를 재사용하고 답변은 다시 �
 
 DP1의 SPRAG 기반 Evidence Unit RAG는 중복 Segment를 줄이고 원본 Source Mapping을 유지하는 Retrieval 근거 계층을 만든다. 그러나 반복적인 사용법 질문이나 설계 규칙 질문은 여전히 매번 여러 EU를 검색하고, rerank하고, LLM Context로 조합해야 한다.
 
-따라서 DP3의 핵심 질문은 다음이다.
+따라서 DP4의 핵심 질문은 다음이다.
 
 > 반복 질문에 대해 최종 답변을 재사용할 것인가, 아니면 검증된 Evidence Context를 재사용해 RAG 비용을 줄이되 답변은 현재 질문에 맞게 생성할 것인가?
 
@@ -28,12 +28,13 @@ DP1의 SPRAG 기반 Evidence Unit RAG는 중복 Segment를 줄이고 원본 Sour
 
 ```text
 1. embedding similarity로 cache 후보를 찾는다.
-2. Symbol Dictionary로 같은 API/Symbol 영역인지 확인한다.
-3. permission / version / freshness metadata guard를 통과한 경우에만 hit로 인정한다.
-4. guard를 통과하지 못하면 EU-only RAG baseline으로 fallback한다.
+2. permission / version / freshness metadata guard를 통과한 경우에만 hit로 인정한다.
+3. guard를 통과하지 못하면 EU-only RAG baseline으로 fallback한다.
 ```
 
-즉 DP3의 비교 대상은 “정책적으로 어떤 질문은 어디로 보낸다”가 아니라, **cache hit를 어떤 데이터와 어떤 검증 조건으로 안전하게 인정할 것인가**이다.
+즉 DP4의 비교 대상은 “정책적으로 어떤 질문은 어디로 보낸다”가 아니라, **cache hit를 어떤 데이터와 어떤 검증 조건으로 안전하게 인정할 것인가**이다.
+
+Symbol Matching은 두 후보 중 하나에만 속한 핵심 메커니즘이 아니라, 양쪽 모두에 붙일 수 있는 optional hardening으로 Appendix에서 별도로 다룬다.
 
 ---
 
@@ -62,19 +63,19 @@ EU-only RAG에서는 질문이 반복될 때마다 관련 EU를 검색하고, �
 | 답변 일관성 부족 | 매번 선택되는 EU 조합이 달라지면 같은 API/Topic에 대한 권장 방향과 표현이 흔들릴 수 있다. |
 | 근거 재사용 부재 | 이미 검증한 근거 묶음이 있어도 다음 질문에서 다시 찾고 다시 조합한다. |
 
-### 2.2 DP3가 해결해야 하는 것
+### 2.2 DP4가 해결해야 하는 것
 
-DP3는 “검색 품질을 높이는 것”보다 한 단계 위의 문제를 다룬다.
+DP4는 “검색 품질을 높이는 것”보다 한 단계 위의 문제를 다룬다.
 
 ```text
 DP1 = 정확하고 중복이 적은 근거 조각을 만든다.
 DP2 = 사용자가 볼 수 있는 Source와 요청 Version 범위만 사용하게 한다.
-DP3 = 반복 질문에서 어떤 산출물을 재사용해 빠르고 일관된 답변을 만들지 결정한다.
+DP4 = 반복 질문에서 어떤 산출물을 재사용해 빠르고 일관된 답변을 만들지 결정한다.
 ```
 
-따라서 DP3는 DP1의 대체안이 아니라, DP1 산출물인 Evidence Unit을 소비하는 상위 Cache Layer의 선택이다.
+따라서 DP4는 DP1의 대체안이 아니라, DP1 산출물인 Evidence Unit을 소비하는 상위 Cache Layer의 선택이다.
 
-| 구분 | DP1 SPRAG | DP3 Response Cache Strategy |
+| 구분 | DP1 SPRAG | DP4 Response Cache Strategy |
 |---|---|---|
 | 설계 질문 | 원본 코드/문서를 어떤 근거 단위로 쪼개고 중복을 줄일 것인가? | 반복 질문에서 최종 답변을 재사용할 것인가, 검증된 근거 Context를 재사용할 것인가? |
 | 산출물 | Evidence Unit | Cached Answer 또는 Verified Context Pack |
@@ -83,7 +84,7 @@ DP3 = 반복 질문에서 어떤 산출물을 재사용해 빠르고 일관된 �
 | 실패 위험 | 중복 제거 실패, 잘못된 EU 구성, Source Mapping 손상 | Wrong answer reuse, stale context reuse, 권한/버전 불일치 |
 | 평가 지표 | Top-K Duplicate Ratio, Context Diversity, Citation Mapping | P95 Latency, Cache Hit Rate, Wrong Hit Rate, Repeated Answer Consistency |
 
-DP3의 좋은 후보는 다음 조건을 만족해야 한다.
+DP4의 좋은 후보는 다음 조건을 만족해야 한다.
 
 - 반복 질문에서 응답 지연을 줄인다.
 - 같은 Topic에 대해 답변 방향을 안정화한다.
@@ -243,19 +244,18 @@ Semantic Answer Cache가 `질문 → 최종 답변`을 재사용한다면, Verif
 | `citation_metadata` | 파일 경로, symbol, commit, release 등 Citation 정보 |
 | `validity_metadata` | allowed_scope, release_range, last_verified_commit, TTL |
 | `context_embedding` | Context Pack 검색을 위한 embedding |
-| `source_symbol_set` | Context Pack이 다루는 주요 API/Symbol 목록 |
+| `source_symbol_set` | Optional Symbol Matching guard 또는 Citation 보강에 사용할 수 있는 주요 API/Symbol 목록 |
 
 ### 4.3 동작 원리
 
 1. 사용자 질문을 정규화한다.
 2. 질문 embedding을 생성한다.
-3. Symbol Dictionary를 사용해 질문에 포함된 주요 API/Symbol 후보를 추출한다.
-4. Context Cache에서 embedding similarity로 Context Pack 후보를 검색한다.
-5. 후보의 `source_symbol_set`, 권한 Scope, Source Version, TTL, Source timestamp를 검증한다.
-6. 유효하면 cached context_text와 source_eu_ids를 LLM Context로 사용한다.
-7. LLM은 현재 질문에 맞게 답변을 새로 생성한다.
-8. Miss 또는 invalid이면 EU RAG를 수행한다.
-9. RAG 결과가 cacheable하면 Context Pack으로 저장한다.
+3. Context Cache에서 embedding similarity로 Context Pack 후보를 검색한다.
+4. 후보의 권한 Scope, Source Version, TTL, Source timestamp를 검증한다.
+5. 유효하면 cached context_text와 source_eu_ids를 LLM Context로 사용한다.
+6. LLM은 현재 질문에 맞게 답변을 새로 생성한다.
+7. Miss 또는 invalid이면 EU RAG를 수행한다.
+8. RAG 결과가 cacheable하면 Context Pack으로 저장한다.
 
 ### 4.4 설계 다이어그램
 
@@ -263,10 +263,8 @@ Semantic Answer Cache가 `질문 → 최종 답변`을 재사용한다면, Verif
 flowchart TD
     A[User Query] --> B[Query Normalizer]
     B --> C[Query Embedding]
-    B --> S[Symbol Dictionary Match]
     C --> D[Verified Context Cache Lookup]
-    S --> E[Metadata / Symbol Guard]
-    D --> E
+    D --> E[Metadata Guard]
     E --> F{Hit + Valid Context?}
     F -->|Yes| G[Cached Context Pack]
     F -->|No| H[EU RAG Retrieval]
@@ -321,24 +319,18 @@ flowchart TD
 
 ```text
 1. Query embedding과 Context Pack embedding의 cosine similarity로 후보 검색
-2. Symbol Dictionary로 추출한 query symbol과 context source_symbol_set의 overlap 확인
-3. 권한/버전/최신성 metadata guard 확인
+2. 권한/버전/최신성 metadata guard 확인
 ```
 
-즉 embedding은 유사한 Context Pack 후보를 찾기 위한 수단이고, Symbol 및 Metadata는 잘못된 reuse를 막는 안전장치다.
+즉 embedding은 유사한 Context Pack 후보를 찾기 위한 수단이고, Metadata는 권한/버전/최신성 불일치 reuse를 막는 기본 안전장치다.
 
 ```text
 Cache hit 조건 예시:
 - cosine_similarity(query_embedding, context_embedding) >= threshold
-- query_symbol_set ∩ context.source_symbol_set is not empty
 - user_scope ∈ context.allowed_scopes
 - requested_version ∈ context.release_range
 - source_fingerprint 또는 last_verified_commit이 유효
 ```
-
-Symbol Dictionary는 LLM 없이 구축 가능하다. Offline indexing 단계에서 ctags, clangd index, tree-sitter, doxygen, LSP symbol index 또는 PoC용 API 목록으로 생성한다.
-
-여기서 Symbol Dictionary는 “질문 의도를 분류하는 룰 엔진”이 아니다. 역할은 cache 후보가 현재 질문과 같은 코드 영역을 다루는지 확인하는 deterministic guard다.
 
 예를 들어 다음 두 질문은 embedding similarity가 높을 수 있다.
 
@@ -358,13 +350,13 @@ PoC에서는 다음 제한을 둔다.
 | 제한 항목 | 권장 기준 |
 |---|---|
 | `max_context_tokens` | Context Pack당 고정 상한을 둔다. 예: 1,500~2,500 tokens |
-| `source_symbol_set` | 주요 API/Symbol 목록을 반드시 포함한다. |
+| `source_symbol_set` | Optional Symbol Matching guard를 사용할 경우 주요 API/Symbol 목록을 포함한다. |
 | `evidence_type` | api_signature, sample_usage, deprecated_note, migration_note 등으로 구분한다. |
 | `required_key_points` | 이 Context Pack이 반드시 포함해야 하는 핵심 근거를 명시한다. |
 | `source_eu_ids` | 모든 근거는 EU까지 추적 가능해야 한다. |
 | `release_range` | 요청 version과 호환되지 않으면 miss 처리한다. |
 
-즉 Context Cache hit는 단순히 embedding 점수가 높은 경우가 아니라, “같은 symbol 영역이며, 권한/버전이 맞고, 너무 넓지 않은 검증된 근거 묶음”일 때만 인정한다.
+즉 Context Cache hit는 단순히 embedding 점수가 높은 경우가 아니라, 권한/버전이 맞고 너무 넓지 않은 검증된 근거 묶음일 때만 인정한다.
 
 ### 4.8 장점
 
@@ -384,7 +376,7 @@ PoC에서는 다음 제한을 둔다.
 | Semantic Cache보다 느리다 | LLM 답변 생성은 여전히 수행한다. |
 | Context stale 관리 필요 | Source가 변경되면 Context Pack을 invalidate해야 한다. |
 | Context hit 품질 관리 필요 | 너무 넓은 Context Pack을 재사용하면 질문과 맞지 않는 근거가 들어갈 수 있다. |
-| Symbol Dictionary 의존 | 주요 API/Symbol 추출 품질이 낮으면 잘못된 Context 후보가 선택될 수 있다. |
+| Context metadata 품질 의존 | 권한/버전/최신성 metadata 품질이 낮으면 잘못된 Context 후보가 선택될 수 있다. |
 | Cache 저장 비용 | context_text, source_eu_ids, metadata, embedding을 별도 저장해야 한다. |
 
 ---
@@ -425,13 +417,10 @@ PoC에서는 다음 제한을 둔다.
 
 | QA | Semantic Answer Cache | Verified Context Cache | 별점 기준 KPI / 근거 |
 |---|---|---|---|
-| QA-02 응답 속도 | ★★★ | ★★☆ | Answer Cache는 cache hit 시 RAG/LLM을 모두 생략한다. Context Cache는 RAG 비용은 줄이지만 LLM 생성은 수행한다. |
-| QA-01 정확도 | ★★☆ | ★★★ | Answer Cache는 wrong answer hit 위험이 있다. Context Cache는 근거만 재사용하고 현재 질문에 맞게 답변을 생성한다. |
-| QA-04 권한/버전 정합성 | ★★☆ | ★★★ | 두 후보 모두 metadata validation이 필요하다. Context Cache는 source_eu_ids와 source metadata를 기준으로 검증하기 쉽다. |
-| QA-08 근거 추적성 | ★★☆ | ★★★ | Answer Cache도 citation metadata를 저장할 수 있지만, Context Cache는 구조적으로 EU/source mapping이 중심이다. |
-| QA-06 유지보수성 | ★★☆ | ★★☆ | 두 후보 모두 TTL, invalidation, source fingerprint 관리가 필요하다. Context Cache는 저장 단위가 더 크다. |
-| QA-11 구현/PoC 용이성 | ★★★ | ★★☆ | Answer Cache는 가장 단순하다. Context Cache는 Context Pack 저장 및 검증 로직이 추가된다. |
-| QA-12 답변 일관성 | ★★☆ | ★★★ | Answer Cache는 동일 답변 재사용으로 일관되지만 질문 변형에 취약하다. Context Cache는 동일 근거를 재사용해 권장 방향을 안정화한다. |
+| 성능: 응답속도 | ★★★ | ★★☆ | Answer Cache는 cache hit 시 RAG/LLM을 모두 생략한다. Context Cache는 RAG 비용은 줄이지만 LLM 생성은 수행한다. |
+| 보안성: 권한 | ★★☆ | ★★★ | 두 후보 모두 metadata validation이 필요하다. Context Cache는 source_eu_ids와 source metadata를 기준으로 검증하기 쉽다. |
+| 신뢰성: 팀 맥락 근거 Citation 100% | ★★☆ | ★★★ | Answer Cache도 citation metadata를 저장할 수 있지만, Context Cache는 구조적으로 EU/source mapping이 중심이다. |
+| 신뢰성: Cache Freshness | ★★☆ | ★★★ | Answer Cache는 답변 전체가 stale해질 수 있다. Context Cache는 source_eu_ids, source_fingerprint, last_verified_commit 단위로 invalidation하기 쉽다. |
 
 별점 해석은 다음과 같다.
 
@@ -477,11 +466,11 @@ PoC에서 Verified Context Cache가 이겨야 하는 지표는 “최단 latency
 
 ### 6.3 발표용 결론 문장
 
-> Semantic Answer Cache는 cache hit 시 RAG와 LLM을 모두 생략할 수 있어 가장 빠른 후보입니다. 하지만 코드 어시스트에서는 비슷하지만 다른 질문에 과거 답변을 재사용하는 wrong cache hit 위험이 큽니다. Verified Context Cache는 최종 답변이 아니라 검증된 Evidence Unit 묶음과 Context Pack을 재사용합니다. 따라서 EU 검색, rerank, context build 비용을 줄이면서도 LLM은 현재 질문에 맞게 답변을 새로 생성할 수 있습니다. 본 과제의 DP3 목표가 단순 최고 속도가 아니라 저지연, 답변 일관성, 근거 신뢰성을 함께 만족하는 것이라면 Verified Context Cache가 더 균형 잡힌 선택입니다.
+> Semantic Answer Cache는 cache hit 시 RAG와 LLM을 모두 생략할 수 있어 가장 빠른 후보입니다. 하지만 코드 어시스트에서는 비슷하지만 다른 질문에 과거 답변을 재사용하는 wrong cache hit 위험이 큽니다. Verified Context Cache는 최종 답변이 아니라 검증된 Evidence Unit 묶음과 Context Pack을 재사용합니다. 따라서 EU 검색, rerank, context build 비용을 줄이면서도 LLM은 현재 질문에 맞게 답변을 새로 생성할 수 있습니다. 본 과제의 DP4 목표가 단순 최고 속도가 아니라 저지연, 답변 일관성, 근거 신뢰성을 함께 만족하는 것이라면 Verified Context Cache가 더 균형 잡힌 선택입니다.
 
 ---
 
-## 7. Appendix DP3 - PoC 설계와 방어 논리
+## 7. Appendix DP4 - PoC 설계와 방어 논리
 
 ### 7.1 PoC 목적
 
@@ -533,13 +522,6 @@ EU Set:
 - EU-4: release/2.x migration guide
 - EU-5: sample usage
 - EU-6: error handling rule
-
-Symbol Dictionary:
-- AuthClient
-- AuthClient::init
-- AuthClientV1
-- TokenValidator
-- LoginManager
 ```
 
 ### 7.3 비교 대상 구현
@@ -566,6 +548,7 @@ Query
 -> Metadata Validation
 -> Hit: Cached Answer Return
 -> Miss: EU-only RAG + LLM
+-> New Answer
 -> Store Answer Cache
 ```
 
@@ -574,15 +557,71 @@ Query
 ```text
 Query
 -> Query Embedding
--> Symbol Dictionary Match
 -> Verified Context Cache Lookup
--> Symbol / Metadata Validation
--> Hit: Cached Context Pack + LLM
--> Miss: EU-only RAG + Context Build + LLM
+-> Metadata Validation
+-> Hit: Cached Context Pack
+-> Miss: EU-only RAG + Context Build
+-> LLM Answer Generation
 -> Store Context Pack
 ```
 
-### 7.4 비교 테스트 시나리오
+### 7.4 Metadata Guard
+
+Metadata Guard는 Semantic Answer Cache와 Verified Context Cache 모두에 필요하다. 차이는 검증 대상이다.
+
+```text
+Semantic Answer Cache:
+이 cached final answer를 지금 그대로 반환해도 되는가?
+
+Verified Context Cache:
+이 cached context pack을 지금 LLM 근거로 넣어도 되는가?
+```
+
+| Metadata | Semantic Answer Cache에서의 의미 | Verified Context Cache에서의 의미 |
+|---|---|---|
+| `permission` / `allowed_scope` | cached answer의 근거 source를 현재 사용자가 볼 수 있는지 확인 | context pack의 `source_eu_ids`가 현재 사용자 scope 안에 있는지 확인 |
+| `source_version` / `branch` / `release_range` | 답변 생성 당시 source version이 현재 요청 version과 맞는지 확인 | context pack의 `release_range`가 현재 요청 version과 맞는지 확인 |
+| `source_fingerprint` / `last_verified_commit` | 답변 생성 이후 원본 source가 변경됐는지 확인 | context pack 구성 이후 근거 EU가 변경됐는지 확인 |
+| `ttl` / `expire_at` | 오래된 답변을 자동 invalid 처리 | 오래된 context pack을 자동 invalid 처리 |
+| `tenant` / `project` / `repo_scope` | 다른 팀/프로젝트의 cached answer가 섞이지 않도록 제한 | 다른 팀/프로젝트의 context pack이 섞이지 않도록 제한 |
+| `citation_metadata` / `source_eu_ids` | cached answer의 근거를 추적 가능하게 유지 | cached context가 어떤 EU/source에서 왔는지 LLM 답변까지 연결 |
+
+따라서 Metadata Guard는 두 후보의 차이를 만드는 장치라기보다, cache reuse 자체를 안전하게 만들기 위한 공통 안전장치다. A/B의 핵심 차이는 guard 통과 이후 재사용하는 산출물이 `Final Answer`인지 `Context Pack`인지에 있다.
+
+DP2의 권한 제어와 DP4의 Metadata Guard는 같은 metadata를 사용할 수 있지만, 설계 지점은 다르다.
+
+| 구분 | 역할 |
+|---|---|
+| DP2 Permission / Version Control | 질의 시점에 어떤 Repository, Branch, Release, Project Scope를 검색 대상으로 삼을지 결정한다. Retrieval 전에 source 접근 범위를 제한한다. |
+| DP4 Metadata Guard | 이미 저장된 cached answer/context가 현재 사용자 권한, 요청 version, 최신 source 상태에서도 재사용 가능한지 검증한다. Cache reuse 직전의 validity check다. |
+| 관계 | DP4는 DP2를 대체하지 않는다. DP2의 권한/버전 metadata를 cache entry에 저장하고, 재사용 시점에 다시 확인한다. |
+
+### 7.5 Optional Guard: Symbol Matching
+
+Symbol Matching은 A/B 어느 한 후보의 핵심 차이가 아니라, 둘 모두에 붙일 수 있는 보강 방법이다. Query embedding으로 cache 후보를 찾은 뒤, API/Class/Function symbol overlap을 추가 검증하면 embedding false positive를 줄일 수 있다.
+
+```text
+Optional Symbol Dictionary:
+- AuthClient
+- AuthClient::init
+- AuthClientV1
+- TokenValidator
+- LoginManager
+```
+
+적용 방식:
+
+```text
+Semantic Answer Cache:
+Query Embedding -> Answer Cache Lookup -> Metadata Validation -> Optional Symbol Guard
+
+Verified Context Cache:
+Query Embedding -> Context Cache Lookup -> Metadata Validation -> Optional Symbol Guard
+```
+
+여기서 Symbol Matching은 “질문 의도를 분류하는 룰 엔진”이 아니라, cache 후보가 현재 질문과 같은 코드 영역을 다루는지 확인하는 deterministic guard다. 따라서 본 DP의 핵심 비교는 Symbol Matching 유무가 아니라, **최종 답변을 재사용할 것인가**, **검증된 Context Pack을 재사용할 것인가**에 둔다.
+
+### 7.6 비교 테스트 시나리오
 
 #### 시나리오 1. 완전 반복 질문
 
@@ -666,7 +705,7 @@ Q4. Release 2.x에서 AuthClient 초기화 시 주의사항은?
 - Wrong Version Citation Rate
 - Unauthorized Source Exposure Count
 
-### 7.5 측정 지표 정의
+### 7.7 측정 지표 정의
 
 | 지표 | 의미 | 기대되는 관찰 |
 |---|---|---|
@@ -687,6 +726,6 @@ Q4. Release 2.x에서 AuthClient 초기화 시 주의사항은?
 
 | ID | 문서명 | 출처 | 활용 |
 |---|---|---|---|
-| REF-DP3-TR-01 | GPTCache: An Open-Source Semantic Cache for LLM Applications | https://aclanthology.org/2023.nlposs-1.24/ | Semantic Answer Cache 후보 근거 |
-| REF-DP3-TR-02 | GPTCache Documentation | https://gptcache.readthedocs.io/ | Semantic cache 구조와 사용 방식 참고 |
-| REF-DP3-TR-03 | RAGCache: Efficient Knowledge Caching for Retrieval-Augmented Generation | https://arxiv.org/abs/2404.12457 | RAG 중간 산출물/context cache 계열 비교 근거 |
+| REF-DP4-TR-01 | GPTCache: An Open-Source Semantic Cache for LLM Applications | https://aclanthology.org/2023.nlposs-1.24/ | Semantic Answer Cache 후보 근거 |
+| REF-DP4-TR-02 | GPTCache Documentation | https://gptcache.readthedocs.io/ | Semantic cache 구조와 사용 방식 참고 |
+| REF-DP4-TR-03 | RAGCache: Efficient Knowledge Caching for Retrieval-Augmented Generation | https://arxiv.org/abs/2404.12457 | RAG 중간 산출물/context cache 계열 비교 근거 |

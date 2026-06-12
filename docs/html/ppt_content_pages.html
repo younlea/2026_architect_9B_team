@@ -56,7 +56,7 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
 <body>
 <header>
   <h1>RAG 기반 코드 어시스트 프레임워크 Architecture PPT Content</h1>
-  <p>Markdown 백데이터를 기반으로 PPT 제작에 바로 재배치할 수 있도록 18개 페이지 탭으로 구성한 HTML 초안</p>
+  <p>Markdown 백데이터를 기반으로 PPT 제작에 바로 재배치할 수 있도록 20개 페이지 탭으로 구성한 HTML 초안</p>
 </header>
 <div class="app">
 <nav class="tabs" aria-label="PPT pages">
@@ -78,7 +78,9 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
   <button class="tabbtn" data-tab="p15">15. DP3 배경<span>EU-only 이후</span></button>
   <button class="tabbtn" data-tab="p16">16. DP3 비교<span>Answer Cache vs Wiki</span></button>
   <button class="tabbtn" data-tab="p17">17. Appendix DP3<span>Mechanism & PoC</span></button>
-  <button class="tabbtn" data-tab="p18">18. Appendix DP4<span>Session Memory</span></button>
+  <button class="tabbtn" data-tab="p18">18. DP4 배경<span>RAG Cache</span></button>
+  <button class="tabbtn" data-tab="p19">19. DP4 비교<span>Answer vs Context</span></button>
+  <button class="tabbtn" data-tab="p20">20. Appendix<span>Session Memory</span></button>
 </nav>
 <main>
 
@@ -88,7 +90,7 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
     <div class="asset"><img src="assets/problem_drivers.svg" alt="과제 배경 드라이버"></div>
     <div class="grid">
       <div class="card must"><h3>핵심 한 줄</h3><p>외부 LLM에 사내 코드를 보내지 않고, 내부 RAG 지식 계층으로 코드 어시스트 품질을 확보한다.</p></div>
-      <div class="card"><h3>3개 Design Point</h3><p><span class="tag b">DP1 중복 제어</span><span class="tag g">DP2 권한/버전</span><span class="tag a">DP3 Knowledge Access</span></p></div>
+      <div class="card"><h3>4개 Design Point</h3><p><span class="tag b">DP1 중복 제어</span><span class="tag g">DP2 권한/버전</span><span class="tag a">DP3 Knowledge Access</span><span class="tag c">DP4 RAG Cache</span></p></div>
       <div class="card"><h3>발표 Tone</h3><p>실제 구현 완료가 아니라 Architecture 판단과 Trade-off를 설명하는 설계 발표다.</p></div>
     </div>
     <div class="speaker"><strong>발표자 노트:</strong> 첫 장에서는 “코드 어시스트를 만들겠다”보다 “사내 코드라는 제약 때문에 일반 LLM 도구를 그대로 쓸 수 없고, 내부 검색/권한/근거 계층이 필요하다”를 먼저 말한다.</div>
@@ -169,9 +171,9 @@ flowchart LR
       <tr><th>코드 어시스트 Driver</th><th>왜 중요한가</th><th>연결 DP</th></tr>
       <tr><td>중복성</td><td>복사 구현, 샘플 코드, 버전별 유사 파일이 Top-K를 잠식하면 필요한 근거가 누락된다.</td><td>DP1</td></tr>
       <tr><td>권한 민감성</td><td>권한 없는 코드가 답변이나 로그에 섞이면 보안 사고가 된다.</td><td>DP2</td></tr>
-      <tr><td>최신성/버전</td><td>요청 Branch/Release/Commit과 다른 구현은 틀린 답변이 될 수 있다.</td><td>DP2, DP3</td></tr>
-      <tr><td>정확도/응답 속도</td><td>틀린 코드 제안은 빌드/런타임 오류로 이어지고, 느린 응답은 개발 흐름을 끊는다.</td><td>DP1, DP3</td></tr>
-      <tr><td>근거 추적</td><td>답변 근거의 파일, Symbol, Segment, Commit, 권한 판단을 확인할 수 있어야 한다.</td><td>DP1, DP2, DP3</td></tr>
+      <tr><td>최신성/버전</td><td>요청 Branch/Release/Commit과 다른 구현은 틀린 답변이 될 수 있다.</td><td>DP2, DP3, DP4</td></tr>
+      <tr><td>정확도/응답 속도</td><td>틀린 코드 제안은 빌드/런타임 오류로 이어지고, 느린 응답은 개발 흐름을 끊는다.</td><td>DP1, DP3, DP4</td></tr>
+      <tr><td>근거 추적</td><td>답변 근거의 파일, Symbol, Segment, Commit, 권한 판단을 확인할 수 있어야 한다.</td><td>DP1, DP2, DP3, DP4</td></tr>
     </table>
     <div class="callout">핵심 메시지: 코드 어시스트 RAG는 일반 문서 RAG의 검색/요약 문제 위에 중복, 권한, 버전, 실행 정확도, 근거 추적 문제가 추가된다.</div>
   </div>
@@ -186,14 +188,17 @@ flowchart LR
     B --> C[DP1 중복 제어 RAG]
     C --> D[DP2 권한/버전 제어]
     D --> E[DP3 Knowledge Access]
-    E --> F[Internal LLM Answer]
+    E --> H[DP4 RAG Cache Strategy]
+    H --> F[Internal LLM Answer]
     F --> G[Citation / Audit]
     classDef dp1 fill:#dbeafe,stroke:#2563eb,stroke-width:2px
     classDef dp2 fill:#dcfce7,stroke:#16a34a,stroke-width:2px
     classDef dp3 fill:#fef3c7,stroke:#d97706,stroke-width:2px
+    classDef dp4 fill:#ecfeff,stroke:#0891b2,stroke-width:2px
     class C dp1
     class D dp2
     class E dp3
+    class H dp4
     </div>
     <table>
       <tr><th>프레임워크 역할</th><th>설명</th></tr>
@@ -201,6 +206,7 @@ flowchart LR
       <tr><td>중복 제어</td><td>유사 Segment가 Top-K를 잠식하지 않도록 RAG 구조를 결정</td></tr>
       <tr><td>권한/버전 제어</td><td>사용자 권한과 요청 Source Version 범위 내에서만 검색/답변 Context 구성</td></tr>
       <tr><td>Knowledge Access</td><td>반복/정책/설계 질문의 속도와 일관성을 높이는 지식 접근 방식 결정</td></tr>
+      <tr><td>RAG Cache</td><td>검증된 답변 또는 Context Pack을 재사용해 반복 질의 지연과 비용을 줄임</td></tr>
       <tr><td>근거 추적</td><td>원본 Segment, Source Version, 권한 판단 로그를 Citation/Audit로 연결</td></tr>
     </table>
   </div>
@@ -211,11 +217,11 @@ flowchart LR
   <div class="body">
     <table>
       <tr><th>Stakeholder</th><th>관심사</th><th>관련 DP</th></tr>
-      <tr><td>사내 개발자</td><td>빠르고 정확한 코드 어시스트, 내부 API 예시, 신뢰 가능한 답변</td><td>DP1, DP3</td></tr>
+      <tr><td>사내 개발자</td><td>빠르고 정확한 코드 어시스트, 내부 API 예시, 신뢰 가능한 답변</td><td>DP1, DP3, DP4</td></tr>
       <tr><td>프로젝트 개발팀</td><td>보안 유지, 생산성 향상, 팀별 코드 규칙 반영</td><td>DP2, DP3</td></tr>
-      <tr><td>Software Architect / Tech Lead</td><td>설계 원칙 준수, 코드 품질, Architecture Decision 근거 추적</td><td>DP1, DP3</td></tr>
+      <tr><td>Software Architect / Tech Lead</td><td>설계 원칙 준수, 코드 품질, Architecture Decision 근거 추적</td><td>DP1, DP3, DP4</td></tr>
       <tr><td>보안 담당 조직</td><td>코드 외부 유출 방지, 접근 권한 준수, 감사 가능성</td><td>DP2</td></tr>
-      <tr><td>플랫폼/인프라 운영팀</td><td>인덱스 갱신, 장애 대응, 확장성, 운영 복잡도</td><td>DP1, DP2, DP3</td></tr>
+      <tr><td>플랫폼/인프라 운영팀</td><td>인덱스 갱신, Cache invalidation, 장애 대응, 확장성, 운영 복잡도</td><td>DP1, DP2, DP3, DP4</td></tr>
       <tr><td>교육/양성과정 평가자</td><td>DP 비교 명확성, QA 기반 Trade-off, 설계 논리 타당성</td><td>전체</td></tr>
     </table>
     <div class="mermaid">
@@ -240,13 +246,13 @@ flowchart LR
     <table>
       <tr><th>ID</th><th>Rank</th><th>Functional Requirement</th><th>관련 DP</th></tr>
       <tr><td>FR-01</td><td>P1</td><td>코드/문서 데이터 수집 및 인덱싱</td><td>DP1, DP2</td></tr>
-      <tr><td>FR-02</td><td>P1</td><td>코드 어시스트 질의 처리</td><td>DP1, DP2, DP3</td></tr>
+      <tr><td>FR-02</td><td>P1</td><td>코드 어시스트 질의 처리</td><td>DP1, DP2, DP3, DP4</td></tr>
       <tr><td>FR-03</td><td>P1</td><td>권한 기반 검색 및 답변 제어</td><td>DP2</td></tr>
       <tr><td>FR-04</td><td>P1</td><td>중복 데이터 제어</td><td>DP1, DP3</td></tr>
-      <tr><td>FR-05</td><td>P2</td><td>근거 코드/문서 Citation 제공</td><td>DP1, DP2, DP3</td></tr>
-      <tr><td>FR-06</td><td>P2</td><td>기존 사내 코드 어시스트 툴 연동 API 제공</td><td>DP2, DP3</td></tr>
+      <tr><td>FR-05</td><td>P2</td><td>근거 코드/문서 Citation 제공</td><td>DP1, DP2, DP3, DP4</td></tr>
+      <tr><td>FR-06</td><td>P2</td><td>기존 사내 코드 어시스트 툴 연동 API 제공</td><td>DP2, DP3, DP4</td></tr>
       <tr><td>FR-07</td><td>P3</td><td>Knowledge Cache / Wiki 관리</td><td>DP3</td></tr>
-      <tr><td>FR-08</td><td>P2</td><td>Source Version 기반 검색/답변 제어</td><td>DP2, DP3</td></tr>
+      <tr><td>FR-08</td><td>P2</td><td>Source Version 기반 검색/답변 제어</td><td>DP2, DP3, DP4</td></tr>
     </table>
     <div class="mermaid">
 flowchart LR
@@ -290,11 +296,12 @@ flowchart LR
     R --> D1[DP1 중복 제어]
     P --> D2[DP2 Source Scope 제어]
     R --> D3[DP3 Knowledge Access]
+    R --> D4[DP4 RAG Cache]
     P --> Audit[Citation / Audit]
     classDef con fill:#fee2e2,stroke:#dc2626,stroke-width:2px
     classDef sol fill:#dcfce7,stroke:#16a34a,stroke-width:2px
     class C1 con
-    class D1,D2,D3,P,R,Audit sol
+    class D1,D2,D3,D4,P,R,Audit sol
     </div>
   </div>
 </section>
@@ -320,7 +327,7 @@ flowchart LR
 </section>
 
 <section id="p10" class="slide">
-  <div class="slide-head"><div><h2>Overall Architecture: DP 영향 영역 표시</h2><p>DP1/DP2/DP3가 전체 구조에서 어느 부분을 결정하는지 색상으로 표시</p></div><span class="page-no">10</span></div>
+  <div class="slide-head"><div><h2>Overall Architecture: DP 영향 영역 표시</h2><p>DP1/DP2/DP3/DP4가 전체 구조에서 어느 부분을 결정하는지 색상으로 표시</p></div><span class="page-no">10</span></div>
   <div class="body">
     <div class="asset"><img src="assets/overall_dp_impact.svg" alt="전체 아키텍처 DP 영향도"></div>
     <div class="mermaid">
@@ -342,12 +349,14 @@ flowchart TD
         C1[EU / Vector / Keyword Index]
         C2[Permission / Version Store]
         C3[Wiki Index / Answer Cache]
+        C4[Verified Context Cache]
     end
     subgraph Online[Online QA]
         D1[Query API]
         D2[Auth / Version Resolver]
         D3[Wiki/EU Retriever]
-        D4[Context Builder]
+        D4[Cache Lookup / Guard]
+        D7[Context Builder]
         D5[Internal LLM]
         D6[Citation / Audit]
     end
@@ -355,18 +364,21 @@ flowchart TD
     A3 --> B4 --> C2
     A4 --> B4
     B3 --> B5 --> C3
-    D1 --> D2 --> D3 --> D4 --> D5 --> D6
+    D1 --> D2 --> D3 --> D4 --> D7 --> D5 --> D6
     C1 --> D3
     C2 --> D2
     C3 --> D3
+    C4 --> D4
     classDef dp1 fill:#dbeafe,stroke:#2563eb,stroke-width:3px
     classDef dp2 fill:#dcfce7,stroke:#16a34a,stroke-width:3px
     classDef dp3 fill:#fef3c7,stroke:#d97706,stroke-width:3px
+    classDef dp4 fill:#ecfeff,stroke:#0891b2,stroke-width:3px
     class B2,B3,C1 dp1
     class A3,B4,C2,D2 dp2
     class B5,C3,D3 dp3
+    class C4,D4 dp4
     </div>
-    <table><tr><th>색상</th><th>DP</th><th>영향 영역</th></tr><tr><td><span class="tag b">Blue</span></td><td>DP1</td><td>Segment 추출, 중복 제어 근거 단위, Source Mapping, 중복 제어 Index</td></tr><tr><td><span class="tag g">Green</span></td><td>DP2</td><td>Permission/Version Metadata, Auth/Version Resolver, Source Scope Routing/Filtering, Audit</td></tr><tr><td><span class="tag a">Amber</span></td><td>DP3</td><td>Answer Cache, Wiki Page Index, Wiki/EU Retrieval, Context Policy</td></tr></table>
+    <table><tr><th>색상</th><th>DP</th><th>영향 영역</th></tr><tr><td><span class="tag b">Blue</span></td><td>DP1</td><td>Segment 추출, 중복 제어 근거 단위, Source Mapping, 중복 제어 Index</td></tr><tr><td><span class="tag g">Green</span></td><td>DP2</td><td>Permission/Version Metadata, Auth/Version Resolver, Source Scope Routing/Filtering, Audit</td></tr><tr><td><span class="tag a">Amber</span></td><td>DP3</td><td>Wiki Page Index, Wiki/EU Retrieval, Knowledge Access Context Policy</td></tr><tr><td><span class="tag c">Cyan</span></td><td>DP4</td><td>Semantic Answer Cache, Verified Context Cache, Cache Metadata Guard, Cache Fallback</td></tr></table>
   </div>
 </section>
 
@@ -595,10 +607,169 @@ P-->A[LLM Answer]</div><p><b>핵심:</b> EU 기반 Topic-level 지식 근거를 
 </section>
 
 <section id="p18" class="slide">
-  <div class="slide-head"><div><h2>Appendix DP4: Session Memory Handoff Strategy</h2><p>긴 멀티턴 대화의 결정, 요구사항, TODO를 다음 세션으로 안전하게 넘기는 확장 DP 후보</p></div><span class="page-no">18</span></div>
+  <div class="slide-head"><div><h2>DP4 배경: 반복 질의에서 RAG 산출물 재사용이 필요한 이유</h2><p>중복 제어 RAG 이후에도 유사 질문은 런타임 파이프라인을 매번 다시 통과한다</p></div><span class="page-no">18</span></div>
+  <div class="body">
+    <p><span class="tag c">FR-02 코드 어시스트 질의 처리</span><span class="tag c">FR-05 Citation 제공</span><span class="tag c">FR-08 Source Version 제어</span><span class="tag v">성능</span><span class="tag v">보안성</span><span class="tag v">신뢰성</span><span class="tag v">확장성</span></p>
+    <div class="callout">해결해야 할 문제: 중복 제어 RAG 이후에도 유사한 질문은 검색, 권한/버전 검증, Top-K 구성, Context 생성, 답변 생성, Citation 연결을 매번 반복한다.</div>
+    <div class="asset">
+      <svg viewBox="0 0 1120 420" role="img" aria-label="유사 질문이 RAG 런타임 파이프라인을 반복 통과하며 비용과 변동성을 만드는 흐름" style="width:100%;height:auto;display:block">
+        <defs>
+          <marker id="dp4arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+            <path d="M0,0 L0,6 L9,3 z" fill="#334155"></path>
+          </marker>
+          <filter id="dp4shadow" x="-5%" y="-10%" width="110%" height="125%">
+            <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#94a3b8" flood-opacity="0.28"></feDropShadow>
+          </filter>
+        </defs>
+        <rect x="0" y="0" width="1120" height="420" rx="12" fill="#f8fafc"></rect>
+        <text x="34" y="42" font-size="22" font-weight="800" fill="#0f172a">현재 상태: 비슷한 질문이 들어와도 RAG Runtime Work가 반복됨</text>
+        <g filter="url(#dp4shadow)">
+          <rect x="34" y="72" width="244" height="118" rx="10" fill="#eff6ff" stroke="#93c5fd"></rect>
+          <text x="54" y="100" font-size="17" font-weight="800" fill="#1e3a8a">Similar Questions</text>
+          <text x="54" y="130" font-size="14" fill="#1e293b">Q1. AuthClient 사용법</text>
+          <text x="54" y="154" font-size="14" fill="#1e293b">Q2. 초기화 방법</text>
+          <text x="54" y="178" font-size="14" fill="#1e293b">Q3. 토큰 검증 흐름</text>
+        </g>
+        <line x1="278" y1="132" x2="334" y2="132" stroke="#334155" stroke-width="2.4" marker-end="url(#dp4arrow)"></line>
+        <g filter="url(#dp4shadow)">
+          <rect x="334" y="72" width="752" height="118" rx="10" fill="#ffffff" stroke="#cbd5e1"></rect>
+          <text x="356" y="100" font-size="17" font-weight="800" fill="#0f172a">RAG Runtime Pipeline</text>
+          <g font-size="13" font-weight="700" text-anchor="middle">
+            <rect x="356" y="122" width="100" height="42" rx="8" fill="#ecfeff" stroke="#67e8f9"></rect><text x="406" y="148" fill="#164e63">EU Search</text>
+            <rect x="474" y="122" width="116" height="42" rx="8" fill="#f0fdf4" stroke="#86efac"></rect><text x="532" y="148" fill="#14532d">Scope Filter</text>
+            <rect x="608" y="122" width="108" height="42" rx="8" fill="#fff7ed" stroke="#fdba74"></rect><text x="662" y="148" fill="#7c2d12">Rerank</text>
+            <rect x="734" y="122" width="122" height="42" rx="8" fill="#f5f3ff" stroke="#c4b5fd"></rect><text x="795" y="148" fill="#4c1d95">Context Build</text>
+            <rect x="874" y="122" width="82" height="42" rx="8" fill="#fef2f2" stroke="#fca5a5"></rect><text x="915" y="148" fill="#7f1d1d">LLM</text>
+            <rect x="974" y="122" width="86" height="42" rx="8" fill="#f8fafc" stroke="#94a3b8"></rect><text x="1017" y="148" fill="#334155">Citation</text>
+          </g>
+          <g stroke="#64748b" stroke-width="1.8" marker-end="url(#dp4arrow)">
+            <line x1="456" y1="143" x2="474" y2="143"></line>
+            <line x1="590" y1="143" x2="608" y2="143"></line>
+            <line x1="716" y1="143" x2="734" y2="143"></line>
+            <line x1="856" y1="143" x2="874" y2="143"></line>
+            <line x1="956" y1="143" x2="974" y2="143"></line>
+          </g>
+        </g>
+        <g>
+          <path d="M410 190 C410 236, 188 222, 188 266" fill="none" stroke="#0284c7" stroke-width="2" marker-end="url(#dp4arrow)"></path>
+          <path d="M532 190 C532 248, 412 235, 412 266" fill="none" stroke="#16a34a" stroke-width="2" marker-end="url(#dp4arrow)"></path>
+          <path d="M662 190 C662 248, 620 235, 620 266" fill="none" stroke="#f97316" stroke-width="2" marker-end="url(#dp4arrow)"></path>
+          <path d="M915 190 C915 248, 868 235, 868 266" fill="none" stroke="#dc2626" stroke-width="2" marker-end="url(#dp4arrow)"></path>
+        </g>
+        <g filter="url(#dp4shadow)">
+          <rect x="56" y="266" width="264" height="92" rx="10" fill="#ffffff" stroke="#bae6fd"></rect>
+          <text x="78" y="294" font-size="16" font-weight="800" fill="#075985">Latency / Cost</text>
+          <text x="78" y="322" font-size="13" fill="#334155">같은 Topic 근거 검색과 검증이 반복된다.</text>
+          <text x="78" y="344" font-size="13" fill="#334155">캐싱 안 된 질의의 기본 속도도 중요하다.</text>
+          <rect x="350" y="266" width="244" height="92" rx="10" fill="#ffffff" stroke="#bbf7d0"></rect>
+          <text x="372" y="294" font-size="16" font-weight="800" fill="#166534">Permission / Version</text>
+          <text x="372" y="322" font-size="13" fill="#334155">사용자 권한과 요청 source version을</text>
+          <text x="372" y="344" font-size="13" fill="#334155">매 질의마다 일관되게 반영해야 한다.</text>
+          <rect x="624" y="266" width="222" height="92" rx="10" fill="#ffffff" stroke="#fed7aa"></rect>
+          <text x="646" y="294" font-size="16" font-weight="800" fill="#9a3412">Top-K Variance</text>
+          <text x="646" y="322" font-size="13" fill="#334155">반복 검색에서 근거 조합이 달라지면</text>
+          <text x="646" y="344" font-size="13" fill="#334155">답변 방향과 다양성이 흔들릴 수 있다.</text>
+          <rect x="876" y="266" width="204" height="92" rx="10" fill="#ffffff" stroke="#fecaca"></rect>
+          <text x="898" y="294" font-size="16" font-weight="800" fill="#991b1b">Citation Rebuild</text>
+          <text x="898" y="322" font-size="13" fill="#334155">팀 맥락 근거와 Citation을</text>
+          <text x="898" y="344" font-size="13" fill="#334155">매번 다시 연결해야 한다.</text>
+        </g>
+        <rect x="216" y="378" width="688" height="30" rx="15" fill="#e0f2fe" stroke="#7dd3fc"></rect>
+        <text x="560" y="398" font-size="15" font-weight="800" fill="#075985" text-anchor="middle">Design Need: 반복 질의에서 재사용 가능한 RAG 산출물과 검증 조건을 정의해야 한다</text>
+      </svg>
+    </div>
+    <table>
+      <tr><th>반복되는 런타임 작업</th><th>현재 문제</th><th>설계로 확인해야 할 것</th></tr>
+      <tr><td>Search / Scope Filter</td><td>같은 Topic 질문에서도 검색과 권한/버전 검증이 반복된다.</td><td>재사용해도 되는 범위와 invalidation 조건</td></tr>
+      <tr><td>Rerank / Context Build</td><td>Top-K 조합이 매번 달라져 답변 방향과 근거 다양성이 흔들릴 수 있다.</td><td>반복 질문에서 안정적으로 재사용 가능한 중간 산출물</td></tr>
+      <tr><td>LLM Answer / Citation</td><td>같은 설명과 근거 연결을 반복 생성해 latency와 비용이 누적된다.</td><td>속도 개선과 Citation 추적성의 균형</td></tr>
+    </table>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP4 배경에서는 아직 특정 후보를 말하지 않습니다. 중복 제어 RAG를 해도 유사 질문은 검색, 권한/버전 검증, Top-K 구성, Context Build, LLM 생성, Citation 연결을 매번 다시 수행합니다. 그래서 DP4의 설계 필요성은 단순히 캐시를 붙이는 것이 아니라, 반복 질의에서 어떤 RAG 산출물을 어떤 검증 조건으로 재사용할지 정의하는 것입니다.</div>
+  </div>
+</section>
+
+<section id="p19" class="slide">
+  <div class="slide-head"><div><h2>DP4 대안 비교: Semantic Answer Cache vs Verified Context Cache</h2><p>반복 질의에서 최종 답변을 재사용할지, 검증된 Context Pack을 재사용할지 비교</p></div><span class="page-no">19</span></div>
+  <div class="body">
+    <p><span class="tag v">성능: 응답속도</span><span class="tag v">보안성: 권한</span><span class="tag v">신뢰성: Citation 100%</span></p>
+    <div class="twocol">
+      <div class="card"><h3>A. Semantic Answer Cache</h3>
+        <svg viewBox="0 0 520 270" role="img" aria-label="Semantic Answer Cache 동작 구조" style="width:100%;height:auto;display:block">
+          <defs><marker id="ansArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"></path></marker></defs>
+          <rect x="0" y="0" width="520" height="270" rx="10" fill="#f8fafc"></rect>
+          <g font-size="13" font-weight="800" text-anchor="middle">
+            <rect x="22" y="26" width="104" height="40" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="74" y="51" fill="#334155">User Query</text>
+            <rect x="154" y="26" width="122" height="40" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="215" y="51" fill="#334155">Query Embedding</text>
+            <rect x="306" y="26" width="154" height="40" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="383" y="51" fill="#334155">Answer Cache Lookup</text>
+            <rect x="304" y="94" width="158" height="40" rx="7" fill="#f8fafc" stroke="#94a3b8"></rect><text x="383" y="119" fill="#334155">Metadata Guard</text>
+            <rect x="288" y="170" width="190" height="38" rx="8" fill="#dcfce7" stroke="#22c55e"></rect><text x="383" y="194" fill="#166534">Cached Final Answer</text>
+            <rect x="44" y="148" width="140" height="36" rx="7" fill="#f8fafc" stroke="#94a3b8"></rect><text x="114" y="171" fill="#334155">EU RAG + LLM</text>
+            <rect x="54" y="214" width="120" height="36" rx="8" fill="#e0f2fe" stroke="#38bdf8"></rect><text x="114" y="237" fill="#075985">New Answer</text>
+          </g>
+          <g stroke="#475569" stroke-width="2" marker-end="url(#ansArrow)">
+            <line x1="126" y1="46" x2="154" y2="46"></line><line x1="276" y1="46" x2="306" y2="46"></line>
+            <line x1="383" y1="66" x2="383" y2="94"></line><line x1="383" y1="134" x2="383" y2="170"></line>
+            <path d="M306 50 C210 78, 114 96, 114 148" fill="none"></path>
+            <path d="M304 114 C226 126, 114 130, 114 148" fill="none"></path>
+            <line x1="114" y1="184" x2="114" y2="214"></line>
+          </g>
+          <text x="408" y="158" font-size="12" font-weight="800" fill="#166534" text-anchor="middle">Valid</text>
+          <text x="214" y="114" font-size="12" font-weight="800" fill="#475569" text-anchor="middle">Miss / Invalid</text>
+        </svg>
+        <p><b>설명:</b> 유사 질문의 최종 답변을 cache entry로 찾아 바로 반환한다. Hit 시 RAG와 LLM 생성을 모두 생략할 수 있다.</p>
+        <table><tr><th>장점</th><th>단점</th></tr><tr><td>Hit 시 응답속도 최대 개선</td><td>비슷하지만 다른 질문에 답변 재사용 위험</td></tr><tr><td>구조가 단순하고 PoC 구현 쉬움</td><td>권한/버전/최신성 metadata 검증 필수</td></tr><tr><td>LLM 호출 수와 비용 감소 효과 명확</td><td>Citation을 답변 metadata로 별도 보존해야 함</td></tr></table>
+      </div>
+      <div class="card must"><h3>B. Verified Context Cache</h3>
+        <svg viewBox="0 0 520 270" role="img" aria-label="Verified Context Cache 동작 구조" style="width:100%;height:auto;display:block">
+          <defs><marker id="ctxArrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"></path></marker></defs>
+          <rect x="0" y="0" width="520" height="270" rx="10" fill="#f8fafc"></rect>
+          <g font-size="13" font-weight="800" text-anchor="middle">
+            <rect x="22" y="26" width="104" height="40" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="74" y="51" fill="#334155">User Query</text>
+            <rect x="154" y="26" width="122" height="40" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="215" y="51" fill="#334155">Query Embedding</text>
+            <rect x="306" y="26" width="154" height="40" rx="7" fill="#f1f5f9" stroke="#cbd5e1"></rect><text x="383" y="51" fill="#334155">Context Cache Lookup</text>
+            <rect x="304" y="94" width="158" height="40" rx="7" fill="#f8fafc" stroke="#94a3b8"></rect><text x="383" y="119" fill="#334155">Metadata Guard</text>
+            <rect x="296" y="160" width="174" height="36" rx="8" fill="#dbeafe" stroke="#3b82f6"></rect><text x="383" y="183" fill="#1d4ed8">Cached Context</text>
+            <rect x="42" y="160" width="144" height="36" rx="7" fill="#f8fafc" stroke="#94a3b8"></rect><text x="114" y="183" fill="#334155">EU RAG Build</text>
+            <rect x="202" y="216" width="116" height="34" rx="7" fill="#f1f5f9" stroke="#94a3b8"></rect><text x="260" y="238" fill="#334155">LLM</text>
+            <rect x="342" y="216" width="104" height="34" rx="8" fill="#e0f2fe" stroke="#38bdf8"></rect><text x="394" y="238" fill="#075985">Answer</text>
+          </g>
+          <g stroke="#475569" stroke-width="2" marker-end="url(#ctxArrow)">
+            <line x1="126" y1="46" x2="154" y2="46"></line><line x1="276" y1="46" x2="306" y2="46"></line>
+            <line x1="383" y1="66" x2="383" y2="94"></line>
+            <line x1="383" y1="134" x2="383" y2="160"></line>
+            <path d="M304 114 C226 126, 114 132, 114 160" fill="none"></path>
+            <path d="M306 50 C210 78, 114 100, 114 160" fill="none"></path>
+            <path d="M114 196 C140 220, 174 233, 202 233" fill="none"></path>
+            <path d="M383 196 C350 220, 324 233, 318 233" fill="none"></path>
+            <line x1="318" y1="233" x2="342" y2="233"></line>
+          </g>
+          <text x="408" y="152" font-size="12" font-weight="800" fill="#1d4ed8" text-anchor="middle">Valid</text>
+          <text x="214" y="114" font-size="12" font-weight="800" fill="#475569" text-anchor="middle">Miss / Invalid</text>
+        </svg>
+        <p><b>설명:</b> 최종 답변은 재사용하지 않고, 검증된 EU 묶음과 Context Pack을 재사용한 뒤 현재 질문에 맞게 답변을 생성한다.</p>
+        <table><tr><th>장점</th><th>단점</th></tr><tr><td>질문 뉘앙스를 반영한 답변 생성 가능</td><td>LLM 생성 비용은 남음</td></tr><tr><td>source_eu_ids 기반 Citation 추적이 자연스러움</td><td>Context Pack 저장/검증 구현 필요</td></tr><tr><td>권한/버전/최신성 guard를 근거 단위로 적용</td><td>너무 넓은 Context hit 관리 필요</td></tr></table>
+      </div>
+    </div>
+    <table>
+      <tr><th>ASR / QA</th><th>A. Semantic Answer Cache</th><th>B. Verified Context Cache</th><th>Trade-off 판단</th></tr>
+      <tr><td>성능: 응답속도</td><td>★★★</td><td>★★☆</td><td>Answer Cache는 hit 시 RAG와 LLM을 모두 생략한다.</td></tr>
+      <tr><td>보안성: 권한</td><td>★★☆</td><td>★★★</td><td>Context Cache는 EU/source metadata 기준으로 guard를 적용하기 쉽다.</td></tr>
+      <tr><td>신뢰성: 팀 맥락 근거 Citation 100%</td><td>★★☆</td><td>★★★</td><td>Answer Cache도 metadata 저장은 가능하지만, Context Cache는 Citation 근거가 구조의 중심이다.</td></tr>
+      <tr><td><span class="tag a">추가 QA</span> 신뢰성: Cache Freshness</td><td>★★☆</td><td>★★★</td><td>Answer Cache는 답변 전체가 stale해질 수 있다. Context Cache는 source_eu_ids, fingerprint, last_verified_commit 단위로 invalidation하기 쉽다.</td></tr>
+    </table>
+    <div class="callout"><b>Appendix DP4 - Metadata Guard:</b> Metadata Guard는 A/B 모두에 필요하다. A안은 cached final answer를 지금 그대로 반환해도 되는지 검증하고, B안은 cached context pack을 현재 LLM 근거로 넣어도 되는지 검증한다.</div>
+    <table><tr><th>Metadata</th><th>A. Semantic Answer Cache에서의 의미</th><th>B. Verified Context Cache에서의 의미</th></tr><tr><td>permission / allowed_scope</td><td>cached answer의 근거 source를 현재 사용자가 볼 수 있는지 확인</td><td>context pack의 source_eu_ids가 현재 사용자 scope 안에 있는지 확인</td></tr><tr><td>source_version / branch / release</td><td>답변 생성 당시 source version이 현재 요청 version과 맞는지 확인</td><td>context pack의 release_range가 현재 요청 version과 맞는지 확인</td></tr><tr><td>source_fingerprint / last_verified_commit</td><td>답변 생성 이후 원본 source가 변경됐는지 확인</td><td>context pack 구성 이후 근거 EU가 변경됐는지 확인</td></tr><tr><td>ttl / expire_at</td><td>오래된 답변을 자동 invalid 처리</td><td>오래된 context pack을 자동 invalid 처리</td></tr><tr><td>citation_metadata / source_eu_ids</td><td>cached answer의 근거를 추적 가능하게 유지</td><td>cached context가 어떤 EU/source에서 왔는지 LLM 답변까지 연결</td></tr></table>
+    <table><tr><th>DP2 권한 제어와 DP4 Metadata Guard의 차이</th><th>설명</th></tr><tr><td>DP2</td><td>질의 시점에 어떤 Repository/Branch/Release/Project Scope를 검색 대상으로 삼을지 결정한다. 즉 Retrieval 전 source 접근 범위를 제한한다.</td></tr><tr><td>DP4</td><td>이미 저장된 cached answer/context가 현재 사용자 권한, 요청 version, 최신 source 상태에서도 재사용 가능한지 검증한다. 즉 Cache reuse 직전의 validity check다.</td></tr><tr><td>관계</td><td>DP4는 DP2를 대체하지 않는다. DP2의 권한/버전 metadata를 cache entry에 저장하고, 재사용 시점에 다시 확인한다.</td></tr></table>
+    <div class="callout amber"><b>Appendix DP4 - Optional Guard:</b> Symbol Matching은 A/B 어느 쪽에도 붙일 수 있는 보강 방법으로 분리한다. Query embedding으로 cache 후보를 찾은 뒤, 필요하면 API/Class/Function symbol overlap을 추가 검증해 wrong hit를 줄인다. 단, 본 비교의 핵심 차이는 Symbol Matching 유무가 아니라 <b>최종 답변 재사용</b>과 <b>검증된 Context Pack 재사용</b>이다.</div>
+    <div class="callout green">Decision: Verified Context Cache를 선택한다. 최고 속도는 Semantic Answer Cache가 유리하지만, coding assist의 ASR은 권한 정합성과 팀 맥락 근거 Citation까지 함께 요구하므로 검증된 Context Pack 재사용이 더 방어적인 선택이다.</div>
+  </div>
+</section>
+
+<section id="p20" class="slide">
+  <div class="slide-head"><div><h2>Appendix: Session Memory Handoff Strategy</h2><p>긴 멀티턴 대화의 결정, 요구사항, TODO를 다음 세션으로 안전하게 넘기는 확장 후보</p></div><span class="page-no">20</span></div>
   <div class="body">
     <p><span class="tag a">Extension DP</span><span class="tag c">Session Memory</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-06 유지보수성</span><span class="tag v">QA-08 추적성</span></p>
-    <div class="callout">DP4의 주제는 프로젝트 지식이 아니라 대화 중에 형성된 요구사항, 설계 결정, 사용자 선호, 미해결 질문을 다음 턴 또는 다음 세션으로 어떻게 넘길 것인가이다.</div>
+    <div class="callout">이 Appendix의 주제는 프로젝트 지식이 아니라 대화 중에 형성된 요구사항, 설계 결정, 사용자 선호, 미해결 질문을 다음 턴 또는 다음 세션으로 어떻게 넘길 것인가이다. 공식 DP4는 RAG Cache Strategy이며, Session Memory는 장기 제품화 확장 후보로 분리한다.</div>
     <div class="threecol">
       <div class="card"><h3>A. Session LLM Wiki</h3><div class="mermaid">flowchart TD
 T[Conversation Turns]-->E[Memory Extractor]
@@ -646,9 +817,9 @@ C-->|No|B[Context Builder]</div><p><b>핵심:</b> 원본 ledger를 source of tru
       <tr><td>QA-08 근거 추적성</td><td>★★☆</td><td>★★☆</td><td>★★★</td><td>Ledger는 어떤 turn에서 결정이 나왔는지 추적 가능</td></tr>
       <tr><td>Privacy / Retention</td><td>★★☆</td><td>★★☆</td><td>★☆☆</td><td>Ledger는 원문 대화 보존 부담이 가장 큼</td></tr>
     </table>
-    <div class="callout green">Recommendation: DP4를 실제 후보로 잡는다면 Ledger + Rolling Summary가 가장 방어 가능하다. 단, 범위를 줄여야 하면 Session LLM Wiki를 선택하고 source_turn_ids, confirmed/draft/rejected 상태, session-end 생성 정책을 필수 조건으로 둔다.</div>
+    <div class="callout green">Recommendation: Session Memory를 장기 확장 후보로 잡는다면 Ledger + Rolling Summary가 가장 방어 가능하다. 단, 범위를 줄여야 하면 Session LLM Wiki를 선택하고 source_turn_ids, confirmed/draft/rejected 상태, session-end 생성 정책을 필수 조건으로 둔다.</div>
     <table><tr><th>PoC 시나리오</th><th>질문 예시</th><th>측정값</th></tr><tr><td>이전 결정 recall</td><td>어제 DP3 최종 후보가 뭐였지?</td><td>Decision Recall Accuracy</td></tr><tr><td>폐기 후보 방지</td><td>Graph-based Knowledge Map은 왜 제외했지?</td><td>Rejected Option Recall</td></tr><tr><td>다음 작업 이어가기</td><td>마지막에 남은 TODO가 뭐였지?</td><td>Task Continuation Success</td></tr><tr><td>충돌 처리</td><td>이전에는 A였는데 지금은 B로 바꾸자</td><td>Conflict Detection Rate</td></tr></table>
-    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP4는 DP3의 프로젝트 지식 캐시와 다르게, 대화 중에 형성된 작업 맥락을 다음 세션으로 넘기는 문제입니다. Session LLM Wiki는 대화를 사람이 읽기 쉬운 Page로 압축하기 좋고, Episodic Memory는 작은 결정과 선호를 빠르게 검색하기 좋습니다. 하지만 coding assist에서는 임시 의견과 확정 결정을 구분하고, 필요하면 원문 turn으로 되돌아가야 하므로 Event-sourced Ledger와 Rolling Summary 조합이 가장 방어적인 선택입니다.</div>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> 이 장은 공식 DP4가 아니라 장기 확장 후보입니다. DP4 RAG Cache가 RAG 산출물 재사용을 다룬다면, Session Memory는 대화 중에 형성된 작업 맥락을 다음 세션으로 넘기는 문제입니다. Session LLM Wiki는 대화를 사람이 읽기 쉬운 Page로 압축하기 좋고, Episodic Memory는 작은 결정과 선호를 빠르게 검색하기 좋습니다. 하지만 coding assist에서는 임시 의견과 확정 결정을 구분하고, 필요하면 원문 turn으로 되돌아가야 하므로 Event-sourced Ledger와 Rolling Summary 조합이 가장 방어적인 선택입니다.</div>
   </div>
 </section>
 
