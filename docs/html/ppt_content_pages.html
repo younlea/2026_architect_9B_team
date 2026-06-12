@@ -56,7 +56,7 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
 <body>
 <header>
   <h1>RAG 기반 코드 어시스트 프레임워크 Architecture PPT Content</h1>
-  <p>Markdown 백데이터를 기반으로 PPT 제작에 바로 재배치할 수 있도록 17개 페이지 탭으로 구성한 HTML 초안</p>
+  <p>Markdown 백데이터를 기반으로 PPT 제작에 바로 재배치할 수 있도록 18개 페이지 탭으로 구성한 HTML 초안</p>
 </header>
 <div class="app">
 <nav class="tabs" aria-label="PPT pages">
@@ -78,6 +78,7 @@ th,td{border:1px solid var(--line);padding:8px;vertical-align:top}th{background:
   <button class="tabbtn" data-tab="p15">15. DP3 배경<span>EU-only 이후</span></button>
   <button class="tabbtn" data-tab="p16">16. DP3 비교<span>Answer Cache vs Wiki</span></button>
   <button class="tabbtn" data-tab="p17">17. Appendix DP3<span>Mechanism & PoC</span></button>
+  <button class="tabbtn" data-tab="p18">18. Appendix DP4<span>Session Memory</span></button>
 </nav>
 <main>
 
@@ -565,6 +566,15 @@ P-->A[LLM Answer]</div><p><b>핵심:</b> EU 기반 Topic-level 지식 근거를 
 - implementation/exact code: EU 중심, Wiki optional</pre></div>
       <div class="card must"><h3>핵심 방어 문장</h3><p>LLM Wiki는 RAG를 우회하지 않는다. SPRAG EU에서 생성한 Wiki Page를 별도 Index로 추가하고, Online에서는 Wiki Index와 EU Index를 함께 검색한다.</p></div>
     </div>
+    <div class="callout amber">DP1은 정확하고 중복이 적은 Evidence Unit을 만드는 결정이고, DP3는 그 EU 위에 반복 질문용 대표 지식 계층을 둘 것인지 결정하는 항목이다. 두 결정은 의존 관계지만 최적화 대상과 평가 지표가 다르다.</div>
+    <table>
+      <tr><th>구분</th><th>DP1 SPRAG</th><th>DP3 LLM Wiki Knowledge Cache</th></tr>
+      <tr><td>설계 질문</td><td>원본 코드/문서를 어떤 근거 단위로 쪼개고 중복을 줄일 것인가?</td><td>반복 질문에 필요한 대표 지식 계층을 둘 것인가?</td></tr>
+      <tr><td>산출물</td><td>Evidence Unit</td><td>Topic-level Wiki Page</td></tr>
+      <tr><td>최적화 대상</td><td>Retrieval corpus 품질, 중복 강건성, Source Mapping</td><td>반복 질의 비용, 답변 일관성, Top-K 슬롯 효율</td></tr>
+      <tr><td>Online 역할</td><td>EU Index의 검색 대상 제공</td><td>Wiki Index를 EU Index와 함께 검색하고 Context Policy에 반영</td></tr>
+      <tr><td>평가 지표</td><td>Top-K Duplicate Ratio, Context Diversity, Citation Mapping</td><td>First Query Success, Repeated Answer Consistency, Topic Coverage@K, Context Token Count</td></tr>
+    </table>
     <table>
       <tr><th>테스트 시나리오</th><th>질문 예시</th><th>측정값</th></tr>
       <tr><td>Cold-start 반복 질문</td><td>AuthClient는 언제 써야 해? / 초기화는 어떻게 해?</td><td>First Query Success, Latency, Citation Coverage</td></tr>
@@ -581,6 +591,64 @@ P-->A[LLM Answer]</div><p><b>핵심:</b> EU 기반 Topic-level 지식 근거를 
       REF-DP3-TR-03 <a href="https://arxiv.org/abs/2404.12457">RAGCache: Efficient Knowledge Caching for Retrieval-Augmented Generation</a> /
       REF-DP3-TR-04 <a href="https://microsoft.github.io/graphrag/">Microsoft GraphRAG Documentation</a>
     </div>
+  </div>
+</section>
+
+<section id="p18" class="slide">
+  <div class="slide-head"><div><h2>Appendix DP4: Session Memory Handoff Strategy</h2><p>긴 멀티턴 대화의 결정, 요구사항, TODO를 다음 세션으로 안전하게 넘기는 확장 DP 후보</p></div><span class="page-no">18</span></div>
+  <div class="body">
+    <p><span class="tag a">Extension DP</span><span class="tag c">Session Memory</span><span class="tag v">QA-02 속도</span><span class="tag v">QA-06 유지보수성</span><span class="tag v">QA-08 추적성</span></p>
+    <div class="callout">DP4의 주제는 프로젝트 지식이 아니라 대화 중에 형성된 요구사항, 설계 결정, 사용자 선호, 미해결 질문을 다음 턴 또는 다음 세션으로 어떻게 넘길 것인가이다.</div>
+    <div class="threecol">
+      <div class="card"><h3>A. Session LLM Wiki</h3><div class="mermaid">flowchart TD
+T[Conversation Turns]-->E[Memory Extractor]
+E-->W[Session Wiki Builder]
+W-->I[Session Wiki Index]
+Q[Next Session Query]-->S[Session Wiki Search]
+I-->S
+S-->C[Context Builder]
+P[Project RAG Evidence]-->C
+C-->A[LLM Answer]</div><p><b>핵심:</b> 세션/milestone 단위 Wiki Page 생성</p><p><b>강점:</b> 사람이 읽기 쉽고 다음 세션 recall에 강함</p><p><b>위험:</b> 요약 오류, 임시 의견 고착</p></div>
+      <div class="card"><h3>B. Episodic Vector Memory</h3><div class="mermaid">flowchart TD
+T[Conversation Window]-->E[Memory Extractor]
+E-->M[Typed Memory Items]
+M-->D[Dedup / Merge]
+D-->I[Episodic Memory Index]
+Q[User Query]-->R[Memory Retrieval]
+I-->R
+R-->F[Recency / Confidence Filter]
+F-->C[Context Builder]</div><p><b>핵심:</b> 결정/선호/TODO를 작은 memory item으로 저장</p><p><b>강점:</b> 세밀한 recall, 낮은 검색 비용</p><p><b>위험:</b> memory pollution, 전체 맥락 약화</p></div>
+      <div class="card must"><h3>C. Event-sourced Ledger + Summary</h3><div class="mermaid">flowchart TD
+T[Turns + Tool Actions]-->L[Append-only Ledger]
+L-->S[Rolling Summary]
+L-->D[Decision Snapshot]
+S-->I[Summary Index]
+D-->I
+Q[Next Session Query]-->R[Summary Retrieval]
+I-->R
+R-->C{Conflict?}
+C-->|Yes|L
+C-->|No|B[Context Builder]</div><p><b>핵심:</b> 원본 ledger를 source of truth로 두고 summary/snapshot 사용</p><p><b>강점:</b> 검증 가능성, 결정 추적성</p><p><b>위험:</b> 구현 복잡도, privacy/retention 부담</p></div>
+    </div>
+    <table>
+      <tr><th>기준</th><th>Session LLM Wiki</th><th>Episodic Vector Memory</th><th>Ledger + Rolling Summary</th></tr>
+      <tr><td>재사용 단위</td><td>세션/주제별 Wiki Page</td><td>작은 memory item</td><td>원본 ledger + summary/snapshot</td></tr>
+      <tr><td>생성 시점</td><td>session end, milestone, explicit save</td><td>turn/window마다 가능</td><td>turn마다 ledger 저장, window마다 summary</td></tr>
+      <tr><td>정확성</td><td>요약 품질에 의존</td><td>memory extraction 품질에 의존</td><td>원문 fallback으로 가장 검증 가능</td></tr>
+      <tr><td>사람 검토</td><td>좋음</td><td>item이 많아지면 어려움</td><td>snapshot 중심 검토 가능</td></tr>
+      <tr><td>PoC 난이도</td><td>중간</td><td>낮음~중간</td><td>중간~높음</td></tr>
+    </table>
+    <table>
+      <tr><th>QA</th><th>Session LLM Wiki</th><th>Episodic Memory</th><th>Ledger + Summary</th><th>판단</th></tr>
+      <tr><td>QA-01 정확도</td><td>★★☆</td><td>★★☆</td><td>★★★</td><td>Ledger는 source turn fallback으로 검증 가능성이 가장 높음</td></tr>
+      <tr><td>QA-02 응답 속도</td><td>★★☆</td><td>★★★</td><td>★★☆</td><td>Memory item 검색이 가장 가볍고 빠름</td></tr>
+      <tr><td>QA-06 유지보수성</td><td>★★★</td><td>★★☆</td><td>★★☆</td><td>Wiki Page는 사람이 읽고 수정하기 쉬움</td></tr>
+      <tr><td>QA-08 근거 추적성</td><td>★★☆</td><td>★★☆</td><td>★★★</td><td>Ledger는 어떤 turn에서 결정이 나왔는지 추적 가능</td></tr>
+      <tr><td>Privacy / Retention</td><td>★★☆</td><td>★★☆</td><td>★☆☆</td><td>Ledger는 원문 대화 보존 부담이 가장 큼</td></tr>
+    </table>
+    <div class="callout green">Recommendation: DP4를 실제 후보로 잡는다면 Ledger + Rolling Summary가 가장 방어 가능하다. 단, 범위를 줄여야 하면 Session LLM Wiki를 선택하고 source_turn_ids, confirmed/draft/rejected 상태, session-end 생성 정책을 필수 조건으로 둔다.</div>
+    <table><tr><th>PoC 시나리오</th><th>질문 예시</th><th>측정값</th></tr><tr><td>이전 결정 recall</td><td>어제 DP3 최종 후보가 뭐였지?</td><td>Decision Recall Accuracy</td></tr><tr><td>폐기 후보 방지</td><td>Graph-based Knowledge Map은 왜 제외했지?</td><td>Rejected Option Recall</td></tr><tr><td>다음 작업 이어가기</td><td>마지막에 남은 TODO가 뭐였지?</td><td>Task Continuation Success</td></tr><tr><td>충돌 처리</td><td>이전에는 A였는데 지금은 B로 바꾸자</td><td>Conflict Detection Rate</td></tr></table>
+    <div class="speaker"><strong>예상 발표 스크립트:</strong> DP4는 DP3의 프로젝트 지식 캐시와 다르게, 대화 중에 형성된 작업 맥락을 다음 세션으로 넘기는 문제입니다. Session LLM Wiki는 대화를 사람이 읽기 쉬운 Page로 압축하기 좋고, Episodic Memory는 작은 결정과 선호를 빠르게 검색하기 좋습니다. 하지만 coding assist에서는 임시 의견과 확정 결정을 구분하고, 필요하면 원문 turn으로 되돌아가야 하므로 Event-sourced Ledger와 Rolling Summary 조합이 가장 방어적인 선택입니다.</div>
   </div>
 </section>
 

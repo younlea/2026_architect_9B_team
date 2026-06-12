@@ -53,6 +53,17 @@ DP1 = 정확한 근거 조각을 만든다.
 DP3 = 반복 질문에 필요한 대표 지식 단위를 어떻게 재사용할지 결정한다.
 ```
 
+따라서 DP3는 DP1의 대체안이 아니라, DP1 산출물인 Evidence Unit을 소비하는 상위 Knowledge Access Layer의 선택이다. SPRAG가 없으면 LLM Wiki의 source grounding이 약해지고, LLM Wiki가 없으면 SPRAG EU-only RAG는 반복 질문마다 여러 EU를 다시 조합해야 한다. 두 결정은 의존 관계에 있지만 같은 설계 결정은 아니다.
+
+| 구분 | DP1 SPRAG | DP3 LLM Wiki Knowledge Cache |
+|---|---|---|
+| 설계 질문 | 원본 코드/문서를 어떤 근거 단위로 쪼개고 중복을 줄일 것인가? | 반복 질문에 필요한 대표 지식 계층을 둘 것인가? |
+| 산출물 | Evidence Unit | Topic-level Wiki Page |
+| 최적화 대상 | Retrieval corpus 품질, 중복 강건성, Source Mapping | 반복 질의 비용, 답변 일관성, Top-K 슬롯 효율 |
+| Online 역할 | EU Index의 검색 대상 제공 | Wiki Index를 EU Index와 함께 검색하고 Context Policy에 반영 |
+| 실패 위험 | 중복 제거 실패, 잘못된 EU 구성, source mapping 손상 | stale wiki, 요약 손실, Wiki가 EU를 과도하게 대체 |
+| 평가 지표 | Top-K Duplicate Ratio, Context Diversity, Citation Mapping | First Query Success, Repeated Answer Consistency, Topic Coverage@K, Context Token Count |
+
 DP3의 좋은 후보는 다음 조건을 만족해야 한다.
 
 - 반복 질문에서 응답 비용을 줄인다.
@@ -354,7 +365,47 @@ LLM Wiki Knowledge Cache는 Retrieval을 완전히 생략하지 않는다. 대�
 
 ## 6. Appendix DP3 - PoC 설계와 방어 논리
 
-### 6.1 PoC 목적
+### 6.1 DP1과 DP3 분리 방어 논리
+
+예상 질문은 다음과 같다.
+
+> LLM Wiki가 offline에서 EU를 요약해 만드는 것이라면, 그냥 DP1 SPRAG의 일부 아닌가?
+
+답변은 다음처럼 정리한다.
+
+```text
+DP1은 retrieval corpus의 근거 단위를 만드는 결정이다.
+DP3는 반복 질문에서 어떤 지식 계층을 재사용할지 결정한다.
+LLM Wiki는 DP1의 EU를 입력으로 사용하지만, EU 생성 방식이 아니라 Wiki Index와 EU Index를 함께 사용하는 Knowledge Access Strategy다.
+```
+
+Online 시점에도 LLM Wiki는 사용된다. 다만 online에서 새 Wiki를 생성하지 않을 뿐이다.
+
+```text
+User Query
+-> Wiki Index Search + EU Index Search
+-> Merge / Rerank
+-> Context Policy
+   - Wiki max 1
+   - EU min 3
+-> LLM Answer
+```
+
+설계적으로 DP3에 남는 결정은 다음이다.
+
+| 설계 결정 | DP3에서 다루는 이유 |
+|---|---|
+| Wiki Index를 둘 것인가 | EU-only RAG의 반복 조합 비용과 답변 변동성을 줄이는 결정이다. |
+| Wiki와 EU를 함께 검색할 것인가 | Wiki는 손실 요약이고 EU는 원본 근거이므로 둘의 역할 분리가 필요하다. |
+| Context Policy를 어떻게 둘 것인가 | Top-K가 Wiki로만 채워지지 않도록 Wiki max, EU min 정책이 필요하다. |
+| Stale Wiki를 어떻게 무효화할 것인가 | Wiki는 offline 산출물이므로 release_range, last_verified_commit 관리가 필요하다. |
+| 무엇을 측정할 것인가 | DP1 지표가 아니라 반복 답변 일관성, Topic Coverage@K, Context Token Count를 본다. |
+
+발표용 방어 문장은 다음과 같다.
+
+> DP1은 정확하고 중복이 적은 Evidence Unit을 만드는 결정이고, DP3는 그 Evidence Unit 위에 반복 질문용 대표 지식 계층을 둘 것인지 결정하는 항목입니다. LLM Wiki는 offline에서 생성되지만 online에서는 Wiki Index와 EU Index가 함께 검색되고 Context Policy에 의해 답변 근거로 선택됩니다. 따라서 DP1과 의존 관계는 있지만, 최적화 대상과 평가 지표가 다른 별도 설계 결정입니다.
+
+### 6.2 PoC 목적
 
 PoC의 목적은 LLM Wiki가 Semantic Answer Cache보다 항상 빠르다는 것을 보이는 것이 아니다.
 
@@ -368,7 +419,7 @@ LLM Wiki + EU RAG:
   첫 질문부터 사용 가능하고, Top-K 슬롯 효율과 답변 일관성을 개선한다.
 ```
 
-### 6.2 PoC 데이터 구성
+### 6.3 PoC 데이터 구성
 
 작은 샘플 도메인을 정한다.
 
@@ -397,7 +448,7 @@ Wiki Set:
 - Wiki-3: Auth Error Handling Guide
 ```
 
-### 6.3 LLM Wiki 생성 방법
+### 6.4 LLM Wiki 생성 방법
 
 사람이 Wiki를 직접 작성하지 않는다. LLM이 EU를 입력으로 offline 자동 생성한다.
 
@@ -465,7 +516,7 @@ wiki_index.add(page_id, embedding, metadata)
 eu_index.add(eu_id, embedding, metadata)
 ```
 
-### 6.4 비교 대상 구현
+### 6.5 비교 대상 구현
 
 #### A. Semantic Answer Cache
 
@@ -490,7 +541,7 @@ Query
 -> LLM Answer
 ```
 
-### 6.5 비교 테스트 시나리오
+### 6.6 비교 테스트 시나리오
 
 #### 시나리오 1. Cold-start 반복 질문
 
@@ -574,7 +625,7 @@ Top-K = Wiki-AuthClient-Usage, EU-1, EU-4
 - Answer Completeness
 - Citation Trace Coverage
 
-### 6.6 측정 지표 정의
+### 6.7 측정 지표 정의
 
 | 지표 | 의미 | 기대되는 관찰 |
 |---|---|---|
