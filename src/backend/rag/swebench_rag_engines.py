@@ -224,9 +224,35 @@ def _build_raptor_nodes(patch: str, instance_id: str,
     return docs, ids, metas
 
 
+def _entropy_re(emb_subset: np.ndarray) -> float:
+    """논문 Algorithm 1의 RE(중복 엔트로피). roi_rag._compute_entropy_indices와 동일.
+    RE = 1 - H(거리분포)/log(n²).  n<2면 0.
+    """
+    n = len(emb_subset)
+    if n < 2:
+        return 0.0
+    norms = np.linalg.norm(emb_subset, axis=1, keepdims=True)
+    norms = np.where(norms == 0, 1, norms)
+    unit = emb_subset / norms
+    dist = 1.0 - unit @ unit.T
+    np.fill_diagonal(dist, 0.0)
+    total = dist.sum() + 1e-10
+    p = dist / total
+    H = float(-np.sum(p * np.log(p + 1e-10)))
+    log_n2 = np.log(float(n) ** 2)
+    DE = float(np.clip(H / log_n2, 0.0, 1.0)) if log_n2 > 1e-10 else 0.0
+    return 1.0 - DE
+
+
 def _build_roi_nodes(patch: str, instance_id: str,
                      repo: str, version: str):
-    """ROI-RAG: kNN 기반 EU 구성 + 평균 풀링 임베딩 (LLM 요약 없음).
+    """ROI-RAG: 논문 §3.4 Entropy-Guided EU 구성 + aggregated(mean-pool) 임베딩.
+    (오프라인 LLM 요약은 SWE-bench 대량 인덱싱 비용상 생략 — 구조적 부분만 충실 반영)
+
+    본 roi_rag.py와 동일한 절차:
+      1) 각 세그먼트의 kNN 이웃 neighborhood 구성
+      2) neighborhood RE(중복도)가 높은 순으로 seed 선택
+      3) seed에 '증분 다양성 최대' 멤버를 budget까지 추가 (non-overlap)
     Returns (docs, embeds, ids, metas)
     """
     KNN_K, MAX_SEG = 5, 4
@@ -260,25 +286,43 @@ def _build_roi_nodes(patch: str, instance_id: str,
     embeddings = _embed([s["text"] for s in all_segs])
     norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
     norms = np.where(norms == 0, 1, norms)
-    sim = (embeddings / norms) @ (embeddings / norms).T
+    unit = embeddings / norms
+    sim = unit @ unit.T
+    n = len(all_segs)
+
+    # 1) kNN 이웃 (자기 자신 제외 top-KNN_K)
+    k_act = min(KNN_K, n - 1)
+    neighborhoods = []
+    for i in range(n):
+        order = np.argsort(sim[i])[::-1]
+        neighborhoods.append([int(j) for j in order if int(j) != i][:k_act])
+
+    # 2) neighborhood RE로 seed 우선순위 (중복 많은 이웃 먼저 — 논문 §3.4)
+    nbr_re = [_entropy_re(embeddings[[i] + neighborhoods[i]]) for i in range(n)]
+    seed_order = sorted(range(n), key=lambda i: nbr_re[i], reverse=True)
 
     used: set = set()
     eu_groups: list[list[int]] = []
-    for i in range(len(all_segs)):
-        if i in used:
+    for seed in seed_order:
+        if seed in used:
             continue
-        neighbors = np.argsort(sim[i])[::-1]
-        group = [j for j in neighbors if j not in used][:MAX_SEG]
-        if not group:
-            group = [i]
-        for j in group:
-            used.add(j)
+        group = [seed]
+        used.add(seed)
+        cands = [j for j in neighborhoods[seed] if j not in used]
+        # 3) 증분 다양성 최대 멤버 추가 (EU 평균과 유사도가 가장 낮은 후보)
+        while len(group) < MAX_SEG and cands:
+            mean_vec = embeddings[group].mean(axis=0)
+            mean_unit = mean_vec / (np.linalg.norm(mean_vec) + 1e-10)
+            best = max(cands, key=lambda j: 1.0 - float(unit[j] @ mean_unit))
+            group.append(best)
+            used.add(best)
+            cands = [j for j in cands if j not in used]
         eu_groups.append(group)
 
     for ei, group in enumerate(eu_groups):
         eu_text = "\n".join(all_segs[j]["text"][:400] for j in group)
         fps = list(dict.fromkeys(all_segs[j]["file_path"] for j in group))
-        eu_emb = embeddings[group].mean(axis=0).tolist()
+        eu_emb = embeddings[group].mean(axis=0).tolist()   # aggregated 임베딩 (논문)
         did = f"roi_{instance_id}_eu_{ei}".replace("/", "_")[:200]
         docs.append(eu_text)
         embeds.append(eu_emb)
@@ -289,6 +333,7 @@ def _build_roi_nodes(patch: str, instance_id: str,
             "file_path": fps[0],
             "file_paths": ",".join(fps),
             "chunk_type": "eu", "segment_count": len(group),
+            "re": round(float(_entropy_re(embeddings[group])), 4),
         })
 
     return docs, embeds, ids, metas
@@ -381,7 +426,10 @@ def retrieve(client, rag_method: str, strategy: str,
                 include=["documents", "metadatas", "distances"],
             )
             chunks = _fmt(results, answer_files, top_k)
-            extra = {"db_searched": _flat_col(rag_method)}
+            extra = {
+                "db_searched": _flat_col(rag_method),
+                "criteria": "통합 DB 전체 검색 (조건 없음)",
+            }
 
         elif strategy == "PostFilter":
             col = client.get_collection(_flat_col(rag_method), embedding_function=_ef())
@@ -401,10 +449,13 @@ def retrieve(client, rag_method: str, strategy: str,
                 for i, m in enumerate(raw_metas[:len(all_chunks)])
                 if m.get("repo") == repo and str(m.get("version", "")) == str(version)
             ]
+            prefetch_n = len(all_chunks)
             if filtered:
                 chunks = filtered[:top_k]
                 filter_matched = True
+                kept_n = len(filtered)
             else:
+                kept_n = 0
                 # 메타에 repo/version 없는 경우 → WHERE 절로 재시도 → 실패 시 전체 top-K
                 try:
                     results2 = col.query(
@@ -420,7 +471,15 @@ def retrieve(client, rag_method: str, strategy: str,
                 except Exception:
                     chunks = all_chunks[:top_k]
                 filter_matched = False
-            extra = {"db_searched": _flat_col(rag_method), "filter_matched": filter_matched}
+            extra = {
+                "db_searched": _flat_col(rag_method),
+                "filter_matched": filter_matched,
+                "filter_condition": f'repo == "{repo}" AND version == "{version}"',
+                "prefetch_k": prefetch_n,
+                "kept": kept_n,
+                "dropped": max(prefetch_n - kept_n, 0),
+                "criteria": f"통합 DB Top-{PREFETCH_K} → repo/version 메타 필터 → Top-{top_k}",
+            }
 
         elif strategy == "Routed":
             col_name = _part_col(rag_method, repo, version)
@@ -435,7 +494,12 @@ def retrieve(client, rag_method: str, strategy: str,
                     include=["documents", "metadatas", "distances"],
                 )
                 chunks = _fmt(results, answer_files, top_k)
-                extra = {"db_searched": col_name}
+                extra = {
+                    "db_searched": col_name,
+                    "route_key": f"{repo}@{version}",
+                    "route_condition": f'repo == "{repo}" AND version == "{version}"',
+                    "criteria": f"라우팅 키 {repo}@{version} → 파티션 DB 직접 선택",
+                }
             except Exception:
                 # 파티션 없음 → flat 컬렉션 + where 필터로 폴백
                 col = client.get_collection(_flat_col(rag_method), embedding_function=_ef())
@@ -461,8 +525,13 @@ def retrieve(client, rag_method: str, strategy: str,
                         include=["documents", "metadatas", "distances"],
                     )
                     chunks = _fmt(results, answer_files, top_k)
-                extra = {"db_searched": _flat_col(rag_method),
-                         "fallback": "no_partition"}
+                extra = {
+                    "db_searched": _flat_col(rag_method),
+                    "route_key": f"{repo}@{version}",
+                    "route_condition": f'repo == "{repo}" AND version == "{version}"',
+                    "fallback": "no_partition",
+                    "criteria": f"파티션({repo}@{version}) 없음 → 통합 DB + where 필터 폴백",
+                }
 
         else:
             return _err(name, f"Unknown strategy: {strategy}")

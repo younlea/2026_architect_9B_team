@@ -106,13 +106,19 @@ def query_thread(thread_id: str, question: str, model: str = None) -> dict:
 
 
 def _query_col(col_name: str, question: str, model: str = None) -> dict:
-    start = time.time()
     col = _get_collection(col_name)
     count = col.count()
     if count == 0:
-        return {"answer": "", "references": [], "latency_ms": 0, "model": model or "default"}
+        return {
+            "answer": "", "references": [], "model": model or "default",
+            "latency_ms": 0, "retrieval_ms": 0, "generation_ms": 0,
+        }
+
+    # ── 검색(Top-K) 단계 시간 측정 ──
+    retr_start = time.time()
     results = col.query(query_texts=[question], n_results=min(TOP_K, count))
     docs = results["documents"][0] if results["documents"] else []
+    retrieval_ms = int((time.time() - retr_start) * 1000)
 
     context = "\n\n".join(docs)
     prompt = f"""아래 대화 내용을 참고하여 질문에 답변해 주세요.
@@ -125,6 +131,15 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
 {question}
 
 [답변]"""
+
+    # ── LLM 생성 단계 시간 측정 ──
+    gen_start = time.time()
     answer = get_llm_answer(prompt, model, deterministic=True)
-    latency = int((time.time() - start) * 1000)
-    return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}
+    generation_ms = int((time.time() - gen_start) * 1000)
+
+    return {
+        "answer": answer, "references": docs, "model": model or "default",
+        "latency_ms": retrieval_ms + generation_ms,
+        "retrieval_ms": retrieval_ms,
+        "generation_ms": generation_ms,
+    }

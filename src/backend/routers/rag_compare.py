@@ -98,8 +98,11 @@ async def compare_rag(body: CompareRequest):
                 """INSERT INTO thread_rag_results
                    (thread_id, query, basic_rag_answer, basic_rag_latency_ms,
                     raptor_rag_answer, raptor_rag_latency_ms,
-                    roi_rag_answer, roi_rag_latency_ms, model_name)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    roi_rag_answer, roi_rag_latency_ms, model_name,
+                    basic_rag_retrieval_ms, basic_rag_generation_ms,
+                    raptor_rag_retrieval_ms, raptor_rag_generation_ms,
+                    roi_rag_retrieval_ms, roi_rag_generation_ms)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                 (
                     ctx_id, body.query,
                     basic_result["answer"], basic_result["latency_ms"],
@@ -107,6 +110,10 @@ async def compare_rag(body: CompareRequest):
                     roi_result["answer"] if roi_result else None,
                     roi_result["latency_ms"] if roi_result else None,
                     body.model or OLLAMA_MODEL,
+                    basic_result.get("retrieval_ms"), basic_result.get("generation_ms"),
+                    raptor_result.get("retrieval_ms"), raptor_result.get("generation_ms"),
+                    roi_result.get("retrieval_ms") if roi_result else None,
+                    roi_result.get("generation_ms") if roi_result else None,
                 ),
             )
         else:
@@ -139,6 +146,9 @@ def get_thread_results(thread_id: str):
             """SELECT id, query, basic_rag_answer, basic_rag_latency_ms,
                       raptor_rag_answer, raptor_rag_latency_ms,
                       roi_rag_answer, roi_rag_latency_ms,
+                      basic_rag_retrieval_ms, basic_rag_generation_ms,
+                      raptor_rag_retrieval_ms, raptor_rag_generation_ms,
+                      roi_rag_retrieval_ms, roi_rag_generation_ms,
                       model_name, created_at
                FROM thread_rag_results WHERE thread_id=? ORDER BY created_at DESC""",
             (thread_id,),

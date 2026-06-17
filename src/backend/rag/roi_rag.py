@@ -22,13 +22,11 @@ KNN_K = 10                 # 후보 이웃 크기
 MAX_SEGMENTS_PER_EU = 6    # EU당 최대 세그먼트 수 (논문 Appendix A)
 TOP_K = 5                  # 검색할 EU 수
 
-# Regime 임계값 (논문 Section 4.1, 원스케일 RE)
-HIGH_RE_THRESHOLD = 0.01    # RE ≥ 0.01 → HIGH
-MID_RE_THRESHOLD = 0.003    # 0.003 ≤ RE < 0.01 → MID
-
-# Otsu 정규화 임계값 (논문 Appendix B.3, normalized RE [0,1])
-OTSU_LOW = 0.3    # normalized RE < 0.3 → 요약 없음
-OTSU_HIGH = 0.7   # normalized RE ≥ 0.7 → 공격적 요약
+# Regime 임계값 (논문 §4.1: 전역 RE 분포에 Otsu thresholding으로 1회 유도한
+# 고정 기준값. dataset별 튜닝 아님). RE = mean redundancy entropy.
+#   RE ≥ 1e-2  → HIGH,  3e-3 ≤ RE < 1e-2 → MID,  RE < 3e-3 → LOW
+HIGH_RE_THRESHOLD = 0.01
+MID_RE_THRESHOLD = 0.003
 
 REDUNDANCY_TAU = 0.6       # R(C) 계산용 유사도 임계값 (논문 Equation 1)
 
@@ -219,13 +217,19 @@ def _classify_regime(eu_re_values: list[float]) -> str:
 # ── 적응형 요약 (논문 Section 3.5) ────────────────────────────────────────
 
 def _adaptive_summarize(
-    eu: dict, re_normalized: float, model: str = None
+    eu: dict, regime: str, model: str = None
 ) -> str:
     """
-    정규화된 RE 기반 요약 정책:
-      LOW  (< 0.3): 요약 없음
-      MID  (0.3~0.7): 부분 요약 (~75%)
-      HIGH (≥ 0.7): 공격적 요약 (~50%, 중복 제거)
+    논문 §3.5 적응형 요약 정책.
+
+    요약 강도는 corpus regime(전역 Otsu로 유도한 절대 RE 임계값)과
+    EU 자체의 절대 RE를 따른다. corpus-relative min-max 정규화(이전 버그)는
+    중복이 적은 코퍼스에서도 강제로 공격적 요약을 유발해 추출형 정답을 손상시켰다.
+
+    - LOW regime           : 요약 생략 (논문 "when to optimize offline" — 오프라인 최적화 보류)
+    - EU RE < MID(3e-3)    : 요약 생략
+    - MID ≤ EU RE < HIGH   : 부분 요약 (~75%)
+    - EU RE ≥ HIGH(1e-2)   : 공격적 요약 (~50%, 중복 제거)
     """
     segs = eu["segments"]
     if len(segs) == 1:
@@ -233,10 +237,15 @@ def _adaptive_summarize(
 
     joined = "\n".join(segs)
 
-    if re_normalized < OTSU_LOW:
+    # LOW regime → 오프라인 요약 비용 대비 이득이 작아 원문 유지
+    if regime == "LOW":
         return joined
 
-    if re_normalized < OTSU_HIGH:
+    eu_re = float(eu["re"])
+    if eu_re < MID_RE_THRESHOLD:
+        return joined
+
+    if eu_re < HIGH_RE_THRESHOLD:
         prompt = (
             "다음 내용들의 중요한 정보를 유지하면서 간결하게 요약해 주세요"
             " (원문의 약 75% 분량 목표).\n\n[내용]\n" + joined + "\n\n[요약]"
@@ -287,27 +296,22 @@ def _build_index(
     eu_re_values = [eu["re"] for eu in evidence_units]
     regime = _classify_regime(eu_re_values)
 
-    # min-max 정규화 → summarization 정책 결정에 사용
-    re_arr = np.array(eu_re_values)
-    re_min, re_max = float(re_arr.min()), float(re_arr.max())
-    re_range = re_max - re_min
-
     col = _get_collection(col_name)
     docs, embeds, ids, metas = [], [], [], []
 
     for i, eu in enumerate(evidence_units):
-        re_norm = (eu["re"] - re_min) / re_range if re_range > 1e-10 else 0.0
-        summary = _adaptive_summarize(eu, float(re_norm), model)
+        # 요약 정책은 regime(절대 RE 임계값)을 따른다 — 논문 §3.5
+        summary = _adaptive_summarize(eu, regime, model)
 
         docs.append(summary)
         embeds.append(eu["embedding"].tolist())
         ids.append(f"{id_prefix}_roi_eu_{i}")
-        # metadata에 원문 세그먼트는 최대 3개만 저장 (크기 제한)
+        # 논문 §3.4: 프롬프트는 'EU 요약 + 근거 원문 세그먼트'를 결합하므로
+        # 근거 세그먼트를 함께 저장한다 (크기 제한 위해 최대 3개).
         metas.append({
             "eu_id": i,
             "segment_count": len(eu["segments"]),
             "re": float(eu["re"]),
-            "re_normalized": float(re_norm),
             "regime": regime,
             "segments_json": json.dumps(
                 eu["segments"][:3], ensure_ascii=False
@@ -342,7 +346,6 @@ def query_thread(thread_id: str, question: str, model: str = None) -> dict:
 
 
 def _query_col(col_name: str, question: str, model: str = None) -> dict:
-    start = time.time()
     col = _get_collection(col_name)
     count = col.count()
 
@@ -351,12 +354,16 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
             "answer": "ROI-RAG 인덱스가 비어 있습니다. 먼저 인덱싱을 실행하세요.",
             "references": [],
             "latency_ms": 0,
+            "retrieval_ms": 0,
+            "generation_ms": 0,
             "model": model or "default",
             "r_c": 0.0,
             "regime": "",
             "eu_count": 0,
         }
 
+    # ── 검색(단일 ANN 조회) 단계 — 논문상 Single-stage ANN ──
+    retr_start = time.time()
     results = col.query(
         query_texts=[question],
         n_results=min(TOP_K, count),
@@ -375,35 +382,44 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
 
     regime = metas[0].get("regime", "") if metas else ""
 
-    # EU 컨텍스트 조합
+    # EU 컨텍스트 조합 — 논문 §3.4: 'EU 요약 + 근거 원문 세그먼트' 결합
+    references: list[str] = []
     context_parts = []
     for i, (doc, meta) in enumerate(zip(docs, metas)):
         seg_n = meta.get("segment_count", 1)
         r = meta.get("regime", "")
-        context_parts.append(f"[EU {i + 1} | {seg_n}개 세그먼트 | {r}]\n{doc}")
+        segs = json.loads(meta.get("segments_json", "[]"))
+        references.extend(segs)
+        part = f"[EU {i + 1} | {seg_n}개 세그먼트 | {r}]\n[요약]\n{doc}"
+        # 요약본과 근거 원문이 다를 때만 원문 세그먼트를 함께 제공
+        support = [s for s in segs if s and s.strip() and s.strip() != doc.strip()]
+        if support:
+            part += "\n[근거 원문]\n" + "\n---\n".join(support)
+        context_parts.append(part)
 
     context = "\n\n".join(context_parts)
+    retrieval_ms = int((time.time() - retr_start) * 1000)
+
     prompt = (
         "아래 최적화된 증거 단위(Evidence Unit)를 참고하여 질문에 답변해 주세요.\n"
-        "각 EU는 중복이 제거된 핵심 정보를 담고 있습니다.\n\n"
+        "각 EU는 중복이 제거된 요약과 그 근거 원문을 함께 담고 있습니다.\n\n"
         f"[증거 단위]\n{context}\n\n"
         f"[질문]\n{question}\n\n[답변]"
     )
 
+    # ── LLM 생성 단계 ──
+    gen_start = time.time()
     answer = get_llm_answer(prompt, model, deterministic=True)
-    latency = int((time.time() - start) * 1000)
+    generation_ms = int((time.time() - gen_start) * 1000)
 
-    # 원문 세그먼트 참조용 (최대 TOP_K개)
-    references: list[str] = []
-    for meta in metas:
-        segs = json.loads(meta.get("segments_json", "[]"))
-        references.extend(segs)
     references = references[:TOP_K]
 
     return {
         "answer": answer,
         "references": references,
-        "latency_ms": latency,
+        "latency_ms": retrieval_ms + generation_ms,
+        "retrieval_ms": retrieval_ms,
+        "generation_ms": generation_ms,
         "model": model or "default",
         "r_c": round(r_c, 4),
         "regime": regime,

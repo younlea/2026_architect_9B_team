@@ -244,6 +244,25 @@
       padding-top: 8px;
       border-top: 1px solid var(--border);
     }
+    .criteria-box {
+      font-size: 0.74rem;
+      color: var(--text);
+      margin-top: 8px;
+      padding: 7px 9px;
+      background: rgba(52,211,153,0.08);
+      border: 1px solid rgba(52,211,153,0.25);
+      border-radius: 6px;
+    }
+    .criteria-box code {
+      background: var(--surface2);
+      padding: 1px 5px;
+      border-radius: 4px;
+      font-size: 0.7rem;
+    }
+    .criteria-cond {
+      margin-top: 3px;
+      color: var(--text-muted);
+    }
 
     /* 인덱싱 패널 */
     .index-panel {
@@ -1162,6 +1181,19 @@ function renderResults(data) {
     const filterNote = res.filter_matched === false
       ? '<div style="font-size:0.74rem;color:#fbbf24;margin-top:4px;">⚠️ 필터 미매칭 — 유사도 결과 반환</div>' : '';
 
+    // 검색 전략별 기준(route/filter 조건) 표시
+    let criteriaHtml = '';
+    if (res.strategy === 'Routed' && res.route_condition) {
+      const fb = res.fallback ? ` <span style="color:#fbbf24;">(파티션 없음→폴백)</span>` : '';
+      criteriaHtml = `<div class="criteria-box">🧭 <b>라우팅 기준</b>: <code>${escHtml(res.route_key || '')}</code>${fb}
+        <div class="criteria-cond">조건: <code>${escHtml(res.route_condition)}</code></div></div>`;
+    } else if (res.strategy === 'PostFilter' && res.filter_condition) {
+      criteriaHtml = `<div class="criteria-box">🔎 <b>필터 조건</b>: <code>${escHtml(res.filter_condition)}</code>
+        <div class="criteria-cond">Top-${res.prefetch_k ?? '?'} 중 <b style="color:#34d399;">${res.kept ?? 0}개 통과</b> · 드롭 <b style="color:#f87171;">${res.dropped ?? 0}개</b></div></div>`;
+    } else if (res.strategy === 'Flat' && res.criteria) {
+      criteriaHtml = `<div class="criteria-box">📂 ${escHtml(res.criteria)}</div>`;
+    }
+
     return `
       <div class="result-col">
         <div class="result-header" style="border-top: 3px solid ${rag.color};">
@@ -1179,6 +1211,7 @@ function renderResults(data) {
         <div class="result-body">
           ${chunksHtml}
           ${filterNote}
+          ${criteriaHtml}
           ${dbLabel}
         </div>
       </div>`;

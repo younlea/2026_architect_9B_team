@@ -282,8 +282,11 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
                             basic_rag_answer, basic_rag_latency_ms, basic_rag_references,
                             raptor_rag_answer, raptor_rag_latency_ms, raptor_rag_references,
                             roi_rag_answer, roi_rag_latency_ms, roi_rag_references,
-                            model_name, basic_correct, raptor_correct, roi_correct)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            model_name, basic_correct, raptor_correct, roi_correct,
+                            basic_rag_retrieval_ms, basic_rag_generation_ms,
+                            raptor_rag_retrieval_ms, raptor_rag_generation_ms,
+                            roi_rag_retrieval_ms, roi_rag_generation_ms)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (qid, thread_id,
                          basic_res["answer"], basic_res["latency_ms"],
                          json.dumps(basic_res.get("references", []), ensure_ascii=False),
@@ -293,7 +296,11 @@ async def run_benchmark(thread_id: str, body: BenchmarkRunRequest = BenchmarkRun
                          roi_res["latency_ms"] if roi_res else None,
                          json.dumps(roi_res.get("references", []), ensure_ascii=False) if roi_res else "[]",
                          model or OLLAMA_MODEL,
-                         basic_correct, raptor_correct, roi_correct),
+                         basic_correct, raptor_correct, roi_correct,
+                         basic_res.get("retrieval_ms"), basic_res.get("generation_ms"),
+                         raptor_res.get("retrieval_ms"), raptor_res.get("generation_ms"),
+                         roi_res.get("retrieval_ms") if roi_res else None,
+                         roi_res.get("generation_ms") if roi_res else None),
                     )
 
                 result = {
@@ -343,6 +350,9 @@ def get_benchmark_results(thread_id: str):
                       br.basic_rag_answer, br.basic_rag_latency_ms, br.basic_rag_references,
                       br.raptor_rag_answer, br.raptor_rag_latency_ms, br.raptor_rag_references,
                       br.roi_rag_answer, br.roi_rag_latency_ms, br.roi_rag_references,
+                      br.basic_rag_retrieval_ms, br.basic_rag_generation_ms,
+                      br.raptor_rag_retrieval_ms, br.raptor_rag_generation_ms,
+                      br.roi_rag_retrieval_ms, br.roi_rag_generation_ms,
                       br.model_name, br.basic_correct, br.raptor_correct, br.roi_correct,
                       br.created_at
                FROM benchmark_results br

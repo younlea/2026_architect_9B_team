@@ -178,11 +178,16 @@ def query_thread(thread_id: str, question: str, model: str = None) -> dict:
 
 
 def _query_col(col_name: str, question: str, model: str = None) -> dict:
-    start = time.time()
     col = _get_collection(col_name)
     count = col.count()
     if count == 0:
-        return {"answer": "", "references": [], "latency_ms": 0, "model": model or "default"}
+        return {
+            "answer": "", "references": [], "model": model or "default",
+            "latency_ms": 0, "retrieval_ms": 0, "generation_ms": 0,
+        }
+
+    # ── 검색(다층 Top-K) 단계 시간 측정 ──
+    retr_start = time.time()
     results = col.query(
         query_texts=[question],
         n_results=min(TOP_K, count),
@@ -213,6 +218,8 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
             break
 
     context = "\n\n".join(context_parts)
+    retrieval_ms = int((time.time() - retr_start) * 1000)
+
     prompt = f"""아래 대화 분석 내용을 참고하여 질문에 답변해 주세요.
 전체 요약은 맥락 파악에, 세부 내용은 구체적 사실 확인에 활용하세요.
 (주의: 반드시 질문과 동일한 언어로 답변을 작성해야 합니다.)
@@ -224,6 +231,15 @@ def _query_col(col_name: str, question: str, model: str = None) -> dict:
 {question}
 
 [답변]"""
+
+    # ── LLM 생성 단계 시간 측정 ──
+    gen_start = time.time()
     answer = get_llm_answer(prompt, model, deterministic=True)
-    latency = int((time.time() - start) * 1000)
-    return {"answer": answer, "references": docs, "latency_ms": latency, "model": model or "default"}
+    generation_ms = int((time.time() - gen_start) * 1000)
+
+    return {
+        "answer": answer, "references": docs, "model": model or "default",
+        "latency_ms": retrieval_ms + generation_ms,
+        "retrieval_ms": retrieval_ms,
+        "generation_ms": generation_ms,
+    }

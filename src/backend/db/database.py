@@ -130,6 +130,19 @@ def _apply_migrations(conn):
         "ALTER TABLE benchmark_results ADD COLUMN basic_rag_references TEXT DEFAULT '[]'",
         "ALTER TABLE benchmark_results ADD COLUMN raptor_rag_references TEXT DEFAULT '[]'",
         "ALTER TABLE benchmark_results ADD COLUMN roi_rag_references TEXT DEFAULT '[]'",
+        # 검색(Top-K)/생성(LLM) 단계별 지연 시간 분리 측정용 컬럼
+        "ALTER TABLE thread_rag_results ADD COLUMN basic_rag_retrieval_ms INTEGER",
+        "ALTER TABLE thread_rag_results ADD COLUMN basic_rag_generation_ms INTEGER",
+        "ALTER TABLE thread_rag_results ADD COLUMN raptor_rag_retrieval_ms INTEGER",
+        "ALTER TABLE thread_rag_results ADD COLUMN raptor_rag_generation_ms INTEGER",
+        "ALTER TABLE thread_rag_results ADD COLUMN roi_rag_retrieval_ms INTEGER",
+        "ALTER TABLE thread_rag_results ADD COLUMN roi_rag_generation_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN basic_rag_retrieval_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN basic_rag_generation_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN raptor_rag_retrieval_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN raptor_rag_generation_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN roi_rag_retrieval_ms INTEGER",
+        "ALTER TABLE benchmark_results ADD COLUMN roi_rag_generation_ms INTEGER",
     ]
     for sql in migrations:
         try:
