@@ -30,7 +30,7 @@
   <rect class="online" x="640" y="135" width="135" height="64" rx="12"/>
   <text class="s" x="658" y="162">4 Query</text><text class="small" x="653" y="184">Auth / Version</text>
   <rect class="online" x="805" y="135" width="135" height="64" rx="12"/>
-  <text class="s" x="829" y="162">5 Retrieval</text><text class="small" x="818" y="184">Knowledge Access</text>
+  <text class="s" x="829" y="162">5 Retrieval</text><text class="small" x="835" y="184">RAG Cache</text>
   <path class="line" d="M775 167 H805"/>
   <text class="fr" x="646" y="238">FR-02</text><text class="fr" x="699" y="238">FR-03</text><text class="fr" x="752" y="238">FR-08</text>
   <text class="fr" x="817" y="238">FR-02</text><text class="fr" x="870" y="238">FR-07</text><text class="fr" x="923" y="238">FR-08</text>
