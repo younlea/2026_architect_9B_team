@@ -111,10 +111,9 @@ answerable_question_pool
 - question_text
 - embedding_id
 - bm25_text          -- optional, 기본값은 question_text
-- expected_answer_type
 ```
 
-`expected_answer_type`은 route metadata로 남겨둘 수 있지만, 초기 PoC의 routing 필수 조건에는 포함하지 않는다. 초기 PoC에서는 embedding과 BM25 결과가 같은 `route_id`를 가리키는지를 중심으로 판단한다.
+초기 PoC에서는 `answerable_question_pool`의 `question_text` 또는 `bm25_text`를 기준으로 embedding routing과 BM25 routing을 함께 수행한다.
 
 ```text
 answer_cache_entries
@@ -166,8 +165,6 @@ Answerable Question Pool Routing 규칙:
 ```
 
 이 routing은 Answer Cache의 wrong answer reuse를 줄이기 위한 보수적 gate다. embedding은 표현이 다른 유사 질문을 잡는 데 유리하고, BM25는 “요약”, “예외”, “한계”, “비교”처럼 질문 의도를 바꾸는 핵심 단어 차이를 확인하는 데 유리하다.
-
-초기 PoC에서는 `expected_answer_type`을 routing 필수 조건으로 사용하지 않는다. wrong answer reuse가 관찰될 경우 후속 safety gate로 추가한다.
 
 Validation 규칙:
 
