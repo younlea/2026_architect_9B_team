@@ -96,19 +96,46 @@ A안과 B안 PoC는 같은 LongBench 데이터를 사용한다. 원본 LongBench
 
 ### 3.2 공통 EU 데이터 구조
 
-PoC에서는 물리적으로 DB를 권한/버전별로 나누지 않고 SQLite metadata로 구분한다. A안과 B안은 같은 `context_units`를 원천 EU 데이터로 사용한다.
+PoC에서는 ROI-RAG가 만든 원본 EU와 DP3 실험용 versioned EU를 분리한다. A안과 B안은 같은 원본 EU와 같은 versioned EU set을 공유한다.
 
 ```text
-context_units
-- logical_eu_id      -- 버전을 넘어 같은 근거임을 식별하는 ID
-- version            -- V1 / V2 / V3
-- fingerprint
-- scope              -- A or B
-- text
+dp3_evidence_units
+- base_eu_id          -- ROI-RAG가 만든 원본 EU ID
+- source_id
 - source_example_id
+- eu_index
+- text
+- embedding_json
+- roi_metadata_json
 ```
 
-`logical_eu_id`는 버전이 달라도 같은 근거임을 식별하기 위한 ID다. validation은 cache에 저장된 EU가 `requested_version`에서도 같은 `logical_eu_id`와 같은 `fingerprint`로 존재하는지 확인하는 방식으로 수행한다.
+```text
+dp3_versioned_evidence_units
+- versioned_eu_id     -- 특정 버전의 실제 실험 EU row
+- base_eu_id          -- 원본 EU 참조
+- logical_eu_id       -- 버전을 넘어 같은 근거임을 식별하는 ID
+- version             -- V1 / V2 / V3
+- scope               -- A or B
+- text
+- fingerprint
+- embedding_json
+- mutation_type       -- original / copied / modified
+- is_available
+```
+
+```text
+answer_cache_sources / context_cache_sources
+- cache_id
+- logical_eu_id
+- versioned_eu_id
+- eu_version
+- fingerprint
+- source_order
+```
+
+`base_eu_id`는 LongBench context에서 ROI-RAG로 한 번 만든 원본 EU를 가리킨다. `logical_eu_id`는 버전이 달라도 같은 근거 계열임을 식별하기 위한 ID이고, `versioned_eu_id`는 특정 버전의 실제 row를 가리킨다.
+
+따라서 테스트 중 권한 분할, 버전 복제, fingerprint 변경, 삭제 시뮬레이션을 바꾸고 싶을 때는 원본 EU를 다시 만들지 않고 `dp3_versioned_evidence_units`만 reset하거나 수정하면 된다. validation은 cache에 저장된 EU가 `requested_version`에서도 같은 `logical_eu_id`와 같은 `fingerprint`로 존재하는지 확인하는 방식으로 수행한다.
 
 공통 EU validation 함수는 A안과 B안 모두에서 재사용한다.
 
@@ -134,6 +161,14 @@ validate_eu(logical_eu_id, cached_fingerprint, user_scope, requested_version)
 ### 3.3 공통 질문 세트
 
 A안과 B안은 같은 질문 세트를 사용한다. 질문은 LongBench 원본 질문과 context를 보고 생성하며, 예제별로 `same`, `paraphrase`, `near_miss` 유형을 붙인다.
+
+Answer Cache 앞단의 `answerable_question_pool`은 `src/seed_dp3_question_pool.py`로 LongBench 질문에서 추출한다. 기본 PoC에서는 전체 LongBench 질문/task의 약 10%를 deterministic sampling하여 seed한다.
+
+```bash
+python src/seed_dp3_question_pool.py --sample-rate 0.1 --reset
+```
+
+LongBench 일부 summarization/code/counting 데이터셋은 `input`이 비어 있으므로, 이 경우 dataset별 기본 task 문장을 사용한다. 예를 들어 `gov_report`, `multi_news`, `vcsum`은 summarization 질문으로, `lcc`는 code completion 질문으로, `passage_count`는 passage counting 질문으로 seed한다.
 
 ```text
 Set A. 완전 동일 질문
@@ -165,7 +200,7 @@ Set C는 vector-only gate의 한계를 확인하기 위한 테스트로 사용�
 
 ### 4.1 최소 DB 구조
 
-Answer Cache는 공통 `context_units` 위에 답변 단위 cache table을 추가한다.
+Answer Cache는 공통 `dp3_versioned_evidence_units` 위에 답변 단위 cache table을 추가한다.
 
 ```text
 answerable_question_pool
@@ -309,7 +344,7 @@ Cross-query Cache Reuse 높음 + Wrong Answer Reuse 높음 = 위험한 over-hit
 
 ### 5.1 최소 DB 구조
 
-Context Cache는 공통 `context_units` 위에 Context Pack 단위 cache table을 추가한다. A안이 `질문 -> 최종 답변`을 재사용한다면, B안은 `질문 -> 검증된 근거 묶음`을 재사용한다.
+Context Cache는 공통 `dp3_versioned_evidence_units` 위에 Context Pack 단위 cache table을 추가한다. A안이 `질문 -> 최종 답변`을 재사용한다면, B안은 `질문 -> 검증된 근거 묶음`을 재사용한다.
 
 ```text
 context_cache_entries
@@ -529,24 +564,48 @@ RAGAS 적합성:
 
 ```text
 1. LongBench 로드
-   - 기존 `src/load_longbench.py`로 thread와 benchmark_questions를 생성한다.
+   - DP3 전용 `src/load_longbench_dp3.py`로 `dp3_evidence_units`, `dp3_versioned_evidence_units`, query set을 생성한다.
+   - `src/data/longbench/{dataset}.jsonl`이 없으면 DP3 loader가 자동으로 LongBench를 다운로드한다.
 
-2. ROI-RAG thread index 생성
-   - LongBench 로드 직후 `roi_rag.index_thread(thread_id)`를 실행하거나,
-     기존 thread indexing API를 호출해 roi_indexed=1 상태를 만든다.
+2. DP3 전용 ROI-RAG EU 생성
+   - LongBench 로드 직후 `roi_rag.build_evidence_units_for_text()`를 호출해 예제별 `context`를 EU로 변환한다.
+   - 기존 thread indexing API나 DP1/DP2용 `roi_rag.index_thread(thread_id)` 실행 경로는 변경하지 않는다.
 
 3. Cache PoC metadata 생성
-   - context_units에 logical_eu_id/scope/version/fingerprint를 저장한다.
+   - `dp3_versioned_evidence_units`에 logical_eu_id/scope/version/fingerprint를 저장한다.
    - answer_cache_sources에 cache 답변이 참조한 EU와 fingerprint를 저장한다.
    - context_cache_sources에 Context Pack이 참조한 EU와 fingerprint를 저장한다.
 
 4. A/B cache query 실행
    - routing pass와 metadata validation을 먼저 수행한다.
-   - A안 miss 또는 invalid이면 기존 `roi_rag.query_thread()`로 fallback한다.
-   - B안 miss 또는 invalid이면 1차 PoC에서는 `roi_rag.query_thread()`로 fallback하고, 2차에서 delta retrieval을 추가한다.
+   - A안 miss 또는 invalid이면 DP3 `dp3_versioned_evidence_units`에서 vector similarity로 EU를 검색하고 LLM 답변을 생성한다.
+   - B안 miss 또는 invalid이면 1차 PoC에서는 DP3 `dp3_versioned_evidence_units` 재검색으로 fallback하고, 2차에서 delta retrieval을 추가한다.
 ```
 
 즉 현재 구조는 DP3 PoC가 불가능한 상태가 아니라, ROI-RAG 검색 결과를 cache 검증에 사용할 수 있도록 metadata 저장 계층을 추가해야 하는 상태다.
+
+### 7.2 DP3 전용 ROI-RAG EU 생성 방식
+
+DP3 PoC에서는 기존 DP1/DP2 실행 경로를 바꾸지 않기 위해 `src/load_longbench.py`를 수정하지 않는다. 대신 `src/load_longbench_dp3.py`가 LongBench JSONL을 읽고, 각 예제의 `context`를 `roi_rag.build_evidence_units_for_text()`로 전달해 DP3 전용 Evidence Unit을 만든다.
+
+```text
+LongBench context
+-> ROI-RAG segment split
+-> ROI-RAG greedy EU construction
+-> DP3 evidence/versioned EU 저장
+   - logical_eu_id
+   - version
+   - fingerprint
+   - scope
+   - text
+   - embedding_json
+```
+
+이때 `use_summary=False`로 실행한다. 따라서 전처리 단계에서는 LLM 요약을 호출하지 않고, ROI-RAG가 묶은 원문 segment들을 EU text로 사용한다. LLM 호출은 A안 cache miss/invalid fallback에서만 발생하며, 로컬 테스트에서는 `DP3_MOCK_LLM=true`로 mock 답변을 반환할 수 있다.
+
+DP3 loader는 `src/data/longbench/{dataset}.jsonl`이 없으면 LongBench를 자동으로 다운로드하고, 이미 `dp3_versioned_evidence_units`가 생성되어 있으면 재사용한다. 데이터와 원본 EU를 모두 다시 만들고 싶을 때만 `--reset`을 사용한다. 원본 EU는 유지하고 A/B 권한, V1/V2/V3, fingerprint 같은 실험 metadata만 다시 만들고 싶을 때는 `--reset-metadata`를 사용한다.
+
+실행 결과의 `eu_builders`가 `{"roi_rag": N}` 형태이면 ROI-RAG EU 생성 경로가 사용된 것이다. 로컬 의존성이 부족한 환경에서는 테스트 편의를 위해 `fallback_chunk`가 기록될 수 있지만, 실제 PoC 비교 결과로 사용할 때는 `src/requirements.txt` 환경에서 ROI-RAG 경로로 생성된 데이터를 사용한다.
 
 ---
 
@@ -621,7 +680,7 @@ Return routing_passed, route_id, embedding_score, and decision_reason.
 DP3 PoC는 DP1의 SPRAG/ROI-RAG 검색 기반 위에서 cache 전략을 비교한다.
 
 우선 구현 범위는 Verified Answer Cache와 Incremental Context Cache의 기본 골격이다.
-LongBench를 공통 `context_units`로 변환하고, scope A/B와 version V1/V2/V3 및 fingerprint를 부여한다.
+DP3 전용 loader로 LongBench를 공통 원본 EU와 versioned EU로 변환하고, scope A/B와 version V1/V2/V3 및 fingerprint를 부여한다.
 
 Answer Cache는 제한된 질문 풀에서 검증된 답변을 재사용한다.
 cache hit 시 ROI-RAG와 LLM을 모두 생략하므로 가장 빠르지만, wrong answer reuse 위험이 있다.

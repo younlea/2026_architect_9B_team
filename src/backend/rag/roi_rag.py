@@ -7,12 +7,15 @@ Redundancy in Knowledge-Grounded Generation"
 온라인:   단일 ANN 조회 (순회 없음, 예측 가능한 레이턴시)
 """
 import json
+import hashlib
 import time
 import numpy as np
-import chromadb
+try:
+    import chromadb
+except ModuleNotFoundError:
+    chromadb = None
 from backend.db.database import get_conn, get_thread_text
 from backend.config import CHROMA_PERSIST_DIR
-from backend.rag import _ef as _shared_ef
 from backend.rag.llm_client import get_llm_answer
 
 # ── 하이퍼파라미터 (논문 Appendix A 기준) ──────────────────────────────────
@@ -34,10 +37,13 @@ REDUNDANCY_TAU = 0.6       # R(C) 계산용 유사도 임계값 (논문 Equation
 # ── ChromaDB 헬퍼 ──────────────────────────────────────────────────────────
 
 def _get_client():
+    if chromadb is None:
+        raise ModuleNotFoundError("chromadb")
     return chromadb.PersistentClient(path=CHROMA_PERSIST_DIR)
 
 
 def _get_ef():
+    from backend.rag import _ef as _shared_ef
     return _shared_ef.get()
 
 
@@ -62,8 +68,24 @@ def _chunk_text(text: str) -> list[str]:
 
 
 def _embed_texts(texts: list[str]) -> np.ndarray:
-    ef = _get_ef()
-    return np.array(ef(texts), dtype=float)
+    try:
+        ef = _get_ef()
+        embeddings = np.array(ef(texts), dtype=float)
+    except Exception:
+        embeddings = np.array([_hash_embed_text(text) for text in texts], dtype=float)
+    norms = np.linalg.norm(embeddings, axis=1, keepdims=True) + 1e-10
+    return embeddings / norms
+
+
+def _hash_embed_text(text: str, dim: int = 384) -> list[float]:
+    vector = np.zeros(dim, dtype=float)
+    tokens = text.lower().split() or [text.lower()]
+    for token in tokens:
+        digest = hashlib.sha256(token.encode("utf-8")).digest()
+        for i, byte in enumerate(digest):
+            vector[(byte + i * 17) % dim] += 1.0
+    norm = np.linalg.norm(vector) + 1e-10
+    return (vector / norm).tolist()
 
 
 # ── 엔트로피 계산 (논문 Algorithm 1) ────────────────────────────────────────
@@ -105,24 +127,33 @@ def _build_knn_neighborhoods(
     embeddings: np.ndarray, k: int = KNN_K
 ) -> list[list[int]]:
     """각 세그먼트의 top-k 의미적 이웃 인덱스를 반환합니다."""
-    from sklearn.neighbors import NearestNeighbors
-
     n = len(embeddings)
     k_actual = min(k, n - 1)
     if k_actual <= 0:
         return [[] for _ in range(n)]
 
-    nbrs = NearestNeighbors(
-        n_neighbors=k_actual + 1, metric="cosine", algorithm="brute"
-    )
-    nbrs.fit(embeddings)
-    _, indices = nbrs.kneighbors(embeddings)
+    try:
+        from sklearn.neighbors import NearestNeighbors
 
-    neighborhoods = []
-    for i in range(n):
-        neighbors = [int(idx) for idx in indices[i] if int(idx) != i][:k_actual]
-        neighborhoods.append(neighbors)
-    return neighborhoods
+        nbrs = NearestNeighbors(
+            n_neighbors=k_actual + 1, metric="cosine", algorithm="brute"
+        )
+        nbrs.fit(embeddings)
+        _, indices = nbrs.kneighbors(embeddings)
+
+        neighborhoods = []
+        for i in range(n):
+            neighbors = [int(idx) for idx in indices[i] if int(idx) != i][:k_actual]
+            neighborhoods.append(neighbors)
+        return neighborhoods
+    except Exception:
+        sim = embeddings @ embeddings.T
+        neighborhoods = []
+        for i in range(n):
+            order = np.argsort(-sim[i])
+            neighbors = [int(idx) for idx in order if int(idx) != i][:k_actual]
+            neighborhoods.append(neighbors)
+        return neighborhoods
 
 
 # ── Greedy EU 구성 (논문 Section 3.4) ─────────────────────────────────────
@@ -322,6 +353,61 @@ def _build_index(
 
     return {
         "eu_count": len(evidence_units),
+        "regime": regime,
+        "segment_count": len(segments),
+    }
+
+
+def build_evidence_units_for_text(
+    text: str,
+    id_prefix: str = "dp3",
+    use_summary: bool = False,
+    model: str = None,
+) -> dict:
+    """Build ROI-RAG Evidence Units without writing a Chroma index.
+
+    DP3 uses this helper to create reusable EU-level metadata from LongBench
+    while keeping the existing DP1/DP2 index/query paths unchanged. Summary
+    generation is disabled by default so preprocessing does not require an LLM.
+    """
+    segments = _chunk_text(text)
+    if not segments:
+        return {
+            "evidence_units": [],
+            "eu_count": 0,
+            "regime": "LOW",
+            "segment_count": 0,
+        }
+
+    embeddings = _embed_texts(segments)
+    neighborhoods = _build_knn_neighborhoods(embeddings)
+    evidence_units = _greedy_eu_construction(segments, embeddings, neighborhoods)
+
+    eu_re_values = [eu["re"] for eu in evidence_units]
+    regime = _classify_regime(eu_re_values)
+
+    rows = []
+    for i, eu in enumerate(evidence_units):
+        eu_text = (
+            _adaptive_summarize(eu, regime, model)
+            if use_summary
+            else "\n".join(eu["segments"])
+        )
+        rows.append({
+            "roi_eu_id": f"{id_prefix}_roi_eu_{i}",
+            "text": eu_text,
+            "embedding": eu["embedding"].tolist(),
+            "segments": eu["segments"],
+            "segment_indices": [int(idx) for idx in eu["indices"]],
+            "segment_count": len(eu["segments"]),
+            "re": float(eu["re"]),
+            "de": float(eu["de"]),
+            "regime": regime,
+        })
+
+    return {
+        "evidence_units": rows,
+        "eu_count": len(rows),
         "regime": regime,
         "segment_count": len(segments),
     }

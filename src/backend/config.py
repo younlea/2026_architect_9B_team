@@ -1,5 +1,9 @@
 import os
-from dotenv import load_dotenv
+try:
+    from dotenv import load_dotenv
+except ModuleNotFoundError:
+    def load_dotenv():
+        return None
 
 load_dotenv()
 
@@ -11,3 +15,4 @@ EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
 CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
 SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "./data/poc.db")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+DP3_MOCK_LLM = os.getenv("DP3_MOCK_LLM", "true")

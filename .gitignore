@@ -11,6 +11,9 @@ src/.env
 # 로컬 DB / 벡터 저장소 (재생성 가능)
 src/data/poc.db
 src/data/chroma/
+src/data/longbench/
+src/data/longbench.zip
+src/data/*.zip
 
 # 로그
 *.log
