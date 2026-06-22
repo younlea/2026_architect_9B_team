@@ -1,11 +1,26 @@
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
+from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 from backend.db.database import init_db
 from backend.routers import chat, rag_compare, agent, threads, benchmark, swebench, cache_poc
 
 app = FastAPI(title="RAG Compare POC")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://127.0.0.1:8000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3000",
+        "http://127.0.0.1:5500",
+        "http://localhost:5500",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # DB 초기화
 init_db()
@@ -50,3 +65,8 @@ def compare_page():
 @app.get("/swebench")
 def swebench_page():
     return _no_cache_response(str(FRONTEND_DIR / "swebench.html"))
+
+
+@app.get("/dp3")
+def dp3_page():
+    return _no_cache_response(str(FRONTEND_DIR / "dp3.html"))

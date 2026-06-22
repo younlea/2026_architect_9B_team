@@ -1,0 +1,644 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DP3 Cache PoC</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --panel: #ffffff;
+      --ink: #1d2430;
+      --muted: #697386;
+      --line: #d9dee8;
+      --accent: #176b87;
+      --accent-2: #2f8f6f;
+      --warn: #b46617;
+      --bad: #b42318;
+      --soft: #e9f2f5;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+      font-size: 14px;
+    }
+
+    header {
+      height: 56px;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 650;
+      letter-spacing: 0;
+    }
+
+    header nav a {
+      color: var(--muted);
+      text-decoration: none;
+      margin-left: 16px;
+      font-size: 13px;
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+      gap: 18px;
+      padding: 18px;
+      min-height: calc(100vh - 56px);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+
+    .settings {
+      padding: 16px;
+      overflow: auto;
+      max-height: calc(100vh - 92px);
+    }
+
+    .section {
+      padding: 14px 0;
+      border-top: 1px solid var(--line);
+    }
+
+    .section:first-child { border-top: 0; padding-top: 0; }
+
+    h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    label {
+      display: block;
+      margin: 12px 0 6px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    input, select, button {
+      font: inherit;
+    }
+
+    input[type="number"], input[type="text"], select {
+      width: 100%;
+      height: 36px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      padding: 0 10px;
+      background: #fff;
+      color: var(--ink);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+
+    .checkline {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    button {
+      height: 38px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--ink);
+      cursor: pointer;
+      font-weight: 650;
+    }
+
+    button.primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    button:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    .content {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 14px;
+      min-width: 0;
+    }
+
+    .status {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      min-height: 56px;
+    }
+
+    .status strong { font-size: 14px; }
+    .status span { color: var(--muted); font-size: 13px; }
+
+    .results {
+      padding: 16px;
+      overflow: auto;
+      max-height: calc(100vh - 162px);
+    }
+
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+
+    .card h3 {
+      margin: 0 0 12px;
+      font-size: 14px;
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 5px 0;
+      border-top: 1px solid #eef1f5;
+    }
+
+    .metric:first-of-type { border-top: 0; }
+    .metric span { color: var(--muted); }
+    .metric b { font-variant-numeric: tabular-nums; }
+
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      height: 24px;
+      border-radius: 999px;
+      padding: 0 9px;
+      background: var(--soft);
+      color: var(--accent);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .tables {
+      display: grid;
+      grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr);
+      gap: 12px;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    th, td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #edf0f4;
+      text-align: left;
+      vertical-align: top;
+    }
+
+    th {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+      background: #fafbfc;
+      position: sticky;
+      top: 0;
+    }
+
+    .empty {
+      padding: 48px 16px;
+      color: var(--muted);
+      text-align: center;
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .log {
+      white-space: pre-wrap;
+      background: #101828;
+      color: #e5e7eb;
+      padding: 12px;
+      border-radius: 8px;
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 12px;
+      max-height: 240px;
+      overflow: auto;
+    }
+
+    @media (max-width: 980px) {
+      main { grid-template-columns: 1fr; }
+      .settings, .results { max-height: none; }
+      .cards, .tables { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>DP3 Cache PoC</h1>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/compare">Compare</a>
+      <a href="/chat">Chat</a>
+    </nav>
+  </header>
+
+  <main>
+    <aside class="panel settings">
+      <div class="section">
+        <h2>공통 설정</h2>
+        <label for="dataset">LongBench Dataset</label>
+        <select id="dataset"></select>
+
+        <div class="row">
+          <div>
+            <label for="numExamples">EU 생성 예제 수</label>
+            <input id="numExamples" type="number" min="1" max="200" value="5" />
+          </div>
+          <div>
+            <label for="queryCount">테스트 질문 수</label>
+            <input id="queryCount" type="number" min="1" max="500" value="100" />
+          </div>
+        </div>
+
+        <div class="row">
+          <div>
+            <label for="scope">Scope</label>
+            <select id="scope">
+              <option value="A">A</option>
+              <option value="B">B</option>
+            </select>
+          </div>
+          <div>
+            <label for="seed">샘플 Seed</label>
+            <input id="seed" type="number" value="7" />
+          </div>
+        </div>
+
+        <label class="checkline"><input id="resetMetadata" type="checkbox" checked /> versioned EU metadata 재생성</label>
+      </div>
+
+      <div class="section">
+        <h2>질문풀</h2>
+        <label for="sampleRate">필터링 질문풀 비율 <span id="sampleRateText" class="pill">10%</span></label>
+        <input id="sampleRate" type="range" min="1" max="30" value="10" />
+
+        <div class="row">
+          <div>
+            <label for="minPerDataset">Dataset별 최소</label>
+            <input id="minPerDataset" type="number" min="1" max="50" value="5" />
+          </div>
+          <div>
+            <label for="poolSeed">질문풀 Seed</label>
+            <input id="poolSeed" type="number" value="42" />
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>A안 설정</h2>
+        <label for="routeThreshold">Route Threshold <span id="routeText" class="pill">0.70</span></label>
+        <input id="routeThreshold" type="range" min="0" max="100" value="70" />
+
+        <label for="cacheThreshold">Cache Hit Threshold <span id="cacheText" class="pill">0.86</span></label>
+        <input id="cacheThreshold" type="range" min="0" max="100" value="86" />
+
+        <label class="checkline"><input id="resetCache" type="checkbox" checked /> 실행 전 Answer Cache 초기화</label>
+      </div>
+
+      <div class="actions">
+        <button id="prepareBtn">Prepare</button>
+        <button id="seedBtn">Seed Pool</button>
+      </div>
+      <div class="actions">
+        <button id="runBtn" class="primary">Run A Test</button>
+        <button id="refreshBtn">Refresh Stats</button>
+      </div>
+    </aside>
+
+    <section class="content">
+      <div class="panel status">
+        <div>
+          <strong id="statusTitle">준비됨</strong><br />
+          <span id="statusText">A안 테스트 설정을 조정한 뒤 실행하세요.</span>
+        </div>
+        <span id="poolInfo" class="pill">pool: -</span>
+      </div>
+
+      <div class="panel results">
+        <div id="resultRoot" class="empty">아직 실행 결과가 없습니다.</div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const state = { datasets: [], lastResult: null };
+    const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
+
+    const controls = [
+      "prepareBtn", "seedBtn", "runBtn", "refreshBtn",
+      "dataset", "numExamples", "queryCount", "scope", "seed",
+      "sampleRate", "minPerDataset", "poolSeed",
+      "routeThreshold", "cacheThreshold", "resetCache", "resetMetadata"
+    ];
+
+    function setBusy(isBusy, title, text) {
+      controls.forEach((id) => $(id).disabled = isBusy);
+      if (title) $("statusTitle").textContent = title;
+      if (text) $("statusText").textContent = text;
+    }
+
+    function threshold(id) {
+      return Number($(id).value) / 100;
+    }
+
+    function updateLabels() {
+      $("sampleRateText").textContent = `${$("sampleRate").value}%`;
+      $("routeText").textContent = threshold("routeThreshold").toFixed(2);
+      $("cacheText").textContent = threshold("cacheThreshold").toFixed(2);
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(`${API_BASE}${path}`, {
+        headers: { "Content-Type": "application/json" },
+        ...options
+      });
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(`${response.status} ${text}`);
+      }
+      return response.json();
+    }
+
+    function sourceId() {
+      return `dp3_longbench_${$("dataset").value}_${Number($("numExamples").value)}`;
+    }
+
+    async function loadDatasets() {
+      const data = await api("/api/dp3/longbench/datasets");
+      state.datasets = data.datasets;
+      $("dataset").innerHTML = data.datasets.map((d) =>
+        `<option value="${d.dataset}">${d.dataset} (${d.rows})</option>`
+      ).join("");
+      if (data.datasets.some((d) => d.dataset === "multifieldqa_en")) {
+        $("dataset").value = "multifieldqa_en";
+      }
+    }
+
+    async function refreshStats() {
+      const stats = await api("/api/dp3/question-pool/stats");
+      $("poolInfo").textContent = `pool: ${stats.total}`;
+      return stats;
+    }
+
+    async function prepareLongBench() {
+      setBusy(true, "LongBench 준비 중", "ROI-RAG EU와 versioned metadata를 준비합니다.");
+      try {
+        const body = {
+          dataset_name: $("dataset").value,
+          num_examples: Number($("numExamples").value),
+          auto_download: true,
+          reset: false,
+          reset_metadata: $("resetMetadata").checked
+        };
+        const result = await api("/api/dp3/longbench/prepare", {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+        $("statusTitle").textContent = "LongBench 준비 완료";
+        $("statusText").textContent = `${result.source_id}, EU ${result.context_unit_count}, version rows ${result.version_rows}`;
+        renderLog(result);
+      } catch (err) {
+        showError(err);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function seedPool() {
+      setBusy(true, "질문풀 생성 중", "LongBench 질문/task에서 필터링 pool을 seed합니다.");
+      try {
+        const body = {
+          dataset: null,
+          sample_rate: threshold("sampleRate"),
+          min_per_dataset: Number($("minPerDataset").value),
+          seed: Number($("poolSeed").value),
+          reset: true,
+          include_smoke: false
+        };
+        const result = await api("/api/dp3/question-pool/seed", {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+        await refreshStats();
+        $("statusTitle").textContent = "질문풀 생성 완료";
+        $("statusText").textContent = `${result.total_questions}개 중 ${result.seeded_questions}개 seed`;
+        renderLog(result);
+      } catch (err) {
+        showError(err);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function runATest() {
+      setBusy(true, "A안 테스트 실행 중", "V1 첫 실행, V1 반복, V2 validation을 순서대로 실행합니다.");
+      try {
+        const body = {
+          source_id: sourceId(),
+          dataset: null,
+          count: Number($("queryCount").value),
+          seed: Number($("seed").value),
+          user_scope: $("scope").value,
+          route_threshold: threshold("routeThreshold"),
+          cache_threshold: threshold("cacheThreshold"),
+          include_smoke: false,
+          reset_cache: $("resetCache").checked
+        };
+        const result = await api("/api/dp3/answer-cache/batch", {
+          method: "POST",
+          body: JSON.stringify(body)
+        });
+        state.lastResult = result;
+        $("statusTitle").textContent = "A안 테스트 완료";
+        $("statusText").textContent = `${result.sampled_query_count}개 질문, route ${result.route_threshold}, cache ${result.cache_threshold}`;
+        renderResult(result);
+      } catch (err) {
+        showError(err);
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    function pct(value, total) {
+      if (!total) return "0.0%";
+      return `${((value / total) * 100).toFixed(1)}%`;
+    }
+
+    function passLabel(pass) {
+      return {
+        v1_first: "V1 첫 실행",
+        v1_repeat: "V1 반복",
+        v2_validation: "V2 검증"
+      }[pass] || pass;
+    }
+
+    function metric(label, value, extra = "") {
+      return `<div class="metric"><span>${label}</span><b>${value}${extra ? ` <small>${extra}</small>` : ""}</b></div>`;
+    }
+
+    function renderResult(result) {
+      const cards = result.passes.map((p) => {
+        const s = p.summary;
+        return `
+          <div class="card">
+            <h3>${passLabel(p.pass)}</h3>
+            ${metric("Total", s.total)}
+            ${metric("Route Passed", s.route_passed, pct(s.route_passed, s.total))}
+            ${metric("Cache Hit", s.cache_hits, pct(s.cache_hits, s.total))}
+            ${metric("Validation Passed", s.validation_passed, pct(s.validation_passed, s.total))}
+            ${metric("Fallback", s.fallbacks, pct(s.fallbacks, s.total))}
+            ${metric("LLM Calls", s.llm_calls)}
+          </div>
+        `;
+      }).join("");
+
+      const reasons = result.passes.flatMap((p) =>
+        Object.entries(p.summary.decision_reasons).map(([reason, count]) => ({
+          pass: p.pass,
+          reason,
+          count
+        }))
+      );
+
+      const datasets = result.passes[0]?.summary?.by_dataset || {};
+      const datasetRows = Object.entries(datasets)
+        .sort((a, b) => b[1].total - a[1].total)
+        .slice(0, 18)
+        .map(([name, s]) => `
+          <tr>
+            <td>${name}</td>
+            <td>${s.total}</td>
+            <td>${s.route_passed}</td>
+            <td>${s.cache_hit}</td>
+            <td>${s.fallbacks}</td>
+          </tr>
+        `).join("");
+
+      $("resultRoot").className = "";
+      $("resultRoot").innerHTML = `
+        <div class="cards">${cards}</div>
+        <div class="tables">
+          <div class="card">
+            <h3>Decision Reasons</h3>
+            <table>
+              <thead><tr><th>Pass</th><th>Reason</th><th>Count</th></tr></thead>
+              <tbody>${reasons.map((r) => `<tr><td>${passLabel(r.pass)}</td><td>${r.reason}</td><td>${r.count}</td></tr>`).join("")}</tbody>
+            </table>
+          </div>
+          <div class="card">
+            <h3>Dataset Summary (V1 첫 실행)</h3>
+            <table>
+              <thead><tr><th>Dataset</th><th>Total</th><th>Route</th><th>Hit</th><th>Fallback</th></tr></thead>
+              <tbody>${datasetRows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderLog(data) {
+      $("resultRoot").className = "";
+      $("resultRoot").innerHTML = `<div class="log">${JSON.stringify(data, null, 2)}</div>`;
+    }
+
+    function showError(err) {
+      $("statusTitle").textContent = "오류";
+      $("statusText").textContent = err.message;
+      $("resultRoot").className = "";
+      $("resultRoot").innerHTML = `<div class="log">${String(err.stack || err.message || err)}</div>`;
+    }
+
+    ["sampleRate", "routeThreshold", "cacheThreshold"].forEach((id) => {
+      $(id).addEventListener("input", updateLabels);
+    });
+    $("prepareBtn").addEventListener("click", prepareLongBench);
+    $("seedBtn").addEventListener("click", seedPool);
+    $("runBtn").addEventListener("click", runATest);
+    $("refreshBtn").addEventListener("click", async () => {
+      setBusy(true, "통계 새로고침", "질문풀 상태를 확인합니다.");
+      try {
+        const stats = await refreshStats();
+        renderLog(stats);
+        $("statusTitle").textContent = "통계 갱신 완료";
+        $("statusText").textContent = `현재 질문풀 ${stats.total}개`;
+      } catch (err) {
+        showError(err);
+      } finally {
+        setBusy(false);
+      }
+    });
+
+    (async function init() {
+      updateLabels();
+      setBusy(true, "초기화 중", "LongBench dataset과 질문풀 상태를 불러옵니다.");
+      try {
+        await loadDatasets();
+        const stats = await refreshStats();
+        $("statusTitle").textContent = "준비됨";
+        $("statusText").textContent = `현재 질문풀 ${stats.total}개`;
+      } catch (err) {
+        showError(err);
+      } finally {
+        setBusy(false);
+      }
+    })();
+  </script>
+</body>
+</html>
