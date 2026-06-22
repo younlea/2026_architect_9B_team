@@ -101,7 +101,7 @@ DP3의 좋은 후보는 다음 조건을 만족해야 한다.
 
 | 원칙 | 설명 |
 |---|---|
-| 질문 풀 필터링 제한 | Answer Cache는 FAQ/API 사용법처럼 답변이 명확한 질문 풀에만 적용하고, Context Cache는 질문 풀 필터링 없이 적용한다. |
+| 질문 풀 필터링 제한 | Answer Cache는 FAQ/API 사용법처럼 답변이 명확한 질문 풀에만 적용하고, Context Cache는 질문 풀 필터링 없이 적용한다. 1차 PoC에서는 embedding similarity 기반으로 제한하고, BM25 lexical matching은 near-miss 오탐을 줄이기 위한 2차 보강으로 둔다. |
 | LLM 판정 최소화 | Cache hit 여부를 LLM에게 매번 판단시키지 않는다. PoC에서는 embedding과 metadata로 판정한다. |
 | 측정 가능한 실패 정의 | wrong answer reuse, invalid cache acceptance, wrong version citation처럼 실패를 수치화한다. |
 | 안전한 miss 허용 | 애매한 후보는 cache hit로 밀어붙이지 않고 delta retrieval 또는 Full RAG로 fallback한다. |
@@ -134,7 +134,7 @@ Verified Answer Cache는 과거에 처리한 질문과 최종 답변을 저장�
 ### 3.2 동작 원리
 
 1. 사용자 질문을 정규화한다.
-2. 미리 구성된 answerable question pool을 기준으로 답변 캐시 적용 가능 여부를 필터링한다.
+2. 미리 구성된 answerable question pool을 기준으로 답변 캐시 적용 가능 여부를 필터링한다. 1차 PoC에서는 embedding similarity threshold를 넘을 때만 통과시킨다.
 3. 필터링을 통과한 질문만 embedding을 생성한다.
 4. Answer Cache에서 유사한 과거 질문과 최종 답변을 검색한다.
 5. 유사도 threshold를 넘으면 cache 후보로 판단한다.

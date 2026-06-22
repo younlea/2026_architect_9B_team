@@ -535,7 +535,7 @@ H-->|No|R
 H-->|Yes|V{Metadata Valid?}
 V-->|Yes|A[Cached Final Answer]
 V-->|No|R
-R-->S[Store Answer Cache]</div><p><b>핵심:</b> FAQ/API 기본 사용법처럼 답변이 명확한 질문에 한해 검증된 최종 답변을 재사용한다.</p><p><b>장점:</b> hit 시 RAG와 LLM을 모두 생략하므로 가장 빠르다.</p><p><b>단점:</b> 사용처가 제한되고, 비슷하지만 다른 질문에 wrong answer reuse 위험이 있다.</p></div>
+R-->S[Store Answer Cache]</div><p><b>핵심:</b> FAQ/API 기본 사용법처럼 답변이 명확한 질문에 한해 검증된 최종 답변을 재사용한다. 1차 PoC에서는 embedding similarity만으로 lookup을 제한하고, BM25는 2차 보강으로 둔다.</p><p><b>장점:</b> hit 시 RAG와 LLM을 모두 생략하므로 가장 빠르다.</p><p><b>단점:</b> 사용처가 제한되고, 비슷하지만 다른 질문에 wrong answer reuse 위험이 있다.</p></div>
       <div class="card must"><h3>B. Incremental Context Cache</h3><div class="mermaid">flowchart TD
 Q[User Query]-->E[Query Embedding]
 E-->C[Context Cache Lookup]
