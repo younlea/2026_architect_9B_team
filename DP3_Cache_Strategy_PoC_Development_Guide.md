@@ -24,9 +24,14 @@ PoC에서 확인할 QA와 최소 측정 지표는 다음으로 제한한다.
 
 Verified Answer Cache는 미리 정의한 `answerable_question_pool`을 통과한 질문에 한해 과거 검증 답변을 재사용한다.
 
+초기 PoC에서는 `answerable_question_pool` routing을 **embedding similarity와 BM25 lexical matching의 hybrid gate**로 구성한다.
+
 ```text
 Query
--> Answerable Question Pool Lookup
+-> Answerable Question Pool Routing
+   -> Embedding Route Lookup
+   -> BM25 Route Lookup
+   -> Hybrid Gate Validation
 -> Answer Cache Lookup
 -> Metadata Validation
 -> Hit: Cached Answer 반환
@@ -38,6 +43,8 @@ Query
 - cache hit 시 ROI-RAG 검색과 LLM 생성을 모두 생략하므로 가장 빠르다.
 - 질문 범위는 FAQ, 요약, 핵심 내용, 정의, 주요 사실 확인처럼 답변 형태가 안정적인 질문으로 제한한다.
 - 주요 리스크는 비슷하지만 다른 질문에 기존 답변을 재사용하는 wrong answer reuse다.
+- embedding은 표현이 다른 유사 질문을 잡는 데 유리하고, BM25는 질문 의도를 바꾸는 핵심 단어 차이를 확인하는 데 유리하다.
+- 따라서 초기 PoC에서는 embedding top route와 BM25 top route가 동일하고 각 score가 threshold 이상일 때만 Answer Cache lookup을 수행한다.
 
 ### 2.2 Option B: Incremental Context Cache
 
@@ -103,8 +110,13 @@ answerable_question_pool
 - route_id
 - question_text
 - embedding_id
+- bm25_text          -- optional, 기본값은 question_text
 - expected_answer_type
+```
 
+`expected_answer_type`은 route metadata로 남겨둘 수 있지만, 초기 PoC의 routing 필수 조건에는 포함하지 않는다. 초기 PoC에서는 embedding과 BM25 결과가 같은 `route_id`를 가리키는지를 중심으로 판단한다.
+
+```text
 answer_cache_entries
 - cache_id
 - query_text
@@ -124,6 +136,8 @@ answer_cache_sources
 
 핵심은 `answer_cache_sources`다. Answer Cache entry가 어떤 EU 버전과 fingerprint에 근거했는지 남겨야 requested version에서 재사용 가능한지 검증할 수 있다.
 
+BM25 index는 PoC에서는 별도 영속 DB로 만들지 않고, `answerable_question_pool.question_text` 또는 `bm25_text`를 기반으로 실행 시 메모리에 구성해도 충분하다.
+
 ### 3.3 처리 흐름
 
 ```text
@@ -131,12 +145,29 @@ answer_cache_sources
    예: "V2에서 이 내용 요약해줘" -> requested_version=V2
 2. user_scope는 A/B 중 하나로 고정 또는 seeded random 생성
 3. query embedding 생성
-4. answerable_question_pool에서 routing threshold 확인
-5. Answer Cache에서 유사 query cache 후보 검색
+4. answerable_question_pool에서 hybrid routing 수행
+   4-1. embedding similarity 기반 top route 검색
+   4-2. BM25 기반 top route 검색
+   4-3. embedding top route와 BM25 top route가 동일한지 확인
+   4-4. 각 score가 threshold 이상인지 확인
+5. routing을 통과한 경우 Answer Cache에서 유사 query cache 후보 검색
 6. Metadata Validation 수행
 7. 통과하면 cached answer 반환
 8. 실패하면 ROI-RAG로 검색하고 LLM 답변 생성 후 cache 저장
 ```
+
+Answerable Question Pool Routing 규칙:
+
+```text
+- embedding top route와 BM25 top route가 같아야 한다.
+- embedding similarity score가 threshold 이상이어야 한다.
+- BM25 score가 threshold 이상이어야 한다.
+- 위 조건을 만족하지 않으면 Answer Cache lookup을 수행하지 않고 ROI-RAG + LLM으로 fallback한다.
+```
+
+이 routing은 Answer Cache의 wrong answer reuse를 줄이기 위한 보수적 gate다. embedding은 표현이 다른 유사 질문을 잡는 데 유리하고, BM25는 “요약”, “예외”, “한계”, “비교”처럼 질문 의도를 바꾸는 핵심 단어 차이를 확인하는 데 유리하다.
+
+초기 PoC에서는 `expected_answer_type`을 routing 필수 조건으로 사용하지 않는다. wrong answer reuse가 관찰될 경우 후속 safety gate로 추가한다.
 
 Validation 규칙:
 
@@ -178,6 +209,8 @@ Set C. 비슷하지만 의미가 다른 질문
 - Set C는 wrong answer reuse 위험을 본다.
 ```
 
+Set C는 BM25 보조 gate의 효과를 확인하기 위한 테스트로도 사용한다. 예를 들어 embedding은 유사하게 보더라도 BM25가 “요약”과 “예외/한계”의 차이를 잡아 route mismatch를 발생시키면 Answer Cache reuse를 막을 수 있다.
+
 ### 3.5 측정 로그
 
 Answer Cache PoC에서 최소한 다음 필드는 남긴다.
@@ -188,6 +221,11 @@ Answer Cache PoC에서 최소한 다음 필드는 남긴다.
   "user_scope": "A",
   "requested_version": "V2",
   "routing_passed": true,
+  "embedding_route_id": "summarize_document",
+  "embedding_score": 0.86,
+  "bm25_route_id": "summarize_document",
+  "bm25_score": 7.2,
+  "routing_decision_reason": "embedding_and_bm25_agree",
   "cache_hit": true,
   "validation_passed": true,
   "decision_reason": "answer_cache_hit_valid",
@@ -201,6 +239,29 @@ Answer Cache PoC에서 최소한 다음 필드는 남긴다.
 }
 ```
 
+routing 실패 예시는 다음과 같다.
+
+```json
+{
+  "query_id": "C2",
+  "user_scope": "A",
+  "requested_version": "V2",
+  "routing_passed": false,
+  "embedding_route_id": "summarize_document",
+  "embedding_score": 0.84,
+  "bm25_route_id": "caveat_document",
+  "bm25_score": 6.9,
+  "routing_decision_reason": "embedding_bm25_route_mismatch",
+  "cache_hit": false,
+  "validation_passed": false,
+  "decision_reason": "routing_failed_fallback_to_roi_rag",
+  "total_ms": 1850,
+  "llm_call_count": 1,
+  "cross_query_reuse": false,
+  "wrong_answer_reuse": false
+}
+```
+
 추가 집계 지표:
 
 ```text
@@ -208,6 +269,8 @@ Answer Cache PoC에서 최소한 다음 필드는 남긴다.
 - Cache Hit Rate
 - Validation Pass Rate
 - Cross-query Cache Reuse Rate
+- Embedding/BM25 Route Agreement Rate
+- Routing Fail by Route Mismatch Count
 ```
 
 `Cross-query Cache Reuse Rate`는 단독으로 좋고 나쁨을 판단하지 않는다.
@@ -237,6 +300,8 @@ Cross-query Cache Reuse 높음 + Wrong Answer Reuse 높음 = 위험한 over-hit
 
 RAGAS는 기능 적합성 평가에 사용한다. 단, DP3는 cache 전략 비교이므로 RAGAS 하나만으로 충분하지 않다. 특히 Answer Cache는 최종 답변 재사용이 핵심 리스크이므로 `Wrong Answer Reuse Rate`를 함께 본다.
 
+BM25 hybrid routing의 효과는 특히 Set C에서 확인한다. embedding만으로는 유사하게 보일 수 있는 near-miss 질문이 BM25 route mismatch로 fallback되는지 확인한다.
+
 ### 4.3 테스트 용이성
 
 | 지표 | 측정 방법 | 선택 이유 |
@@ -244,6 +309,15 @@ RAGAS는 기능 적합성 평가에 사용한다. 단, DP3는 cache 전략 비�
 | Decision Reason Coverage | hit/miss/validation fail/fallback 사유가 로그에 남은 비율 | cache 판단을 설명할 수 있는지 확인한다. |
 
 테스트 용이성은 RAGAS로 평가하지 않는다. PoC에서는 decision log가 빠짐없이 남는지 보는 것으로 충분하다.
+
+Hybrid routing을 사용하는 경우 routing 단계의 decision reason도 별도로 남긴다.
+
+```text
+- embedding_and_bm25_agree
+- embedding_score_below_threshold
+- bm25_score_below_threshold
+- embedding_bm25_route_mismatch
+```
 
 ---
 
@@ -277,11 +351,23 @@ RAGAS 적합성:
 ```text
 src/backend/cache/
   answer_cache.py
+  answer_cache_router.py
   cache_models.py
   cache_metrics.py
 
 src/backend/routers/
   cache_poc.py
+```
+
+`answer_cache_router.py`는 `answerable_question_pool`에 대한 routing을 담당한다.
+
+```text
+AnswerCacheRouter
+- query embedding 생성 또는 입력받기
+- embedding 기반 route 후보 검색
+- BM25 기반 route 후보 검색
+- route 일치 여부와 threshold 확인
+- routing result와 decision reason 반환
 ```
 
 실행 모드:
@@ -302,7 +388,24 @@ mode=incremental_context_cache
 ```text
 - ROI-RAG Index: 기존 ChromaDB / roi_rag.py 재사용
 - Cache Metadata: SQLite
+- BM25 Index: answerable_question_pool 기반 in-memory index
 - Metrics: SQLite 또는 CSV
+```
+
+BM25 구현은 PoC에서는 가벼운 Python 라이브러리 사용을 권장한다.
+
+```text
+- rank-bm25
+```
+
+Codex 구현 지시 예시는 다음과 같다.
+
+```text
+Implement AnswerCacheRouter using hybrid routing.
+Use embedding similarity and BM25 over answerable_question_pool.
+Pass routing only when embedding top route and BM25 top route are identical
+and both scores are above configured thresholds.
+Return routing_passed, route_id, embedding_score, bm25_score, and decision_reason.
 ```
 
 ---
@@ -317,6 +420,10 @@ LongBench를 scope A/B와 version V1/V2/V3로 확장하고, cache entry가 어�
 
 Answer Cache는 제한된 질문 풀에서 검증된 답변을 재사용한다.
 cache hit 시 ROI-RAG와 LLM을 모두 생략하므로 가장 빠르지만, wrong answer reuse 위험이 있다.
+
+이를 줄이기 위해 초기 PoC에서는 answerable_question_pool routing을
+embedding similarity와 BM25 lexical matching의 hybrid gate로 구성한다.
+embedding top route와 BM25 top route가 동일하고, 각 score가 threshold 이상일 때만 Answer Cache lookup을 수행한다.
 
 속도는 P95 Latency와 LLM Call Count로 본다.
 기능 적합성은 RAGAS Faithfulness와 Wrong Answer Reuse Rate로 본다.
