@@ -431,11 +431,12 @@ def validate_eu(
     return {"valid": True, "reason": "valid"}
 
 
-def _find_cache_candidate(
+def _find_cache_candidates(
     route_id: str,
     user_scope: str,
     query_embedding: list[float],
-) -> Optional[dict]:
+    requested_version: str,
+) -> list[dict]:
     init_dp3_cache_schema()
     with get_conn() as conn:
         rows = conn.execute(
@@ -445,13 +446,21 @@ def _find_cache_candidate(
             (route_id, user_scope),
         ).fetchall()
 
-    best = None
+    candidates = []
     for row in rows:
         score = _cosine(query_embedding, _embedding_from_json(row["query_embedding_json"]))
-        if best is None or score > best["cache_similarity_score"]:
-            best = dict(row)
-            best["cache_similarity_score"] = round(score, 4)
-    return best
+        item = dict(row)
+        item["cache_similarity_score"] = round(score, 4)
+        item["version_match"] = item.get("cache_version") == requested_version
+        candidates.append(item)
+    candidates.sort(
+        key=lambda item: (
+            item["cache_similarity_score"],
+            1 if item["version_match"] else 0,
+        ),
+        reverse=True,
+    )
+    return candidates
 
 
 def _validate_cache_sources(cache_id: str, user_scope: str, requested_version: str) -> dict:
@@ -653,9 +662,24 @@ def run_answer_cache_query(
         )
         return result
 
-    candidate = _find_cache_candidate(route["route_id"], user_scope, query_embedding)
-    if candidate and candidate["cache_similarity_score"] >= cache_threshold:
-        validation = _validate_cache_sources(candidate["cache_id"], user_scope, requested_version)
+    candidates = _find_cache_candidates(
+        route["route_id"],
+        user_scope,
+        query_embedding,
+        requested_version,
+    )
+    above_threshold = [
+        candidate for candidate in candidates
+        if candidate["cache_similarity_score"] >= cache_threshold
+    ]
+    invalid_candidates = []
+
+    for candidate in above_threshold:
+        validation = _validate_cache_sources(
+            candidate["cache_id"],
+            user_scope,
+            requested_version,
+        )
         log.update({
             "cache_candidate_id": candidate["cache_id"],
             "cache_similarity_score": candidate["cache_similarity_score"],
@@ -671,10 +695,22 @@ def run_answer_cache_query(
             })
             _store_log(thread_id, query, log)
             return log
-        log["decision_reason"] = "cache_candidate_invalid_fallback_to_roi_rag"
+        invalid_candidates.append({
+            "cache_id": candidate["cache_id"],
+            "cache_version": candidate.get("cache_version"),
+            "cache_similarity_score": candidate["cache_similarity_score"],
+            "validation": validation,
+        })
+
+    if invalid_candidates:
+        log["invalid_cache_candidates"] = invalid_candidates
+        log["decision_reason"] = "cache_candidates_invalid_fallback_to_roi_rag"
     else:
-        log["cache_candidate_id"] = candidate["cache_id"] if candidate else None
-        log["cache_similarity_score"] = candidate["cache_similarity_score"] if candidate else None
+        best_candidate = candidates[0] if candidates else None
+        log["cache_candidate_id"] = best_candidate["cache_id"] if best_candidate else None
+        log["cache_similarity_score"] = (
+            best_candidate["cache_similarity_score"] if best_candidate else None
+        )
         log["decision_reason"] = "cache_candidate_not_found_fallback_to_roi_rag"
 
     return _fallback_and_store(

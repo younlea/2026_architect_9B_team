@@ -7,6 +7,7 @@ from backend.cache.answer_cache import (
     run_answer_cache_query,
     setup_answer_cache_poc,
 )
+from backend.cache.context_cache import clear_context_cache_for_source, run_context_cache_query
 from load_longbench_dp3 import prepare_dp3_longbench
 from run_dp3_answer_cache_longbench_batch import _run_pass, _sample_queries
 from seed_dp3_question_pool import DATA_DIR, seed_question_pool
@@ -53,6 +54,17 @@ class AnswerCacheBatchRequest(BaseModel):
     seed: int = 7
     user_scope: str = "A"
     route_threshold: float = 0.70
+    cache_threshold: float = 0.86
+    include_smoke: bool = False
+    reset_cache: bool = True
+
+
+class ContextCacheBatchRequest(BaseModel):
+    source_id: str = "dp3_longbench_multifieldqa_en_5"
+    dataset: Optional[str] = None
+    count: int = 100
+    seed: int = 7
+    user_scope: str = "A"
     cache_threshold: float = 0.86
     include_smoke: bool = False
     reset_cache: bool = True
@@ -186,6 +198,109 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
         "sampled_query_count": len(queries),
         "sampled_datasets": dict(Counter(q["dataset"] for q in queries)),
         "route_threshold": body.route_threshold,
+        "cache_threshold": body.cache_threshold,
+        "passes": [{"pass": p["pass"], "summary": p["summary"]} for p in passes],
+    }
+
+
+def _summarize_context_results(results: list[dict]) -> dict:
+    from collections import Counter
+
+    by_reason = Counter(r.get("decision_reason", "unknown") for r in results)
+    by_dataset = {}
+    for row in results:
+        item = by_dataset.setdefault(row["dataset"], {
+            "total": 0,
+            "context_cache_hit": 0,
+            "validation_passed": 0,
+            "delta_retrievals": 0,
+            "full_retrievals": 0,
+            "llm_calls": 0,
+        })
+        item["total"] += 1
+        item["context_cache_hit"] += int(bool(row.get("cache_hit")))
+        item["validation_passed"] += int(bool(row.get("validation_passed")))
+        item["delta_retrievals"] += int(row.get("delta_retrieval_count", 0) > 0)
+        item["full_retrievals"] += int(bool(row.get("full_retrieval")))
+        item["llm_calls"] += int(row.get("llm_call_count", 0))
+
+    return {
+        "total": len(results),
+        "context_cache_hits": sum(1 for r in results if r.get("cache_hit")),
+        "validation_passed": sum(1 for r in results if r.get("validation_passed")),
+        "delta_retrievals": sum(1 for r in results if int(r.get("delta_retrieval_count", 0)) > 0),
+        "full_retrievals": sum(1 for r in results if r.get("full_retrieval")),
+        "fallbacks": sum(1 for r in results if r.get("full_retrieval")),
+        "llm_calls": sum(int(r.get("llm_call_count", 0)) for r in results),
+        "decision_reasons": dict(by_reason),
+        "by_dataset": by_dataset,
+    }
+
+
+def _run_context_pass(
+    pass_name: str,
+    source_id: str,
+    queries: list[dict],
+    user_scope: str,
+    requested_version: str,
+    cache_threshold: float,
+) -> dict:
+    results = []
+    for item in queries:
+        result = run_context_cache_query(
+            source_id=source_id,
+            query=item["query"],
+            user_scope=user_scope,
+            requested_version=requested_version,
+            cache_threshold=cache_threshold,
+        )
+        result["query_id"] = item["query_id"]
+        result["dataset"] = item["dataset"]
+        result["index"] = item["index"]
+        results.append(result)
+    return {"pass": pass_name, "summary": _summarize_context_results(results), "results": results}
+
+
+@router.post("/context-cache/batch")
+def run_context_cache_batch(body: ContextCacheBatchRequest):
+    from backend.db.database import init_db
+    from collections import Counter
+
+    init_db()
+    if body.reset_cache:
+        clear_context_cache_for_source(body.source_id)
+
+    queries = _sample_queries(body.dataset, body.count, body.seed, body.include_smoke)
+    passes = [
+        _run_context_pass(
+            "v1_first",
+            body.source_id,
+            queries,
+            body.user_scope,
+            "V1",
+            body.cache_threshold,
+        ),
+        _run_context_pass(
+            "v1_repeat",
+            body.source_id,
+            queries,
+            body.user_scope,
+            "V1",
+            body.cache_threshold,
+        ),
+        _run_context_pass(
+            "v2_validation",
+            body.source_id,
+            queries,
+            body.user_scope,
+            "V2",
+            body.cache_threshold,
+        ),
+    ]
+    return {
+        "source_id": body.source_id,
+        "sampled_query_count": len(queries),
+        "sampled_datasets": dict(Counter(q["dataset"] for q in queries)),
         "cache_threshold": body.cache_threshold,
         "passes": [{"pass": p["pass"], "summary": p["summary"]} for p in passes],
     }

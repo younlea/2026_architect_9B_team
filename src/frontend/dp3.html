@@ -1,25 +1,21 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>DP3 Cache PoC</title>
   <style>
     :root {
       --bg: #f6f7f9;
-      --panel: #ffffff;
-      --ink: #1d2430;
-      --muted: #697386;
-      --line: #d9dee8;
+      --panel: #fff;
+      --ink: #172033;
+      --muted: #657084;
+      --line: #d8dee9;
       --accent: #176b87;
-      --accent-2: #2f8f6f;
-      --warn: #b46617;
-      --bad: #b42318;
+      --accent2: #2e7d64;
       --soft: #e9f2f5;
     }
-
     * { box-sizing: border-box; }
-
     body {
       margin: 0;
       background: var(--bg);
@@ -27,77 +23,49 @@
       font-family: "Segoe UI", system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
       font-size: 14px;
     }
-
     header {
       height: 56px;
       padding: 0 24px;
       display: flex;
       align-items: center;
       justify-content: space-between;
-      border-bottom: 1px solid var(--line);
       background: var(--panel);
+      border-bottom: 1px solid var(--line);
     }
-
-    header h1 {
-      margin: 0;
-      font-size: 18px;
-      font-weight: 650;
-      letter-spacing: 0;
-    }
-
-    header nav a {
-      color: var(--muted);
-      text-decoration: none;
-      margin-left: 16px;
-      font-size: 13px;
-    }
-
+    header h1 { margin: 0; font-size: 19px; }
+    nav a { margin-left: 16px; color: var(--muted); text-decoration: none; }
     main {
       display: grid;
-      grid-template-columns: minmax(320px, 390px) minmax(0, 1fr);
+      grid-template-columns: minmax(340px, 410px) minmax(0, 1fr);
       gap: 18px;
       padding: 18px;
       min-height: calc(100vh - 56px);
     }
-
     .panel {
       background: var(--panel);
       border: 1px solid var(--line);
       border-radius: 8px;
     }
-
     .settings {
       padding: 16px;
       overflow: auto;
       max-height: calc(100vh - 92px);
     }
-
     .section {
       padding: 14px 0;
       border-top: 1px solid var(--line);
     }
-
     .section:first-child { border-top: 0; padding-top: 0; }
-
-    h2 {
-      margin: 0 0 12px;
-      font-size: 14px;
-      font-weight: 700;
-    }
-
+    h2 { margin: 0 0 12px; font-size: 15px; }
     label {
       display: block;
-      margin: 12px 0 6px;
+      margin: 11px 0 6px;
       color: var(--muted);
       font-size: 12px;
-      font-weight: 600;
+      font-weight: 700;
     }
-
-    input, select, button {
-      font: inherit;
-    }
-
-    input[type="number"], input[type="text"], select {
+    input, select, button { font: inherit; }
+    input[type="number"], select {
       width: 100%;
       height: 36px;
       border: 1px solid var(--line);
@@ -106,34 +74,29 @@
       background: #fff;
       color: var(--ink);
     }
-
     input[type="range"] {
       width: 100%;
       accent-color: var(--accent);
     }
-
     .row {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
     }
-
     .checkline {
       display: flex;
       align-items: center;
       gap: 8px;
-      margin-top: 10px;
       color: var(--muted);
       font-size: 13px;
+      margin-top: 10px;
     }
-
     .actions {
       display: grid;
       grid-template-columns: 1fr 1fr;
       gap: 10px;
-      margin-top: 14px;
+      margin-top: 12px;
     }
-
     button {
       height: 38px;
       border: 1px solid var(--line);
@@ -141,75 +104,19 @@
       background: #fff;
       color: var(--ink);
       cursor: pointer;
-      font-weight: 650;
+      font-weight: 700;
     }
-
     button.primary {
       background: var(--accent);
       border-color: var(--accent);
       color: #fff;
     }
-
-    button:disabled {
-      opacity: 0.55;
-      cursor: wait;
+    button.secondary {
+      background: var(--accent2);
+      border-color: var(--accent2);
+      color: #fff;
     }
-
-    .content {
-      display: grid;
-      grid-template-rows: auto 1fr;
-      gap: 14px;
-      min-width: 0;
-    }
-
-    .status {
-      padding: 14px 16px;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      min-height: 56px;
-    }
-
-    .status strong { font-size: 14px; }
-    .status span { color: var(--muted); font-size: 13px; }
-
-    .results {
-      padding: 16px;
-      overflow: auto;
-      max-height: calc(100vh - 162px);
-    }
-
-    .cards {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(180px, 1fr));
-      gap: 12px;
-      margin-bottom: 16px;
-    }
-
-    .card {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 14px;
-      background: #fff;
-    }
-
-    .card h3 {
-      margin: 0 0 12px;
-      font-size: 14px;
-    }
-
-    .metric {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-      padding: 5px 0;
-      border-top: 1px solid #eef1f5;
-    }
-
-    .metric:first-of-type { border-top: 0; }
-    .metric span { color: var(--muted); }
-    .metric b { font-variant-numeric: tabular-nums; }
-
+    button:disabled { opacity: 0.55; cursor: wait; }
     .pill {
       display: inline-flex;
       align-items: center;
@@ -219,46 +126,83 @@
       background: var(--soft);
       color: var(--accent);
       font-size: 12px;
-      font-weight: 700;
+      font-weight: 800;
     }
-
+    .content {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      gap: 14px;
+      min-width: 0;
+    }
+    .status {
+      min-height: 58px;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .status strong { font-size: 15px; }
+    .status span { color: var(--muted); }
+    .results {
+      padding: 16px;
+      overflow: auto;
+      max-height: calc(100vh - 162px);
+    }
+    .empty {
+      padding: 56px 16px;
+      text-align: center;
+      color: var(--muted);
+      border: 1px dashed var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+    .card {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+      background: #fff;
+    }
+    .card h3 { margin: 0 0 12px; font-size: 14px; }
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 6px 0;
+      border-top: 1px solid #edf0f4;
+    }
+    .metric:first-of-type { border-top: 0; }
+    .metric span { color: var(--muted); }
+    .metric b { font-variant-numeric: tabular-nums; }
     .tables {
       display: grid;
-      grid-template-columns: minmax(260px, 0.8fr) minmax(420px, 1.2fr);
+      grid-template-columns: minmax(300px, 0.8fr) minmax(460px, 1.2fr);
       gap: 12px;
     }
-
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
     }
-
     th, td {
       padding: 8px 10px;
       border-bottom: 1px solid #edf0f4;
       text-align: left;
       vertical-align: top;
     }
-
     th {
       color: var(--muted);
-      font-size: 12px;
-      font-weight: 700;
       background: #fafbfc;
+      font-size: 12px;
       position: sticky;
       top: 0;
     }
-
-    .empty {
-      padding: 48px 16px;
-      color: var(--muted);
-      text-align: center;
-      border: 1px dashed var(--line);
-      border-radius: 8px;
-      background: #fff;
-    }
-
     .log {
       white-space: pre-wrap;
       background: #101828;
@@ -267,10 +211,9 @@
       border-radius: 8px;
       font-family: Consolas, "Courier New", monospace;
       font-size: 12px;
-      max-height: 240px;
       overflow: auto;
+      max-height: 320px;
     }
-
     @media (max-width: 980px) {
       main { grid-template-columns: 1fr; }
       .settings, .results { max-height: none; }
@@ -298,11 +241,11 @@
         <div class="row">
           <div>
             <label for="numExamples">EU 생성 예제 수</label>
-            <input id="numExamples" type="number" min="1" max="200" value="5" />
+            <input id="numExamples" type="number" min="1" max="200" value="5">
           </div>
           <div>
             <label for="queryCount">테스트 질문 수</label>
-            <input id="queryCount" type="number" min="1" max="500" value="100" />
+            <input id="queryCount" type="number" min="1" max="500" value="30">
           </div>
         </div>
 
@@ -316,39 +259,40 @@
           </div>
           <div>
             <label for="seed">샘플 Seed</label>
-            <input id="seed" type="number" value="7" />
+            <input id="seed" type="number" value="7">
           </div>
         </div>
 
-        <label class="checkline"><input id="resetMetadata" type="checkbox" checked /> versioned EU metadata 재생성</label>
+        <label class="checkline"><input id="resetMetadata" type="checkbox" checked> versioned EU metadata 재생성</label>
       </div>
 
       <div class="section">
         <h2>질문풀</h2>
         <label for="sampleRate">필터링 질문풀 비율 <span id="sampleRateText" class="pill">10%</span></label>
-        <input id="sampleRate" type="range" min="1" max="30" value="10" />
+        <input id="sampleRate" type="range" min="1" max="30" value="10">
 
         <div class="row">
           <div>
             <label for="minPerDataset">Dataset별 최소</label>
-            <input id="minPerDataset" type="number" min="1" max="50" value="5" />
+            <input id="minPerDataset" type="number" min="1" max="50" value="5">
           </div>
           <div>
             <label for="poolSeed">질문풀 Seed</label>
-            <input id="poolSeed" type="number" value="42" />
+            <input id="poolSeed" type="number" value="42">
           </div>
         </div>
       </div>
 
       <div class="section">
-        <h2>A안 설정</h2>
-        <label for="routeThreshold">Route Threshold <span id="routeText" class="pill">0.70</span></label>
-        <input id="routeThreshold" type="range" min="0" max="100" value="70" />
+        <h2>A/B 설정</h2>
+        <label for="routeThreshold">A안 Route Threshold <span id="routeText" class="pill">0.70</span></label>
+        <input id="routeThreshold" type="range" min="0" max="100" value="70">
 
-        <label for="cacheThreshold">Cache Hit Threshold <span id="cacheText" class="pill">0.86</span></label>
-        <input id="cacheThreshold" type="range" min="0" max="100" value="86" />
+        <label for="cacheThreshold">공통 Cache Threshold <span id="cacheText" class="pill">0.86</span></label>
+        <input id="cacheThreshold" type="range" min="0" max="100" value="86">
 
-        <label class="checkline"><input id="resetCache" type="checkbox" checked /> 실행 전 Answer Cache 초기화</label>
+        <label class="checkline"><input id="resetAnswerCache" type="checkbox" checked> 실행 전 Answer Cache 초기화</label>
+        <label class="checkline"><input id="resetContextCache" type="checkbox" checked> 실행 전 Context Cache 초기화</label>
       </div>
 
       <div class="actions">
@@ -356,7 +300,11 @@
         <button id="seedBtn">Seed Pool</button>
       </div>
       <div class="actions">
-        <button id="runBtn" class="primary">Run A Test</button>
+        <button id="runABtn" class="primary">Run A</button>
+        <button id="runBBtn" class="secondary">Run B</button>
+      </div>
+      <div class="actions">
+        <button id="runABBtn">Run A+B</button>
         <button id="refreshBtn">Refresh Stats</button>
       </div>
     </aside>
@@ -364,8 +312,8 @@
     <section class="content">
       <div class="panel status">
         <div>
-          <strong id="statusTitle">준비됨</strong><br />
-          <span id="statusText">A안 테스트 설정을 조정한 뒤 실행하세요.</span>
+          <strong id="statusTitle">준비됨</strong><br>
+          <span id="statusText">설정을 조정한 뒤 실행하세요.</span>
         </div>
         <span id="poolInfo" class="pill">pool: -</span>
       </div>
@@ -378,18 +326,17 @@
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const state = { datasets: [], lastResult: null };
     const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
-
     const controls = [
-      "prepareBtn", "seedBtn", "runBtn", "refreshBtn",
+      "prepareBtn", "seedBtn", "runABtn", "runBBtn", "runABBtn", "refreshBtn",
       "dataset", "numExamples", "queryCount", "scope", "seed",
       "sampleRate", "minPerDataset", "poolSeed",
-      "routeThreshold", "cacheThreshold", "resetCache", "resetMetadata"
+      "routeThreshold", "cacheThreshold", "resetAnswerCache",
+      "resetContextCache", "resetMetadata"
     ];
 
     function setBusy(isBusy, title, text) {
-      controls.forEach((id) => $(id).disabled = isBusy);
+      controls.forEach((id) => { $(id).disabled = isBusy; });
       if (title) $("statusTitle").textContent = title;
       if (text) $("statusText").textContent = text;
     }
@@ -422,7 +369,6 @@
 
     async function loadDatasets() {
       const data = await api("/api/dp3/longbench/datasets");
-      state.datasets = data.datasets;
       $("dataset").innerHTML = data.datasets.map((d) =>
         `<option value="${d.dataset}">${d.dataset} (${d.rows})</option>`
       ).join("");
@@ -440,16 +386,15 @@
     async function prepareLongBench() {
       setBusy(true, "LongBench 준비 중", "ROI-RAG EU와 versioned metadata를 준비합니다.");
       try {
-        const body = {
-          dataset_name: $("dataset").value,
-          num_examples: Number($("numExamples").value),
-          auto_download: true,
-          reset: false,
-          reset_metadata: $("resetMetadata").checked
-        };
         const result = await api("/api/dp3/longbench/prepare", {
           method: "POST",
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            dataset_name: $("dataset").value,
+            num_examples: Number($("numExamples").value),
+            auto_download: true,
+            reset: false,
+            reset_metadata: $("resetMetadata").checked
+          })
         });
         $("statusTitle").textContent = "LongBench 준비 완료";
         $("statusText").textContent = `${result.source_id}, EU ${result.context_unit_count}, version rows ${result.version_rows}`;
@@ -464,17 +409,16 @@
     async function seedPool() {
       setBusy(true, "질문풀 생성 중", "LongBench 질문/task에서 필터링 pool을 seed합니다.");
       try {
-        const body = {
-          dataset: null,
-          sample_rate: threshold("sampleRate"),
-          min_per_dataset: Number($("minPerDataset").value),
-          seed: Number($("poolSeed").value),
-          reset: true,
-          include_smoke: false
-        };
         const result = await api("/api/dp3/question-pool/seed", {
           method: "POST",
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            dataset: null,
+            sample_rate: threshold("sampleRate"),
+            min_per_dataset: Number($("minPerDataset").value),
+            seed: Number($("poolSeed").value),
+            reset: true,
+            include_smoke: false
+          })
         });
         await refreshStats();
         $("statusTitle").textContent = "질문풀 생성 완료";
@@ -487,28 +431,84 @@
       }
     }
 
-    async function runATest() {
-      setBusy(true, "A안 테스트 실행 중", "V1 첫 실행, V1 반복, V2 validation을 순서대로 실행합니다.");
+    function commonPayload() {
+      return {
+        source_id: sourceId(),
+        dataset: null,
+        count: Number($("queryCount").value),
+        seed: Number($("seed").value),
+        user_scope: $("scope").value,
+        cache_threshold: threshold("cacheThreshold"),
+        include_smoke: false
+      };
+    }
+
+    async function runA() {
+      setBusy(true, "A안 테스트 실행 중", "Answer Cache batch를 실행합니다.");
       try {
-        const body = {
-          source_id: sourceId(),
-          dataset: null,
-          count: Number($("queryCount").value),
-          seed: Number($("seed").value),
-          user_scope: $("scope").value,
-          route_threshold: threshold("routeThreshold"),
-          cache_threshold: threshold("cacheThreshold"),
-          include_smoke: false,
-          reset_cache: $("resetCache").checked
-        };
         const result = await api("/api/dp3/answer-cache/batch", {
           method: "POST",
-          body: JSON.stringify(body)
+          body: JSON.stringify({
+            ...commonPayload(),
+            route_threshold: threshold("routeThreshold"),
+            reset_cache: $("resetAnswerCache").checked
+          })
         });
-        state.lastResult = result;
         $("statusTitle").textContent = "A안 테스트 완료";
-        $("statusText").textContent = `${result.sampled_query_count}개 질문, route ${result.route_threshold}, cache ${result.cache_threshold}`;
-        renderResult(result);
+        $("statusText").textContent = `${result.sampled_query_count}개 질문`;
+        renderModeResult("A안 Answer Cache", result, "A");
+        return result;
+      } catch (err) {
+        showError(err);
+        throw err;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function runB() {
+      setBusy(true, "B안 테스트 실행 중", "Context Cache batch를 실행합니다.");
+      try {
+        const result = await api("/api/dp3/context-cache/batch", {
+          method: "POST",
+          body: JSON.stringify({
+            ...commonPayload(),
+            reset_cache: $("resetContextCache").checked
+          })
+        });
+        $("statusTitle").textContent = "B안 테스트 완료";
+        $("statusText").textContent = `${result.sampled_query_count}개 질문`;
+        renderModeResult("B안 Context Cache", result, "B");
+        return result;
+      } catch (err) {
+        showError(err);
+        throw err;
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    async function runAB() {
+      setBusy(true, "A+B 테스트 실행 중", "A안을 실행한 뒤 B안을 실행합니다.");
+      try {
+        const a = await api("/api/dp3/answer-cache/batch", {
+          method: "POST",
+          body: JSON.stringify({
+            ...commonPayload(),
+            route_threshold: threshold("routeThreshold"),
+            reset_cache: $("resetAnswerCache").checked
+          })
+        });
+        const b = await api("/api/dp3/context-cache/batch", {
+          method: "POST",
+          body: JSON.stringify({
+            ...commonPayload(),
+            reset_cache: $("resetContextCache").checked
+          })
+        });
+        $("statusTitle").textContent = "A+B 테스트 완료";
+        $("statusText").textContent = `${a.sampled_query_count}개 질문으로 비교`;
+        renderCompare(a, b);
       } catch (err) {
         showError(err);
       } finally {
@@ -533,30 +533,36 @@
       return `<div class="metric"><span>${label}</span><b>${value}${extra ? ` <small>${extra}</small>` : ""}</b></div>`;
     }
 
-    function renderResult(result) {
-      const cards = result.passes.map((p) => {
+    function summaryValue(summary, mode, key) {
+      if (mode === "A" && key === "hit") return summary.cache_hits || 0;
+      if (mode === "B" && key === "hit") return summary.context_cache_hits || 0;
+      if (key === "fallback") return summary.fallbacks || summary.full_retrievals || 0;
+      return summary[key] || 0;
+    }
+
+    function renderCards(result, mode) {
+      return result.passes.map((p) => {
         const s = p.summary;
+        const hitLabel = mode === "A" ? "Answer Hit" : "Context Hit";
         return `
           <div class="card">
             <h3>${passLabel(p.pass)}</h3>
             ${metric("Total", s.total)}
-            ${metric("Route Passed", s.route_passed, pct(s.route_passed, s.total))}
-            ${metric("Cache Hit", s.cache_hits, pct(s.cache_hits, s.total))}
+            ${mode === "A" ? metric("Route Passed", s.route_passed, pct(s.route_passed, s.total)) : ""}
+            ${metric(hitLabel, summaryValue(s, mode, "hit"), pct(summaryValue(s, mode, "hit"), s.total))}
             ${metric("Validation Passed", s.validation_passed, pct(s.validation_passed, s.total))}
-            ${metric("Fallback", s.fallbacks, pct(s.fallbacks, s.total))}
+            ${mode === "B" ? metric("Delta Retrieval", s.delta_retrievals || 0) : ""}
+            ${mode === "B" ? metric("Full Retrieval", s.full_retrievals || 0) : metric("Fallback", s.fallbacks || 0)}
             ${metric("LLM Calls", s.llm_calls)}
           </div>
         `;
       }).join("");
+    }
 
+    function renderModeResult(title, result, mode) {
       const reasons = result.passes.flatMap((p) =>
-        Object.entries(p.summary.decision_reasons).map(([reason, count]) => ({
-          pass: p.pass,
-          reason,
-          count
-        }))
+        Object.entries(p.summary.decision_reasons).map(([reason, count]) => ({ pass: p.pass, reason, count }))
       );
-
       const datasets = result.passes[0]?.summary?.by_dataset || {};
       const datasetRows = Object.entries(datasets)
         .sort((a, b) => b[1].total - a[1].total)
@@ -565,15 +571,16 @@
           <tr>
             <td>${name}</td>
             <td>${s.total}</td>
-            <td>${s.route_passed}</td>
-            <td>${s.cache_hit}</td>
-            <td>${s.fallbacks}</td>
+            <td>${s.route_passed ?? "-"}</td>
+            <td>${s.cache_hit ?? s.context_cache_hit ?? 0}</td>
+            <td>${s.fallbacks ?? s.full_retrievals ?? 0}</td>
           </tr>
         `).join("");
 
       $("resultRoot").className = "";
       $("resultRoot").innerHTML = `
-        <div class="cards">${cards}</div>
+        <h2>${title}</h2>
+        <div class="cards">${renderCards(result, mode)}</div>
         <div class="tables">
           <div class="card">
             <h3>Decision Reasons</h3>
@@ -583,13 +590,45 @@
             </table>
           </div>
           <div class="card">
-            <h3>Dataset Summary (V1 첫 실행)</h3>
+            <h3>Dataset Summary</h3>
             <table>
               <thead><tr><th>Dataset</th><th>Total</th><th>Route</th><th>Hit</th><th>Fallback</th></tr></thead>
               <tbody>${datasetRows}</tbody>
             </table>
           </div>
         </div>
+      `;
+    }
+
+    function renderCompare(a, b) {
+      $("resultRoot").className = "";
+      $("resultRoot").innerHTML = `
+        <h2>A/B 비교</h2>
+        <div class="card" style="margin-bottom:12px">
+          <table>
+            <thead>
+              <tr><th>Pass</th><th>A Hit</th><th>A Fallback</th><th>A LLM</th><th>B Hit</th><th>B Delta</th><th>B Full</th><th>B LLM</th></tr>
+            </thead>
+            <tbody>
+              ${a.passes.map((ap, i) => {
+                const bp = b.passes[i];
+                const as = ap.summary;
+                const bs = bp.summary;
+                return `<tr>
+                  <td>${passLabel(ap.pass)}</td>
+                  <td>${as.cache_hits || 0}</td>
+                  <td>${as.fallbacks || 0}</td>
+                  <td>${as.llm_calls || 0}</td>
+                  <td>${bs.context_cache_hits || 0}</td>
+                  <td>${bs.delta_retrievals || 0}</td>
+                  <td>${bs.full_retrievals || 0}</td>
+                  <td>${bs.llm_calls || 0}</td>
+                </tr>`;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+        <div class="cards">${renderCards(a, "A")}${renderCards(b, "B")}</div>
       `;
     }
 
@@ -610,7 +649,9 @@
     });
     $("prepareBtn").addEventListener("click", prepareLongBench);
     $("seedBtn").addEventListener("click", seedPool);
-    $("runBtn").addEventListener("click", runATest);
+    $("runABtn").addEventListener("click", runA);
+    $("runBBtn").addEventListener("click", runB);
+    $("runABBtn").addEventListener("click", runAB);
     $("refreshBtn").addEventListener("click", async () => {
       setBusy(true, "통계 새로고침", "질문풀 상태를 확인합니다.");
       try {
