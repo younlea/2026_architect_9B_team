@@ -25,6 +25,13 @@ from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_moc
 from backend.cache.context_cache import clear_context_cache_for_source, run_context_cache_query
 from backend.db.database import init_db
 from load_longbench_dp3 import prepare_dp3_longbench
+from load_ragbench_dp3 import (
+    RAGBENCH_SUBSETS,
+    iter_ragbench_queries,
+    list_local_ragbench_datasets,
+    prepare_dp3_ragbench,
+    seed_ragbench_question_pool,
+)
 from run_dp3_answer_cache_longbench_batch import _run_pass, _sample_queries
 from seed_dp3_question_pool import DATA_DIR, seed_question_pool
 
@@ -61,8 +68,19 @@ class LongBenchPrepareRequest(BaseModel):
     reset_metadata: bool = False
 
 
+class RAGBenchPrepareRequest(BaseModel):
+    dataset_name: str = "techqa"
+    dataset_split: str = "test"
+    num_examples: int = 20
+    auto_download: bool = True
+    reset: bool = False
+    reset_metadata: bool = False
+
+
 class QuestionPoolSeedRequest(BaseModel):
+    dataset_family: str = "longbench"
     dataset: Optional[str] = None
+    dataset_split: str = "test"
     sample_rate: float = 0.10
     min_per_dataset: int = 5
     seed: int = 42
@@ -105,7 +123,9 @@ class ContextCacheBatchRequest(BaseModel):
 
 class TestSuiteRunRequest(BaseModel):
     test_case: str = "cache"
+    dataset_family: str = "longbench"
     dataset_name: str = "multifieldqa_en"
+    dataset_split: str = "test"
     num_examples: int = 5
     query_count: int = 100
     seed: int = 7
@@ -175,6 +195,27 @@ def prepare_longbench(body: LongBenchPrepareRequest):
     )
 
 
+@router.get("/ragbench/datasets")
+def list_ragbench_datasets():
+    local = list_local_ragbench_datasets()
+    return {
+        "available_subsets": list(RAGBENCH_SUBSETS),
+        **local,
+    }
+
+
+@router.post("/ragbench/prepare")
+def prepare_ragbench(body: RAGBenchPrepareRequest):
+    return prepare_dp3_ragbench(
+        subset=body.dataset_name,
+        split=body.dataset_split,
+        num_examples=body.num_examples,
+        auto_download=body.auto_download,
+        reset=body.reset,
+        reset_metadata=body.reset_metadata,
+    )
+
+
 @router.get("/question-pool/stats")
 def question_pool_stats():
     from backend.db.database import get_conn, init_db
@@ -200,6 +241,12 @@ def question_pool_stats():
 
 @router.post("/question-pool/seed")
 def seed_pool(body: QuestionPoolSeedRequest):
+    if body.dataset_family.strip().lower() == "ragbench":
+        return seed_ragbench_question_pool(
+            subset=body.dataset or "techqa",
+            split=body.dataset_split,
+            reset=body.reset,
+        )
     return seed_question_pool(
         dataset=body.dataset,
         sample_rate=body.sample_rate,
@@ -591,6 +638,13 @@ def _query_dataset_counts(queries: list[dict]) -> dict:
     return dict(Counter(item["dataset"] for item in queries))
 
 
+def _dataset_family(body: TestSuiteRunRequest) -> str:
+    family = (body.dataset_family or "longbench").strip().lower()
+    if family not in {"longbench", "ragbench"}:
+        raise ValueError(f"Unknown dataset_family: {body.dataset_family}")
+    return family
+
+
 def _summarize_a_detailed(results: list[dict]) -> dict:
     total = len(results)
     route_passed = sum(1 for row in results if row.get("routing_passed"))
@@ -654,6 +708,15 @@ def _summarize_no_cache(results: list[dict]) -> dict:
 
 
 def _prepare_suite_source(body: TestSuiteRunRequest, num_examples: int | None = None) -> dict:
+    if _dataset_family(body) == "ragbench":
+        return prepare_dp3_ragbench(
+            subset=body.dataset_name,
+            split=body.dataset_split,
+            num_examples=num_examples or body.num_examples,
+            auto_download=True,
+            reset=False,
+            reset_metadata=body.reset_metadata,
+        )
     return prepare_dp3_longbench(
         dataset_name=body.dataset_name,
         num_examples=num_examples or body.num_examples,
@@ -663,7 +726,26 @@ def _prepare_suite_source(body: TestSuiteRunRequest, num_examples: int | None = 
     )
 
 
+def _sample_ragbench_queries(dataset_name: str, split: str, count: int, seed: int) -> list[dict]:
+    queries = list(iter_ragbench_queries(dataset_name, split))
+    rng = random.Random(seed)
+    if count >= len(queries):
+        return queries
+    return sorted(rng.sample(queries, count), key=lambda item: (item["dataset"], item["index"]))
+
+
 def _suite_queries(body: TestSuiteRunRequest, count: int | None = None) -> list[dict]:
+    if _dataset_family(body) == "ragbench":
+        queries = _sample_ragbench_queries(
+            body.dataset_name,
+            body.dataset_split,
+            count or body.query_count,
+            body.seed,
+        )
+        if not queries:
+            raise RuntimeError("RAGBench 질문을 찾지 못했습니다. dataset 준비 상태를 확인하세요.")
+        return queries
+
     queries = _sample_queries(
         body.dataset_name,
         count or body.query_count,

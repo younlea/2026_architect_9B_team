@@ -292,8 +292,21 @@
 
       <div class="section">
         <h2>공용 옵션</h2>
-        <label for="dataset">LongBench Dataset</label>
+        <label for="datasetFamily">Dataset Family</label>
+        <select id="datasetFamily">
+          <option value="longbench">LongBench</option>
+          <option value="ragbench">RAGBench</option>
+        </select>
+
+        <label for="dataset">Dataset / Subset</label>
         <select id="dataset"></select>
+
+        <label for="datasetSplit">Dataset Split</label>
+        <select id="datasetSplit">
+          <option value="test">test</option>
+          <option value="validation">validation</option>
+          <option value="train">train</option>
+        </select>
 
         <div class="row">
           <div>
@@ -422,7 +435,7 @@
     const $ = (id) => document.getElementById(id);
     const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
     const controls = [
-      "testCase", "dataset", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
+      "testCase", "datasetFamily", "dataset", "datasetSplit", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
       "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
       "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "prepareBtn", "seedBtn",
       "runSuiteBtn", "refreshBtn"
@@ -467,6 +480,9 @@
     }
 
     function sourceId() {
+      if ($("datasetFamily").value === "ragbench") {
+        return `dp3_ragbench_${$("dataset").value}_${$("datasetSplit").value}_${Number($("numExamples").value)}`;
+      }
       return `dp3_longbench_${$("dataset").value}_${Number($("numExamples").value)}`;
     }
 
@@ -481,7 +497,9 @@
     function suitePayload() {
       return {
         test_case: $("testCase").value,
+        dataset_family: $("datasetFamily").value,
         dataset_name: $("dataset").value,
+        dataset_split: $("datasetSplit").value,
         num_examples: Number($("numExamples").value),
         query_count: Number($("queryCount").value),
         seed: Number($("seed").value),
@@ -500,6 +518,24 @@
     }
 
     async function loadDatasets() {
+      if ($("datasetFamily").value === "ragbench") {
+        const data = await api("/api/dp3/ragbench/datasets");
+        const localRows = Object.fromEntries(
+          (data.datasets || []).map((d) => [`${d.dataset}:${d.split}`, d.rows])
+        );
+        $("dataset").innerHTML = (data.available_subsets || ["techqa", "emanual"]).map((name) => {
+          const rows = localRows[`${name}:${$("datasetSplit").value}`];
+          return `<option value="${name}">${name}${rows ? ` (${rows})` : ""}</option>`;
+        }).join("");
+        const tc = $("testCase").value;
+        if (["mixed_timing", "similar_pair_quality"].includes(tc)) {
+          $("dataset").value = "emanual";
+        } else {
+          $("dataset").value = "techqa";
+        }
+        return;
+      }
+
       const data = await api("/api/dp3/longbench/datasets");
       $("dataset").innerHTML = data.datasets.map((d) =>
         `<option value="${d.dataset}">${d.dataset} (${d.rows})</option>`
@@ -516,19 +552,22 @@
     }
 
     async function prepareLongBench() {
-      setBusy(true, "LongBench 준비 중", "ROI-RAG EU와 versioned metadata를 준비합니다.");
+      const family = $("datasetFamily").value;
+      setBusy(true, `${family === "ragbench" ? "RAGBench" : "LongBench"} 준비 중`, "ROI-RAG EU와 versioned metadata를 준비합니다.");
       try {
-        const result = await api("/api/dp3/longbench/prepare", {
+        const path = family === "ragbench" ? "/api/dp3/ragbench/prepare" : "/api/dp3/longbench/prepare";
+        const result = await api(path, {
           method: "POST",
           body: JSON.stringify({
             dataset_name: $("dataset").value,
+            dataset_split: $("datasetSplit").value,
             num_examples: Number($("numExamples").value),
             auto_download: true,
             reset: false,
             reset_metadata: $("resetMetadata").checked
           })
         });
-        $("statusTitle").textContent = "LongBench 준비 완료";
+        $("statusTitle").textContent = `${family === "ragbench" ? "RAGBench" : "LongBench"} 준비 완료`;
         $("statusText").textContent = `${result.source_id}, EU ${result.context_unit_count}, version rows ${result.version_rows}`;
         renderLog(result);
       } catch (err) {
@@ -539,12 +578,15 @@
     }
 
     async function seedPool() {
-      setBusy(true, "질문풀 생성 중", "LongBench 질문/task에서 A안 routing pool을 seed합니다.");
+      const family = $("datasetFamily").value;
+      setBusy(true, "질문풀 생성 중", `${family === "ragbench" ? "RAGBench" : "LongBench"} 질문에서 A안 routing pool을 seed합니다.`);
       try {
         const result = await api("/api/dp3/question-pool/seed", {
           method: "POST",
           body: JSON.stringify({
-            dataset: null,
+            dataset_family: family,
+            dataset: family === "ragbench" ? $("dataset").value : null,
+            dataset_split: $("datasetSplit").value,
             sample_rate: threshold("sampleRate"),
             min_per_dataset: Number($("minPerDataset").value),
             seed: Number($("poolSeed").value),
@@ -554,7 +596,7 @@
         });
         await refreshStats();
         $("statusTitle").textContent = "질문풀 생성 완료";
-        $("statusText").textContent = `${result.total_questions}개 중 ${result.seeded_questions}개 seed`;
+        $("statusText").textContent = `${result.total_questions || result.seeded_questions || 0}개 중 ${result.seeded_questions}개 seed`;
         renderLog(result);
       } catch (err) {
         showError(err);
@@ -891,6 +933,15 @@
     ["sampleRate", "routeThreshold", "cacheThreshold", "testCase"].forEach((id) => {
       $(id).addEventListener("input", updateLabels);
       $(id).addEventListener("change", updateLabels);
+    });
+    ["datasetFamily", "datasetSplit", "testCase"].forEach((id) => {
+      $(id).addEventListener("change", async () => {
+        try {
+          await loadDatasets();
+        } catch (err) {
+          showError(err);
+        }
+      });
     });
     $("queryCount").addEventListener("input", () => {
       $("queryCount").dataset.userEdited = "true";

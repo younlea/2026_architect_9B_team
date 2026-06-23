@@ -13,6 +13,7 @@ src/data/poc.db
 src/data/chroma/
 src/data/longbench/
 src/data/longbench.zip
+src/data/ragbench/
 src/data/*.zip
 
 # 로그
