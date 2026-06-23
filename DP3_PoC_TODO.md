@@ -45,6 +45,12 @@ Cache가 될 때와 안 될 때의 평균 시간 비용 차이를 확인한다.
 
 - RAGBench 계열 데이터셋으로 전환하는 것을 목표로 한다.
 - 유사 질문이 충분히 포함된 query set을 사용한다.
+- TC2의 유사 질문은 pair가 아니라 set 단위로 구성한다.
+  - `same`
+  - `paraphrase`
+  - `near_miss`
+  - `random`
+- 기본 후보는 RAGBench `emanual`로 둔다.
 - scope A/B, version V1/V2/V3 요청을 섞는다.
 - LLM은 HTML에서 선택 가능하게 둔다.
 
@@ -89,6 +95,9 @@ B안이 유사질문에 강하다는 점을 품질과 함께 검증한다.
 #### 구성
 
 - cache에 걸릴 가능성이 높은 유사질문 pair를 여러 쌍 준비한다.
+- pair는 cache hit가 날 만큼 유사하지만 reference answer는 서로 달라야 한다.
+- TC4의 핵심은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 다른 답변을 생성할 수 있음을 보이는 것이다.
+- 기본 후보는 RAGBench `emanual`로 둔다.
 - A안, B안을 모두 LLM 포함 상태로 실행한다.
 - 생성 답변, 사용 context, reference answer를 저장한다.
 - RAGAS로 품질을 비교한다.
