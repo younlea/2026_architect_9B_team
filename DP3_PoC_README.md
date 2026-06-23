@@ -59,6 +59,14 @@ random
 
 TC4는 eManual test split에서 생성한 cache-hit pair를 사용한다. 현재 생성 기준으로 9개 pair, 총 18개 질문이 만들어진다. 각 pair는 질문 embedding 유사도가 높지만 reference answer가 서로 달라야 한다. TC4의 목적은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 답변을 다시 만들 수 있음을 확인하는 것이다.
 
+TC4 결과는 RAGAS 입력 JSONL로 변환할 수 있다. 실제 RAGAS 평가는 `ragas` 패키지와 evaluator LLM 설정이 있는 환경에서 `--evaluate` 옵션으로 수행한다.
+
+```powershell
+$env:PYTHONPATH='src'
+.\.venv311\Scripts\python.exe src\evaluate_dp3_tc4_ragas.py
+.\.venv311\Scripts\python.exe src\evaluate_dp3_tc4_ragas.py --evaluate
+```
+
 ### RAG 세부 단계
 
 현재 retrieval은 다음 단계로 측정한다.
