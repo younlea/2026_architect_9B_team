@@ -1,0 +1,144 @@
+{
+  "prompt_chars": 867,
+  "runs_per_model": 5,
+  "results": [
+    {
+      "model": "allam-2-7b",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 346.5,
+      "median_ms": 362.1,
+      "min_ms": 280.6,
+      "max_ms": 379.4,
+      "error_samples": []
+    },
+    {
+      "model": "groq/compound",
+      "ok": 2,
+      "errors": 3,
+      "avg_ms": 3333.8,
+      "median_ms": 3333.8,
+      "min_ms": 3332.2,
+      "max_ms": 3335.4,
+      "error_samples": [
+        "429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01kvt0q8gxf5bag2jkzhqtys7j` service tier `on_demand` on tokens per minute (TPM): Limit ",
+        "429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01kvt0q8gxf5bag2jkzhqtys7j` service tier `on_demand` on tokens per minute (TPM): Limit "
+      ]
+    },
+    {
+      "model": "groq/compound-mini",
+      "ok": 2,
+      "errors": 3,
+      "avg_ms": 1581.6,
+      "median_ms": 1581.6,
+      "min_ms": 1572.2,
+      "max_ms": 1591.0,
+      "error_samples": [
+        "429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01kvt0q8gxf5bag2jkzhqtys7j` service tier `on_demand` on tokens per minute (TPM): Limit ",
+        "429: {\"error\":{\"message\":\"Rate limit reached for model `openai/gpt-oss-120b` in organization `org_01kvt0q8gxf5bag2jkzhqtys7j` service tier `on_demand` on tokens per minute (TPM): Limit "
+      ]
+    },
+    {
+      "model": "llama-3.1-8b-instant",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 405.3,
+      "median_ms": 384.8,
+      "min_ms": 345.1,
+      "max_ms": 467.0,
+      "error_samples": []
+    },
+    {
+      "model": "llama-3.3-70b-versatile",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 546.6,
+      "median_ms": 466.6,
+      "min_ms": 458.8,
+      "max_ms": 675.5,
+      "error_samples": []
+    },
+    {
+      "model": "meta-llama/llama-4-scout-17b-16e-instruct",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 711.4,
+      "median_ms": 672.1,
+      "min_ms": 457.0,
+      "max_ms": 1062.7,
+      "error_samples": []
+    },
+    {
+      "model": "meta-llama/llama-prompt-guard-2-22m",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 346.0,
+      "median_ms": 361.4,
+      "min_ms": 308.5,
+      "max_ms": 379.4,
+      "error_samples": []
+    },
+    {
+      "model": "meta-llama/llama-prompt-guard-2-86m",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 340.0,
+      "median_ms": 351.4,
+      "min_ms": 282.4,
+      "max_ms": 365.9,
+      "error_samples": []
+    },
+    {
+      "model": "openai/gpt-oss-120b",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 778.0,
+      "median_ms": 779.4,
+      "min_ms": 700.2,
+      "max_ms": 862.1,
+      "error_samples": []
+    },
+    {
+      "model": "openai/gpt-oss-20b",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 1036.7,
+      "median_ms": 669.2,
+      "min_ms": 355.0,
+      "max_ms": 2050.8,
+      "error_samples": []
+    },
+    {
+      "model": "openai/gpt-oss-safeguard-20b",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 366.3,
+      "median_ms": 363.8,
+      "min_ms": 326.5,
+      "max_ms": 403.5,
+      "error_samples": []
+    },
+    {
+      "model": "qwen/qwen3-32b",
+      "ok": 4,
+      "errors": 1,
+      "avg_ms": 2001.8,
+      "median_ms": 976.1,
+      "min_ms": 568.2,
+      "max_ms": 5486.6,
+      "error_samples": [
+        "503: {\"error\":{\"message\":\"qwen/qwen3-32b is currently over capacity. Please try again and back off exponentially. Visit https://groqstatus.com to see if there is an active incident.\",\"t"
+      ]
+    },
+    {
+      "model": "qwen/qwen3.6-27b",
+      "ok": 5,
+      "errors": 0,
+      "avg_ms": 486.8,
+      "median_ms": 465.6,
+      "min_ms": 462.9,
+      "max_ms": 571.0,
+      "error_samples": []
+    }
+  ]
+}

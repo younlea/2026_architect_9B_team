@@ -267,6 +267,17 @@
       </div>
 
       <div class="section">
+        <h2>LLM 설정</h2>
+        <label for="llmOption">LLM</label>
+        <select id="llmOption">
+          <option value="mock">Mock</option>
+          <option value="llama-3.1-8b-instant">Llama 8B - llama-3.1-8b-instant</option>
+          <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
+          <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
+        </select>
+      </div>
+
+      <div class="section">
         <h2>질문풀</h2>
         <label for="sampleRate">필터링 질문풀 비율 <span id="sampleRateText" class="pill">10%</span></label>
         <input id="sampleRate" type="range" min="1" max="30" value="10">
@@ -330,6 +341,7 @@
     const controls = [
       "prepareBtn", "seedBtn", "runABtn", "runBBtn", "runABBtn", "refreshBtn",
       "dataset", "numExamples", "queryCount", "scope", "seed",
+      "llmOption",
       "sampleRate", "minPerDataset", "poolSeed",
       "routeThreshold", "cacheThreshold", "resetAnswerCache",
       "resetContextCache", "resetMetadata"
@@ -365,6 +377,14 @@
 
     function sourceId() {
       return `dp3_longbench_${$("dataset").value}_${Number($("numExamples").value)}`;
+    }
+
+    function llmPayload() {
+      const option = $("llmOption").value;
+      if (option === "mock") {
+        return { llm_provider: "mock", model: null };
+      }
+      return { llm_provider: "groq", model: option };
     }
 
     async function loadDatasets() {
@@ -439,6 +459,7 @@
         seed: Number($("seed").value),
         user_scope: $("scope").value,
         cache_threshold: threshold("cacheThreshold"),
+        ...llmPayload(),
         include_smoke: false
       };
     }
@@ -540,6 +561,11 @@
       return summary[key] || 0;
     }
 
+    function timing(summary, key) {
+      const value = summary.timing_avg_ms?.[key];
+      return Number.isFinite(value) ? `${value.toFixed(1)}ms` : "-";
+    }
+
     function renderCards(result, mode) {
       return result.passes.map((p) => {
         const s = p.summary;
@@ -554,6 +580,11 @@
             ${mode === "B" ? metric("Delta Retrieval", s.delta_retrievals || 0) : ""}
             ${mode === "B" ? metric("Full Retrieval", s.full_retrievals || 0) : metric("Fallback", s.fallbacks || 0)}
             ${metric("LLM Calls", s.llm_calls)}
+            ${metric("Avg Total", timing(s, "total_ms"))}
+            ${mode === "A" ? metric("Avg Setup", timing(s, "setup_ms")) : ""}
+            ${mode === "A" ? metric("Avg RAG", timing(s, "rag_total_ms")) : metric("Avg Full RAG", timing(s, "full_retrieval_total_ms"))}
+            ${mode === "B" ? metric("Avg Delta RAG", timing(s, "delta_retrieval_total_ms")) : ""}
+            ${metric("Avg LLM", timing(s, "llm_ms"))}
           </div>
         `;
       }).join("");
@@ -607,7 +638,7 @@
         <div class="card" style="margin-bottom:12px">
           <table>
             <thead>
-              <tr><th>Pass</th><th>A Hit</th><th>A Fallback</th><th>A LLM</th><th>B Hit</th><th>B Delta</th><th>B Full</th><th>B LLM</th></tr>
+              <tr><th>Pass</th><th>A Hit</th><th>A Fallback</th><th>A Total</th><th>A RAG</th><th>A LLM</th><th>B Hit</th><th>B Delta</th><th>B Full</th><th>B Total</th><th>B Full RAG</th><th>B LLM</th></tr>
             </thead>
             <tbody>
               ${a.passes.map((ap, i) => {
@@ -618,10 +649,14 @@
                   <td>${passLabel(ap.pass)}</td>
                   <td>${as.cache_hits || 0}</td>
                   <td>${as.fallbacks || 0}</td>
+                  <td>${timing(as, "total_ms")}</td>
+                  <td>${timing(as, "rag_total_ms")}</td>
                   <td>${as.llm_calls || 0}</td>
                   <td>${bs.context_cache_hits || 0}</td>
                   <td>${bs.delta_retrievals || 0}</td>
                   <td>${bs.full_retrievals || 0}</td>
+                  <td>${timing(bs, "total_ms")}</td>
+                  <td>${timing(bs, "full_retrieval_total_ms")}</td>
                   <td>${bs.llm_calls || 0}</td>
                 </tr>`;
               }).join("")}

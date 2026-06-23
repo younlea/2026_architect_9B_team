@@ -58,6 +58,58 @@ def _sample_queries(dataset: str | None, count: int, seed: int, include_smoke: b
     return sorted(rng.sample(queries, count), key=lambda item: (item["dataset"], item["index"]))
 
 
+def _avg(values: list[float]) -> float | None:
+    if not values:
+        return None
+    return round(sum(values) / len(values), 3)
+
+
+def _timing_value(row: dict, key: str) -> float | None:
+    timings = row.get("timings_ms") or {}
+    value = timings.get(key)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _timing_summary(results: list[dict]) -> dict:
+    keys = [
+        "setup_ms",
+        "embedding_ms",
+        "route_ms",
+        "cache_lookup_ms",
+        "validation_ms",
+        "rag_db_ms",
+        "rag_scoring_ms",
+        "rag_rerank_ms",
+        "rag_total_ms",
+        "prompt_build_ms",
+        "llm_ms",
+        "cache_store_ms",
+        "total_ms",
+    ]
+    summary = {}
+    for key in keys:
+        values = [
+            value for value in (_timing_value(row, key) for row in results)
+            if value is not None
+        ]
+        if values:
+            summary[key] = _avg(values)
+
+    hit_rows = [row for row in results if row.get("cache_hit")]
+    rag_rows = [row for row in results if row.get("roi_rag_called")]
+    summary["hit_total_ms"] = _avg([
+        value for value in (_timing_value(row, "total_ms") for row in hit_rows)
+        if value is not None
+    ])
+    summary["rag_total_request_ms"] = _avg([
+        value for value in (_timing_value(row, "total_ms") for row in rag_rows)
+        if value is not None
+    ])
+    return summary
+
+
 def _summarize(results: list[dict]) -> dict:
     by_reason = Counter(r.get("decision_reason", "unknown") for r in results)
     by_dataset = {}
@@ -85,6 +137,7 @@ def _summarize(results: list[dict]) -> dict:
         "validation_passed": sum(1 for r in results if r.get("validation_passed")),
         "fallbacks": sum(1 for r in results if r.get("roi_rag_called")),
         "llm_calls": sum(int(r.get("llm_call_count", 0)) for r in results),
+        "timing_avg_ms": _timing_summary(results),
         "decision_reasons": dict(by_reason),
         "by_dataset": by_dataset,
     }
@@ -98,6 +151,8 @@ def _run_pass(
     requested_version: str,
     route_threshold: float,
     cache_threshold: float,
+    llm_provider: str | None = None,
+    model: str | None = None,
 ) -> dict:
     results = []
     for item in queries:
@@ -106,6 +161,8 @@ def _run_pass(
             query=item["query"],
             user_scope=user_scope,
             requested_version=requested_version,
+            model=model,
+            llm_provider=llm_provider,
             route_threshold=route_threshold,
             cache_threshold=cache_threshold,
         )
@@ -125,6 +182,8 @@ def main():
     parser.add_argument("--scope", default="A")
     parser.add_argument("--route-threshold", type=float, default=0.70)
     parser.add_argument("--cache-threshold", type=float, default=0.86)
+    parser.add_argument("--llm-provider", default=None, choices=[None, "mock", "groq", "default"])
+    parser.add_argument("--model", default=None)
     parser.add_argument("--include-smoke", action="store_true")
     args = parser.parse_args()
 
@@ -143,6 +202,8 @@ def main():
             "V1",
             args.route_threshold,
             args.cache_threshold,
+            args.llm_provider,
+            args.model,
         ),
         _run_pass(
             "v1_repeat",
@@ -152,6 +213,8 @@ def main():
             "V1",
             args.route_threshold,
             args.cache_threshold,
+            args.llm_provider,
+            args.model,
         ),
         _run_pass(
             "v2_validation",
@@ -161,6 +224,8 @@ def main():
             "V2",
             args.route_threshold,
             args.cache_threshold,
+            args.llm_provider,
+            args.model,
         ),
     ]
 

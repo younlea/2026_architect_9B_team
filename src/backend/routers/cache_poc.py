@@ -26,6 +26,7 @@ class AnswerCacheRunRequest(BaseModel):
     user_scope: str = "A"
     requested_version: Optional[str] = None
     model: Optional[str] = None
+    llm_provider: Optional[str] = None
     route_threshold: float = 0.70
     cache_threshold: float = 0.86
 
@@ -55,6 +56,8 @@ class AnswerCacheBatchRequest(BaseModel):
     user_scope: str = "A"
     route_threshold: float = 0.70
     cache_threshold: float = 0.86
+    llm_provider: Optional[str] = None
+    model: Optional[str] = None
     include_smoke: bool = False
     reset_cache: bool = True
 
@@ -66,6 +69,8 @@ class ContextCacheBatchRequest(BaseModel):
     seed: int = 7
     user_scope: str = "A"
     cache_threshold: float = 0.86
+    llm_provider: Optional[str] = None
+    model: Optional[str] = None
     include_smoke: bool = False
     reset_cache: bool = True
 
@@ -83,6 +88,7 @@ def run_answer_cache(body: AnswerCacheRunRequest):
         user_scope=body.user_scope,
         requested_version=body.requested_version,
         model=body.model,
+        llm_provider=body.llm_provider,
         route_threshold=body.route_threshold,
         cache_threshold=body.cache_threshold,
     )
@@ -173,6 +179,8 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
             "V1",
             body.route_threshold,
             body.cache_threshold,
+            body.llm_provider,
+            body.model,
         ),
         _run_pass(
             "v1_repeat",
@@ -182,6 +190,8 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
             "V1",
             body.route_threshold,
             body.cache_threshold,
+            body.llm_provider,
+            body.model,
         ),
         _run_pass(
             "v2_validation",
@@ -191,6 +201,8 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
             "V2",
             body.route_threshold,
             body.cache_threshold,
+            body.llm_provider,
+            body.model,
         ),
     ]
     return {
@@ -205,6 +217,70 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
 
 def _summarize_context_results(results: list[dict]) -> dict:
     from collections import Counter
+
+    def avg(values: list[float]) -> float | None:
+        if not values:
+            return None
+        return round(sum(values) / len(values), 3)
+
+    def timing_value(row: dict, key: str) -> float | None:
+        value = (row.get("timings_ms") or {}).get(key)
+        if value is None:
+            return None
+        return float(value)
+
+    def timing_summary() -> dict:
+        keys = [
+            "embedding_ms",
+            "cache_lookup_db_ms",
+            "cache_lookup_scoring_ms",
+            "cache_lookup_ms",
+            "validation_ms",
+            "valid_current_lookup_ms",
+            "delta_retrieval_db_ms",
+            "delta_retrieval_scoring_ms",
+            "delta_retrieval_rerank_ms",
+            "delta_retrieval_filter_ms",
+            "delta_retrieval_total_ms",
+            "full_retrieval_db_ms",
+            "full_retrieval_scoring_ms",
+            "full_retrieval_rerank_ms",
+            "full_retrieval_total_ms",
+            "prompt_build_ms",
+            "llm_ms",
+            "cache_store_ms",
+            "total_ms",
+        ]
+        summary = {}
+        for key in keys:
+            values = [
+                value for value in (timing_value(row, key) for row in results)
+                if value is not None
+            ]
+            if values:
+                summary[key] = avg(values)
+
+        hit_rows = [row for row in results if row.get("cache_hit")]
+        retrieval_rows = [row for row in results if row.get("retrieval_called")]
+        full_rows = [row for row in results if row.get("full_retrieval")]
+        delta_rows = [row for row in results if int(row.get("delta_retrieval_count", 0)) > 0]
+        summary["hit_total_ms"] = avg([
+            value for value in (timing_value(row, "total_ms") for row in hit_rows)
+            if value is not None
+        ])
+        summary["retrieval_total_request_ms"] = avg([
+            value for value in (timing_value(row, "total_ms") for row in retrieval_rows)
+            if value is not None
+        ])
+        summary["full_retrieval_total_request_ms"] = avg([
+            value for value in (timing_value(row, "total_ms") for row in full_rows)
+            if value is not None
+        ])
+        summary["delta_retrieval_total_request_ms"] = avg([
+            value for value in (timing_value(row, "total_ms") for row in delta_rows)
+            if value is not None
+        ])
+        return summary
 
     by_reason = Counter(r.get("decision_reason", "unknown") for r in results)
     by_dataset = {}
@@ -232,6 +308,7 @@ def _summarize_context_results(results: list[dict]) -> dict:
         "full_retrievals": sum(1 for r in results if r.get("full_retrieval")),
         "fallbacks": sum(1 for r in results if r.get("full_retrieval")),
         "llm_calls": sum(int(r.get("llm_call_count", 0)) for r in results),
+        "timing_avg_ms": timing_summary(),
         "decision_reasons": dict(by_reason),
         "by_dataset": by_dataset,
     }
@@ -244,6 +321,8 @@ def _run_context_pass(
     user_scope: str,
     requested_version: str,
     cache_threshold: float,
+    llm_provider: str | None,
+    model: str | None,
 ) -> dict:
     results = []
     for item in queries:
@@ -252,6 +331,8 @@ def _run_context_pass(
             query=item["query"],
             user_scope=user_scope,
             requested_version=requested_version,
+            model=model,
+            llm_provider=llm_provider,
             cache_threshold=cache_threshold,
         )
         result["query_id"] = item["query_id"]
@@ -279,6 +360,8 @@ def run_context_cache_batch(body: ContextCacheBatchRequest):
             body.user_scope,
             "V1",
             body.cache_threshold,
+            body.llm_provider,
+            body.model,
         ),
         _run_context_pass(
             "v1_repeat",
@@ -287,6 +370,8 @@ def run_context_cache_batch(body: ContextCacheBatchRequest):
             body.user_scope,
             "V1",
             body.cache_threshold,
+            body.llm_provider,
+            body.model,
         ),
         _run_context_pass(
             "v2_validation",
@@ -295,6 +380,8 @@ def run_context_cache_batch(body: ContextCacheBatchRequest):
             body.user_scope,
             "V2",
             body.cache_threshold,
+            body.llm_provider,
+            body.model,
         ),
     ]
     return {

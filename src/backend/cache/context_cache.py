@@ -10,11 +10,15 @@ from backend.cache.answer_cache import (
     _embed,
     _embedding_from_json,
     _embedding_to_json,
+    _elapsed_ms,
     _retrieve_context_units,
+    _set_timing,
+    _set_total_ms,
+    _timer,
     init_dp3_cache_schema,
     validate_eu,
 )
-from backend.cache.cache_llm import get_dp3_answer, is_mock_llm
+from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
 from backend.db.database import get_conn
 
 
@@ -132,8 +136,10 @@ def _store_context_cache(
 def _find_context_cache_candidate(
     user_scope: str,
     query_embedding: list[float],
+    timing: dict | None = None,
 ) -> dict | None:
     init_context_cache_schema()
+    db_start = _timer()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT context_cache_id, anchor_query_text, anchor_query_embedding_json,
@@ -142,13 +148,20 @@ def _find_context_cache_candidate(
                WHERE scope=?""",
             (user_scope,),
         ).fetchall()
+    if timing is not None:
+        timing["db_ms"] = _elapsed_ms(db_start)
+        timing["candidate_count"] = len(rows)
 
+    scoring_start = _timer()
     best = None
     for row in rows:
         score = _cosine(query_embedding, _embedding_from_json(row["anchor_query_embedding_json"]))
         if best is None or score > best["cache_similarity_score"]:
             best = dict(row)
             best["cache_similarity_score"] = round(score, 4)
+    if timing is not None:
+        timing["scoring_ms"] = _elapsed_ms(scoring_start)
+        timing["total_ms"] = round(timing.get("db_ms", 0.0) + timing["scoring_ms"], 3)
     return best
 
 
@@ -237,13 +250,16 @@ def _delta_retrieve(
     invalid_logical_ids = {s["logical_eu_id"] for s in invalid_sources}
     excluded = valid_logical_ids | invalid_logical_ids
 
+    retrieval_timing = {}
     candidates = _retrieve_context_units(
         source_id,
         query_embedding,
         user_scope,
         requested_version,
         top_k=candidate_count,
+        timing=retrieval_timing,
     )
+    filter_start = _timer()
     replacements = []
     seen = set()
     for candidate in candidates:
@@ -254,12 +270,20 @@ def _delta_retrieve(
         seen.add(logical_id)
         if len(replacements) >= needed:
             break
+    filter_ms = _elapsed_ms(filter_start)
 
     return {
         "needed": needed,
         "candidate_count": candidate_count,
         "replacement_count": len(replacements),
         "replacements": replacements,
+        "timing": {
+            "db_ms": retrieval_timing.get("db_ms", 0.0),
+            "scoring_ms": retrieval_timing.get("scoring_ms", 0.0),
+            "rerank_ms": retrieval_timing.get("rerank_ms", 0.0),
+            "filter_ms": filter_ms,
+            "total_ms": round(retrieval_timing.get("total_ms", 0.0) + filter_ms, 3),
+        },
     }
 
 
@@ -298,11 +322,20 @@ def _generate_and_store(
     user_scope: str,
     requested_version: str,
     model: str | None,
+    llm_provider: str | None,
     log: dict,
     start: float,
 ) -> dict:
+    prompt_start = _timer()
     context_pack = _context_pack_text(sources)
-    answer = get_dp3_answer(_build_prompt(query, sources), model)
+    prompt = _build_prompt(query, sources)
+    _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
+
+    llm_start = _timer()
+    answer = get_dp3_answer(prompt, model, llm_provider)
+    _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
+
+    store_start = _timer()
     context_cache_id = _store_context_cache(
         query,
         query_embedding,
@@ -311,13 +344,14 @@ def _generate_and_store(
         requested_version,
         sources,
     )
+    _set_timing(log, "cache_store_ms", _elapsed_ms(store_start))
     log.update({
         "context_cache_id": context_cache_id,
         "context_source_count": len(sources),
         "answer": answer,
         "llm_call_count": 1,
-        "total_ms": int((time.time() - start) * 1000),
     })
+    _set_total_ms(log, start)
     _store_context_log(source_id, query, log)
     return log
 
@@ -329,16 +363,24 @@ def _full_retrieval_and_store(
     user_scope: str,
     requested_version: str,
     model: str | None,
+    llm_provider: str | None,
     log: dict,
     start: float,
 ) -> dict:
+    retrieval_timing = {}
     sources = _retrieve_context_units(
         source_id,
         query_embedding,
         user_scope,
         requested_version,
         top_k=TOP_K_SOURCES,
+        timing=retrieval_timing,
     )
+    for key, value in retrieval_timing.items():
+        if key.endswith("_ms"):
+            _set_timing(log, f"full_retrieval_{key}", value)
+    log["full_retrieval_candidate_count"] = retrieval_timing.get("candidate_count", 0)
+    log["full_retrieval_top_k"] = retrieval_timing.get("top_k", len(sources))
     log.update({
         "cache_hit": False,
         "validation_passed": False,
@@ -354,6 +396,7 @@ def _full_retrieval_and_store(
         user_scope,
         requested_version,
         model,
+        llm_provider,
         log,
         start,
     )
@@ -365,11 +408,14 @@ def run_context_cache_query(
     user_scope: str = "A",
     requested_version: str = "V1",
     model: str | None = None,
+    llm_provider: str | None = None,
     cache_threshold: float = DEFAULT_CACHE_THRESHOLD,
 ) -> dict:
-    start = time.time()
+    start = _timer()
     init_context_cache_schema()
+    embedding_start = _timer()
     query_embedding = _embed(query)
+    embedding_ms = _elapsed_ms(embedding_start)
 
     log = {
         "mode": "incremental_context_cache",
@@ -380,14 +426,26 @@ def run_context_cache_query(
         "cache_threshold": cache_threshold,
         "cache_hit": False,
         "validation_passed": False,
-        "llm_mocked": is_mock_llm(),
+        "llm_provider": get_dp3_llm_provider(llm_provider),
+        "llm_model": model,
+        "llm_mocked": is_mock_llm(llm_provider),
         "llm_call_count": 0,
         "retrieval_called": False,
         "delta_retrieval_count": 0,
         "full_retrieval": False,
     }
+    _set_timing(log, "embedding_ms", embedding_ms)
 
-    candidate = _find_context_cache_candidate(user_scope, query_embedding)
+    cache_lookup_timing = {}
+    candidate = _find_context_cache_candidate(
+        user_scope,
+        query_embedding,
+        timing=cache_lookup_timing,
+    )
+    _set_timing(log, "cache_lookup_db_ms", cache_lookup_timing.get("db_ms", 0))
+    _set_timing(log, "cache_lookup_scoring_ms", cache_lookup_timing.get("scoring_ms", 0))
+    _set_timing(log, "cache_lookup_ms", cache_lookup_timing.get("total_ms", 0))
+    log["cache_lookup_candidate_count"] = cache_lookup_timing.get("candidate_count", 0)
     if not candidate:
         log["decision_reason"] = "context_cache_candidate_not_found_full_fallback"
         return _full_retrieval_and_store(
@@ -397,6 +455,7 @@ def run_context_cache_query(
             user_scope,
             requested_version,
             model,
+            llm_provider,
             log,
             start,
         )
@@ -415,15 +474,18 @@ def run_context_cache_query(
             user_scope,
             requested_version,
             model,
+            llm_provider,
             log,
             start,
         )
 
+    validation_start = _timer()
     validation = _validate_context_sources(
         candidate["context_cache_id"],
         user_scope,
         requested_version,
     )
+    _set_timing(log, "validation_ms", _elapsed_ms(validation_start))
     log["source_validation"] = {
         "source_count": validation["source_count"],
         "invalid_count": validation["invalid_count"],
@@ -437,18 +499,24 @@ def run_context_cache_query(
     }
 
     if validation["valid"]:
+        prompt_start = _timer()
+        prompt = f"{candidate['context_pack_text']}\n\n[Question]\n{query}\n\n[Answer]"
+        _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
+        llm_start = _timer()
         answer = get_dp3_answer(
-            f"{candidate['context_pack_text']}\n\n[Question]\n{query}\n\n[Answer]",
+            prompt,
             model,
+            llm_provider,
         )
+        _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
         log.update({
             "cache_hit": True,
             "validation_passed": True,
             "decision_reason": "context_cache_hit_all_valid",
             "answer": answer,
             "llm_call_count": 1,
-            "total_ms": int((time.time() - start) * 1000),
         })
+        _set_total_ms(log, start)
         _store_context_log(source_id, query, log)
         return log
 
@@ -463,15 +531,18 @@ def run_context_cache_query(
             user_scope,
             requested_version,
             model,
+            llm_provider,
             log,
             start,
         )
 
+    current_units_start = _timer()
     valid_current = _current_units_for_sources(
         validation["valid_sources"],
         user_scope,
         requested_version,
     )
+    _set_timing(log, "valid_current_lookup_ms", _elapsed_ms(current_units_start))
     delta = _delta_retrieve(
         source_id,
         query_embedding,
@@ -485,6 +556,8 @@ def run_context_cache_query(
         "candidate_count": delta["candidate_count"],
         "replacement_count": delta["replacement_count"],
     }
+    for key, value in delta.get("timing", {}).items():
+        _set_timing(log, f"delta_retrieval_{key}", value)
 
     if len(valid_current) != len(validation["valid_sources"]) or delta["replacement_count"] < delta["needed"]:
         log["decision_reason"] = "context_cache_delta_insufficient_full_fallback"
@@ -495,6 +568,7 @@ def run_context_cache_query(
             user_scope,
             requested_version,
             model,
+            llm_provider,
             log,
             start,
         )
@@ -516,6 +590,7 @@ def run_context_cache_query(
         user_scope,
         requested_version,
         model,
+        llm_provider,
         log,
         start,
     )

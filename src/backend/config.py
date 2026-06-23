@@ -1,4 +1,5 @@
 import os
+
 try:
     from dotenv import load_dotenv
 except ModuleNotFoundError:
@@ -7,12 +8,34 @@ except ModuleNotFoundError:
 
 load_dotenv()
 
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-LLM_PROVIDER = os.getenv("LLM_PROVIDER", "openai")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3")
-EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
-CHROMA_PERSIST_DIR = os.getenv("CHROMA_PERSIST_DIR", "./data/chroma")
-SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "./data/poc.db")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-DP3_MOCK_LLM = os.getenv("DP3_MOCK_LLM", "true")
+
+def _windows_user_env(name: str) -> str | None:
+    if os.name != "nt":
+        return None
+    try:
+        import winreg
+
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as key:
+            value, _ = winreg.QueryValueEx(key, name)
+            return value
+    except OSError:
+        return None
+
+
+def _env(name: str, default: str = "") -> str:
+    return os.getenv(name) or _windows_user_env(name) or default
+
+
+OPENAI_API_KEY = _env("OPENAI_API_KEY")
+LLM_PROVIDER = _env("LLM_PROVIDER", "openai")
+OLLAMA_BASE_URL = _env("OLLAMA_BASE_URL", "http://localhost:11434")
+OLLAMA_MODEL = _env("OLLAMA_MODEL", "llama3")
+EMBEDDING_MODEL = _env("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
+CHROMA_PERSIST_DIR = _env("CHROMA_PERSIST_DIR", "./data/chroma")
+SQLITE_DB_PATH = _env("SQLITE_DB_PATH", "./data/poc.db")
+OPENAI_MODEL = _env("OPENAI_MODEL", "gpt-4o-mini")
+DP3_MOCK_LLM = _env("DP3_MOCK_LLM", "true")
+DP3_LLM_PROVIDER = _env("DP3_LLM_PROVIDER")
+GROQ_API_KEY = _env("GROQ_API_KEY")
+GROQ_BASE_URL = _env("GROQ_BASE_URL", "https://api.groq.com/openai/v1")
+GROQ_MODEL = _env("GROQ_MODEL", "llama-3.1-8b-instant")

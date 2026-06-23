@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Optional
 
-from backend.cache.cache_llm import get_dp3_answer, is_mock_llm
+from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
 from backend.db.database import get_conn, get_thread_text
 
 DEFAULT_ROUTES = [
@@ -138,6 +138,26 @@ def _ensure_dp3_schema_migrations(conn) -> None:
     }
     if "versioned_eu_id" not in columns:
         conn.execute("ALTER TABLE dp3_answer_cache_sources ADD COLUMN versioned_eu_id TEXT")
+
+
+def _timer() -> float:
+    return time.perf_counter()
+
+
+def _elapsed_ms(start: float) -> float:
+    return round((time.perf_counter() - start) * 1000, 3)
+
+
+def _set_timing(log: dict, key: str, value: float | int | None) -> None:
+    if value is None:
+        return
+    log.setdefault("timings_ms", {})[key] = round(float(value), 3)
+
+
+def _set_total_ms(log: dict, start: float) -> None:
+    total = _elapsed_ms(start)
+    _set_timing(log, "total_ms", total)
+    log["total_ms"] = int(round(total))
 
 
 def _chunk_text(text: str, chunk_size: int = 512, overlap: int = 80) -> list[str]:
@@ -500,8 +520,10 @@ def _retrieve_context_units(
     user_scope: str,
     requested_version: str,
     top_k: int = TOP_K_SOURCES,
+    timing: dict | None = None,
 ) -> list[dict]:
     init_dp3_cache_schema()
+    db_start = _timer()
     with get_conn() as conn:
         rows = conn.execute(
             """SELECT logical_eu_id, versioned_eu_id, version, fingerprint, scope, text, embedding_json
@@ -516,14 +538,33 @@ def _retrieve_context_units(
                    WHERE source_example_id=? AND version=? AND scope=?""",
                 (thread_id, requested_version, user_scope),
             ).fetchall()
+    if timing is not None:
+        timing["db_ms"] = _elapsed_ms(db_start)
+        timing["candidate_count"] = len(rows)
+
+    scoring_start = _timer()
     scored = []
     for row in rows:
         score = _cosine(query_embedding, _embedding_from_json(row["embedding_json"]))
         item = dict(row)
         item["score"] = round(score, 4)
         scored.append(item)
+    if timing is not None:
+        timing["scoring_ms"] = _elapsed_ms(scoring_start)
+
+    rerank_start = _timer()
     scored.sort(key=lambda item: item["score"], reverse=True)
-    return scored[:top_k]
+    result = scored[:top_k]
+    if timing is not None:
+        timing["rerank_ms"] = _elapsed_ms(rerank_start)
+        timing["total_ms"] = round(
+            timing.get("db_ms", 0.0)
+            + timing.get("scoring_ms", 0.0)
+            + timing.get("rerank_ms", 0.0),
+            3,
+        )
+        timing["top_k"] = len(result)
+    return result
 
 
 def _build_prompt(query: str, sources: list[dict]) -> str:
@@ -615,18 +656,25 @@ def run_answer_cache_query(
     user_scope: str = "A",
     requested_version: Optional[str] = None,
     model: str = None,
+    llm_provider: str | None = None,
     route_threshold: float = DEFAULT_ROUTE_THRESHOLD,
     cache_threshold: float = DEFAULT_CACHE_THRESHOLD,
 ) -> dict:
-    start = time.time()
+    start = _timer()
+    setup_start = _timer()
     setup_context_units_from_thread(thread_id, reset=False)
     seed_answerable_question_pool(reset=False)
+    setup_ms = _elapsed_ms(setup_start)
 
     requested_version = requested_version or _parse_requested_version(query)
+    embedding_start = _timer()
     query_embedding_list = _embed(query)
     query_embedding = query_embedding_list
+    embedding_ms = _elapsed_ms(embedding_start)
 
+    route_start = _timer()
     route = _find_route(query_embedding)
+    route_ms = _elapsed_ms(route_start)
     routing_passed = bool(route["route_id"]) and route["embedding_score"] >= route_threshold
 
     log = {
@@ -642,10 +690,15 @@ def run_answer_cache_query(
         "cache_threshold": cache_threshold,
         "cache_hit": False,
         "validation_passed": False,
-        "llm_mocked": is_mock_llm(),
+        "llm_provider": get_dp3_llm_provider(llm_provider),
+        "llm_model": model,
+        "llm_mocked": is_mock_llm(llm_provider),
         "llm_call_count": 0,
         "roi_rag_called": False,
     }
+    _set_timing(log, "setup_ms", setup_ms)
+    _set_timing(log, "embedding_ms", embedding_ms)
+    _set_timing(log, "route_ms", route_ms)
 
     if not routing_passed:
         log["decision_reason"] = "embedding_score_below_threshold"
@@ -658,28 +711,35 @@ def run_answer_cache_query(
             requested_version,
             route["route_id"] or "unrouted",
             model,
+            llm_provider,
             log,
+            start=start,
         )
         return result
 
+    cache_lookup_start = _timer()
     candidates = _find_cache_candidates(
         route["route_id"],
         user_scope,
         query_embedding,
         requested_version,
     )
+    _set_timing(log, "cache_lookup_ms", _elapsed_ms(cache_lookup_start))
     above_threshold = [
         candidate for candidate in candidates
         if candidate["cache_similarity_score"] >= cache_threshold
     ]
     invalid_candidates = []
 
+    validation_total_ms = 0.0
     for candidate in above_threshold:
+        validation_start = _timer()
         validation = _validate_cache_sources(
             candidate["cache_id"],
             user_scope,
             requested_version,
         )
+        validation_total_ms += _elapsed_ms(validation_start)
         log.update({
             "cache_candidate_id": candidate["cache_id"],
             "cache_similarity_score": candidate["cache_similarity_score"],
@@ -691,8 +751,9 @@ def run_answer_cache_query(
                 "validation_passed": True,
                 "decision_reason": "answer_cache_hit_valid",
                 "answer": candidate["answer_text"],
-                "total_ms": int((time.time() - start) * 1000),
             })
+            _set_timing(log, "validation_ms", validation_total_ms)
+            _set_total_ms(log, start)
             _store_log(thread_id, query, log)
             return log
         invalid_candidates.append({
@@ -703,9 +764,11 @@ def run_answer_cache_query(
         })
 
     if invalid_candidates:
+        _set_timing(log, "validation_ms", validation_total_ms)
         log["invalid_cache_candidates"] = invalid_candidates
         log["decision_reason"] = "cache_candidates_invalid_fallback_to_roi_rag"
     else:
+        _set_timing(log, "validation_ms", validation_total_ms)
         best_candidate = candidates[0] if candidates else None
         log["cache_candidate_id"] = best_candidate["cache_id"] if best_candidate else None
         log["cache_similarity_score"] = (
@@ -722,6 +785,7 @@ def run_answer_cache_query(
         requested_version,
         route["route_id"],
         model,
+        llm_provider,
         log,
         start=start,
     )
@@ -736,13 +800,34 @@ def _fallback_and_store(
     requested_version: str,
     route_id: str,
     model: str,
+    llm_provider: str | None,
     log: dict,
     start: float = None,
 ) -> dict:
-    start = start or time.time()
-    sources = _retrieve_context_units(thread_id, query_embedding, user_scope, requested_version)
+    start = start or _timer()
+    rag_timing = {}
+    sources = _retrieve_context_units(
+        thread_id,
+        query_embedding,
+        user_scope,
+        requested_version,
+        timing=rag_timing,
+    )
+    for key, value in rag_timing.items():
+        if key.endswith("_ms"):
+            _set_timing(log, f"rag_{key}", value)
+    log["rag_candidate_count"] = rag_timing.get("candidate_count", 0)
+    log["rag_top_k"] = rag_timing.get("top_k", len(sources))
+
+    prompt_start = _timer()
     prompt = _build_prompt(query, sources)
-    answer = get_dp3_answer(prompt, model)
+    _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
+
+    llm_start = _timer()
+    answer = get_dp3_answer(prompt, model, llm_provider)
+    _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
+
+    store_start = _timer()
     cache_id = _store_answer_cache(
         route_id=route_id,
         query=query,
@@ -752,6 +837,7 @@ def _fallback_and_store(
         cache_version=requested_version,
         sources=sources,
     )
+    _set_timing(log, "cache_store_ms", _elapsed_ms(store_start))
     log.update({
         "cache_hit": False,
         "validation_passed": False,
@@ -771,7 +857,7 @@ def _fallback_and_store(
         ],
         "llm_call_count": 1,
         "roi_rag_called": True,
-        "total_ms": int((time.time() - start) * 1000),
     })
+    _set_total_ms(log, start)
     _store_log(thread_id, query, log)
     return log

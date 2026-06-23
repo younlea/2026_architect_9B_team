@@ -59,6 +59,7 @@ DP3 PoC는 기본적으로 mock LLM을 사용한다.
 
 ```text
 DP3_MOCK_LLM=true
+DP3_LLM_PROVIDER=mock
 SQLITE_DB_PATH=./data/poc.db
 EMBEDDING_MODEL=all-MiniLM-L6-v2
 ```
@@ -67,7 +68,30 @@ EMBEDDING_MODEL=all-MiniLM-L6-v2
 
 ```text
 DP3_MOCK_LLM=false
+DP3_LLM_PROVIDER=default
 ```
+
+Groq API를 사용할 경우 서버 환경에 다음 값을 설정한다. Groq는 OpenAI-compatible endpoint를 사용한다.
+
+```text
+DP3_LLM_PROVIDER=groq
+GROQ_API_KEY=your_groq_api_key_here
+GROQ_BASE_URL=https://api.groq.com/openai/v1
+GROQ_MODEL=llama-3.1-8b-instant
+```
+
+웹 UI의 `LLM 설정`에서 Mock 또는 Groq 모델을 선택할 수 있다. API key는 브라우저에 입력하지 않고 서버의 `.env` 또는 환경 변수에만 둔다.
+
+현재 UI의 LLM 선택지는 다음 네 가지다.
+
+```text
+Mock
+Llama 8B - llama-3.1-8b-instant
+Llama 70B - llama-3.3-70b-versatile
+Qwen 27B - qwen/qwen3.6-27b
+```
+
+기본값은 `Mock`이다. 실제 Groq latency를 측정할 때는 `Llama 8B - llama-3.1-8b-instant`를 우선 사용한다.
 
 ## 5. 서버 실행
 
@@ -183,4 +207,3 @@ src/data/poc.db
 - 질문풀이 LongBench 전체 질문의 일부 샘플이므로, 최종 실험 전에는 sampling 비율과 seed를 고정해야 한다.
 
 추가 작업 목록은 `DP3_PoC_TODO.md`를 참고한다.
-
