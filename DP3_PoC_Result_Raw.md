@@ -90,3 +90,44 @@ Groq의 `llama-3.1-8b-instant` TPM 제한이 6,000 tokens/minute이므로, 요�
 - 긴 프롬프트에서도 개별 응답 시간 자체는 대체로 1초 내외로 관측되었지만, throughput은 응답 시간이 아니라 TPM 제한에 의해 결정된다.
 - `llama-3.1-8b-instant`의 6,000 TPM 조건에서는 5.5K tokens급 요청을 안정적으로 보내려면 65~70초 간격이 더 안전하다.
 - DP3 대량 테스트에서는 mock LLM을 사용하고, Groq는 대표 샘플 검증 또는 소규모 latency 확인에 사용하는 편이 현실적이다.
+
+## 5. DP3 Test Case Mock Smoke
+
+RAGBench 전환 후 TC1, TC2, TC3 runner가 정상 동작하는지 mock LLM으로 smoke 실행했다. 이 결과는 기능 검증용이며, 최종 성능 수치로 사용하지 않는다.
+
+### TC1 Cache Benefit Smoke
+
+| 항목 | 값 |
+|---|---:|
+| Dataset | RAGBench `techqa` |
+| EU examples | 20 |
+| Query count | 10 |
+| LLM | Mock |
+| No-cache total avg | 86.115 ms |
+| A first cache hits | 0 |
+| A repeat cache hits | 10 |
+| B first cache hits | 0 |
+| B repeat cache hits | 10 |
+
+### TC2 Mixed Workload Smoke
+
+| 항목 | 값 |
+|---|---:|
+| Dataset | RAGBench `emanual` |
+| Query asset | `tc2_query_sets` |
+| Query count | 32 |
+| LLM | Mock |
+| A cache hits | 7 |
+| A cache hit ratio | 0.2188 |
+| B cache hits | 11 |
+| B cache hit ratio | 0.3438 |
+| B partial validation count | 5 |
+
+### TC3 Scale Cost Smoke
+
+| Scale | EU examples | No-cache FULL RAG avg | A RAG avg | B FULL RAG avg | B Delta RAG avg |
+|---:|---:|---:|---:|---:|---:|
+| 1x | 10 | 43.077 ms | - | - | - |
+| 2x | 20 | 75.092 ms | 78.486 ms | 71.335 ms | - |
+
+TC3 smoke에서는 no-cache FULL RAG 평균이 10 examples에서 43.077 ms, 20 examples에서 75.092 ms로 증가했다.
