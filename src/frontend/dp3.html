@@ -6,14 +6,15 @@
   <title>DP3 Cache PoC</title>
   <style>
     :root {
-      --bg: #f6f7f9;
+      --bg: #f5f7fa;
       --panel: #fff;
       --ink: #172033;
       --muted: #657084;
       --line: #d8dee9;
       --accent: #176b87;
-      --accent2: #2e7d64;
+      --accent-2: #2e7d64;
       --soft: #e9f2f5;
+      --warn: #9a5b13;
     }
     * { box-sizing: border-box; }
     body {
@@ -32,11 +33,11 @@
       background: var(--panel);
       border-bottom: 1px solid var(--line);
     }
-    header h1 { margin: 0; font-size: 19px; }
-    nav a { margin-left: 16px; color: var(--muted); text-decoration: none; }
+    header h1 { margin: 0; font-size: 20px; letter-spacing: 0; }
+    nav a { margin-left: 18px; color: var(--muted); text-decoration: none; }
     main {
       display: grid;
-      grid-template-columns: minmax(340px, 410px) minmax(0, 1fr);
+      grid-template-columns: minmax(360px, 430px) minmax(0, 1fr);
       gap: 18px;
       padding: 18px;
       min-height: calc(100vh - 56px);
@@ -56,7 +57,8 @@
       border-top: 1px solid var(--line);
     }
     .section:first-child { border-top: 0; padding-top: 0; }
-    h2 { margin: 0 0 12px; font-size: 15px; }
+    h2 { margin: 0 0 12px; font-size: 16px; }
+    h3 { margin: 0 0 10px; font-size: 15px; }
     label {
       display: block;
       margin: 11px 0 6px;
@@ -112,21 +114,28 @@
       color: #fff;
     }
     button.secondary {
-      background: var(--accent2);
-      border-color: var(--accent2);
+      background: var(--accent-2);
+      border-color: var(--accent-2);
       color: #fff;
     }
     button:disabled { opacity: 0.55; cursor: wait; }
+    .hint {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.45;
+    }
     .pill {
       display: inline-flex;
       align-items: center;
-      height: 24px;
+      min-height: 24px;
       border-radius: 999px;
       padding: 0 9px;
       background: var(--soft);
       color: var(--accent);
       font-size: 12px;
       font-weight: 800;
+      white-space: nowrap;
     }
     .content {
       display: grid;
@@ -135,19 +144,44 @@
       min-width: 0;
     }
     .status {
-      min-height: 58px;
+      min-height: 62px;
       padding: 14px 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
       gap: 16px;
     }
-    .status strong { font-size: 15px; }
+    .status strong { font-size: 16px; }
     .status span { color: var(--muted); }
+    .progress-wrap {
+      margin-top: 8px;
+      width: min(520px, 56vw);
+    }
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 5px;
+    }
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      overflow: hidden;
+      background: #e5eaf1;
+    }
+    .progress-bar > div {
+      width: 0%;
+      height: 100%;
+      background: var(--accent);
+      transition: width 0.25s ease;
+    }
     .results {
       padding: 16px;
       overflow: auto;
-      max-height: calc(100vh - 162px);
+      max-height: calc(100vh - 166px);
     }
     .empty {
       padding: 56px 16px;
@@ -161,15 +195,15 @@
       display: grid;
       grid-template-columns: repeat(3, minmax(180px, 1fr));
       gap: 12px;
-      margin-bottom: 16px;
+      margin: 12px 0 16px;
     }
     .card {
       border: 1px solid var(--line);
       border-radius: 8px;
       padding: 14px;
       background: #fff;
+      min-width: 0;
     }
-    .card h3 { margin: 0 0 12px; font-size: 14px; }
     .metric {
       display: flex;
       justify-content: space-between;
@@ -179,22 +213,27 @@
     }
     .metric:first-of-type { border-top: 0; }
     .metric span { color: var(--muted); }
-    .metric b { font-variant-numeric: tabular-nums; }
-    .tables {
-      display: grid;
-      grid-template-columns: minmax(300px, 0.8fr) minmax(460px, 1.2fr);
-      gap: 12px;
+    .metric b { font-variant-numeric: tabular-nums; text-align: right; }
+    .result-block { margin-bottom: 18px; }
+    .table-wrap {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: auto;
+      background: #fff;
+      margin-top: 10px;
     }
     table {
       width: 100%;
       border-collapse: collapse;
       font-size: 13px;
+      min-width: 680px;
     }
     th, td {
       padding: 8px 10px;
       border-bottom: 1px solid #edf0f4;
       text-align: left;
       vertical-align: top;
+      font-variant-numeric: tabular-nums;
     }
     th {
       color: var(--muted);
@@ -202,6 +241,13 @@
       font-size: 12px;
       position: sticky;
       top: 0;
+    }
+    .mode-title {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin-top: 4px;
     }
     .log {
       white-space: pre-wrap;
@@ -212,12 +258,12 @@
       font-family: Consolas, "Courier New", monospace;
       font-size: 12px;
       overflow: auto;
-      max-height: 320px;
+      max-height: 360px;
     }
-    @media (max-width: 980px) {
+    @media (max-width: 1080px) {
       main { grid-template-columns: 1fr; }
       .settings, .results { max-height: none; }
-      .cards, .tables { grid-template-columns: 1fr; }
+      .cards { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -234,28 +280,36 @@
   <main>
     <aside class="panel settings">
       <div class="section">
-        <h2>공통 설정</h2>
+        <h2>테스트 종류</h2>
+        <label for="testCase">Test Case</label>
+        <select id="testCase">
+          <option value="cache">TC1. Cache 동작 확인</option>
+          <option value="mixed_timing">TC2. 권한/버전 혼합 수행시간</option>
+          <option value="scalability">TC3. 데이터셋 확장성</option>
+        </select>
+        <div id="caseHint" class="hint"></div>
+      </div>
+
+      <div class="section">
+        <h2>공용 옵션</h2>
         <label for="dataset">LongBench Dataset</label>
         <select id="dataset"></select>
 
         <div class="row">
           <div>
-            <label for="numExamples">EU 생성 예제 수</label>
-            <input id="numExamples" type="number" min="1" max="200" value="5">
+            <label for="numExamples">기준 EU 예제 수</label>
+            <input id="numExamples" type="number" min="1" max="500" value="5">
           </div>
           <div>
             <label for="queryCount">테스트 질문 수</label>
-            <input id="queryCount" type="number" min="1" max="500" value="30">
+            <input id="queryCount" type="number" min="1" max="1000" value="100">
           </div>
         </div>
 
         <div class="row">
           <div>
-            <label for="scope">Scope</label>
-            <select id="scope">
-              <option value="A">A</option>
-              <option value="B">B</option>
-            </select>
+            <label for="warmupCount">Warm-up 질문 수</label>
+            <input id="warmupCount" type="number" min="0" max="20" value="3">
           </div>
           <div>
             <label for="seed">샘플 Seed</label>
@@ -263,11 +317,25 @@
           </div>
         </div>
 
-        <label class="checkline"><input id="resetMetadata" type="checkbox" checked> versioned EU metadata 재생성</label>
+        <div class="row">
+          <div>
+            <label for="scope">기본 Scope</label>
+            <select id="scope">
+              <option value="A">A</option>
+              <option value="B">B</option>
+            </select>
+          </div>
+          <div>
+            <label for="maxScale">확장성 최대 배율</label>
+            <input id="maxScale" type="number" min="1" max="5" value="5">
+          </div>
+        </div>
+
+        <label class="checkline"><input id="resetMetadata" type="checkbox"> versioned EU metadata 재생성</label>
       </div>
 
       <div class="section">
-        <h2>LLM 설정</h2>
+        <h2>LLM 옵션</h2>
         <label for="llmOption">LLM</label>
         <select id="llmOption">
           <option value="mock">Mock</option>
@@ -275,10 +343,11 @@
           <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
           <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
         </select>
+        <div class="hint">TC1은 Cache 검증용이라 항상 Mock으로 실행합니다. TC2/TC3은 선택한 LLM을 사용합니다.</div>
       </div>
 
       <div class="section">
-        <h2>질문풀</h2>
+        <h2>A안 옵션</h2>
         <label for="sampleRate">필터링 질문풀 비율 <span id="sampleRateText" class="pill">10%</span></label>
         <input id="sampleRate" type="range" min="1" max="30" value="10">
 
@@ -292,14 +361,14 @@
             <input id="poolSeed" type="number" value="42">
           </div>
         </div>
+
+        <label for="routeThreshold">Route Threshold <span id="routeText" class="pill">0.70</span></label>
+        <input id="routeThreshold" type="range" min="0" max="100" value="70">
       </div>
 
       <div class="section">
-        <h2>A/B 설정</h2>
-        <label for="routeThreshold">A안 Route Threshold <span id="routeText" class="pill">0.70</span></label>
-        <input id="routeThreshold" type="range" min="0" max="100" value="70">
-
-        <label for="cacheThreshold">공통 Cache Threshold <span id="cacheText" class="pill">0.86</span></label>
+        <h2>A/B 공통 옵션</h2>
+        <label for="cacheThreshold">Cache Hit Threshold <span id="cacheText" class="pill">0.86</span></label>
         <input id="cacheThreshold" type="range" min="0" max="100" value="86">
 
         <label class="checkline"><input id="useReranker" type="checkbox"> Cross-Encoder reranking 사용</label>
@@ -315,9 +384,6 @@
             </select>
           </div>
         </div>
-
-        <label class="checkline"><input id="resetAnswerCache" type="checkbox" checked> 실행 전 Answer Cache 초기화</label>
-        <label class="checkline"><input id="resetContextCache" type="checkbox" checked> 실행 전 Context Cache 초기화</label>
       </div>
 
       <div class="actions">
@@ -325,11 +391,7 @@
         <button id="seedBtn">Seed Pool</button>
       </div>
       <div class="actions">
-        <button id="runABtn" class="primary">Run A</button>
-        <button id="runBBtn" class="secondary">Run B</button>
-      </div>
-      <div class="actions">
-        <button id="runABBtn">Run A+B</button>
+        <button id="runSuiteBtn" class="primary">선택 테스트 시작</button>
         <button id="refreshBtn">Refresh Stats</button>
       </div>
     </aside>
@@ -338,7 +400,14 @@
       <div class="panel status">
         <div>
           <strong id="statusTitle">준비됨</strong><br>
-          <span id="statusText">설정을 조정한 뒤 실행하세요.</span>
+          <span id="statusText">테스트 종류와 옵션을 지정한 뒤 시작하세요.</span>
+          <div id="progressWrap" class="progress-wrap" hidden>
+            <div class="progress-meta">
+              <span id="progressStep">-</span>
+              <span id="progressCount">0 / 0</span>
+            </div>
+            <div class="progress-bar"><div id="progressFill"></div></div>
+          </div>
         </div>
         <span id="poolInfo" class="pill">pool: -</span>
       </div>
@@ -353,13 +422,17 @@
     const $ = (id) => document.getElementById(id);
     const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
     const controls = [
-      "prepareBtn", "seedBtn", "runABtn", "runBBtn", "runABBtn", "refreshBtn",
-      "dataset", "numExamples", "queryCount", "scope", "seed",
-      "llmOption",
-      "sampleRate", "minPerDataset", "poolSeed",
-      "routeThreshold", "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "resetAnswerCache",
-      "resetContextCache", "resetMetadata"
+      "testCase", "dataset", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
+      "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
+      "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "prepareBtn", "seedBtn",
+      "runSuiteBtn", "refreshBtn"
     ];
+
+    const caseHints = {
+      cache: "A/B 각각 V1 질문을 한 번 실행한 뒤 같은 V1 질문을 반복 실행합니다. Cache가 실제로 재사용되는지 확인합니다.",
+      mixed_timing: "권한과 버전을 섞은 질문 N개를 A/B에 동일하게 던지고, route/cache/RAG/LLM 시간을 비교합니다.",
+      scalability: "데이터셋을 1배부터 최대 5배까지 키우며 No-cache, A안, B안의 RAG 비용 증가를 비교합니다."
+    };
 
     function setBusy(isBusy, title, text) {
       controls.forEach((id) => { $(id).disabled = isBusy; });
@@ -375,6 +448,10 @@
       $("sampleRateText").textContent = `${$("sampleRate").value}%`;
       $("routeText").textContent = threshold("routeThreshold").toFixed(2);
       $("cacheText").textContent = threshold("cacheThreshold").toFixed(2);
+      $("caseHint").textContent = caseHints[$("testCase").value] || "";
+      if ($("testCase").value === "mixed_timing" && $("queryCount").dataset.userEdited !== "true") {
+        $("queryCount").value = 200;
+      }
     }
 
     async function api(path, options = {}) {
@@ -399,6 +476,27 @@
         return { llm_provider: "mock", model: null };
       }
       return { llm_provider: "groq", model: option };
+    }
+
+    function suitePayload() {
+      return {
+        test_case: $("testCase").value,
+        dataset_name: $("dataset").value,
+        num_examples: Number($("numExamples").value),
+        query_count: Number($("queryCount").value),
+        seed: Number($("seed").value),
+        warmup_count: Number($("warmupCount").value),
+        user_scope: $("scope").value,
+        max_scale: Number($("maxScale").value),
+        route_threshold: threshold("routeThreshold"),
+        cache_threshold: threshold("cacheThreshold"),
+        ...llmPayload(),
+        use_reranker: $("useReranker").checked,
+        rerank_candidates: Number($("rerankCandidates").value),
+        rerank_model: $("rerankModel").value,
+        reset_metadata: $("resetMetadata").checked,
+        include_smoke: false
+      };
     }
 
     async function loadDatasets() {
@@ -441,7 +539,7 @@
     }
 
     async function seedPool() {
-      setBusy(true, "질문풀 생성 중", "LongBench 질문/task에서 필터링 pool을 seed합니다.");
+      setBusy(true, "질문풀 생성 중", "LongBench 질문/task에서 A안 routing pool을 seed합니다.");
       try {
         const result = await api("/api/dp3/question-pool/seed", {
           method: "POST",
@@ -465,88 +563,35 @@
       }
     }
 
-    function commonPayload() {
-      return {
-        source_id: sourceId(),
-        dataset: null,
-        count: Number($("queryCount").value),
-        seed: Number($("seed").value),
-        user_scope: $("scope").value,
-        cache_threshold: threshold("cacheThreshold"),
-        ...llmPayload(),
-        use_reranker: $("useReranker").checked,
-        rerank_candidates: Number($("rerankCandidates").value),
-        rerank_model: $("rerankModel").value,
-        include_smoke: false
-      };
-    }
-
-    async function runA() {
-      setBusy(true, "A안 테스트 실행 중", "Answer Cache batch를 실행합니다.");
+    async function runSuite() {
+      const payload = suitePayload();
+      const label = $("testCase").selectedOptions[0].textContent;
+      setBusy(true, `${label} 실행 중`, "Warm-up 후 측정 구간을 실행합니다.");
       try {
-        const result = await api("/api/dp3/answer-cache/batch", {
+        const started = await api("/api/dp3/test-suite/start", {
           method: "POST",
-          body: JSON.stringify({
-            ...commonPayload(),
-            route_threshold: threshold("routeThreshold"),
-            reset_cache: $("resetAnswerCache").checked
-          })
+          body: JSON.stringify(payload)
         });
-        $("statusTitle").textContent = "A안 테스트 완료";
-        $("statusText").textContent = `${result.sampled_query_count}개 질문`;
-        renderModeResult("A안 Answer Cache", result, "A");
-        return result;
-      } catch (err) {
-        showError(err);
-        throw err;
-      } finally {
-        setBusy(false);
-      }
-    }
+        updateProgress(started);
+        renderRunning(started);
 
-    async function runB() {
-      setBusy(true, "B안 테스트 실행 중", "Context Cache batch를 실행합니다.");
-      try {
-        const result = await api("/api/dp3/context-cache/batch", {
-          method: "POST",
-          body: JSON.stringify({
-            ...commonPayload(),
-            reset_cache: $("resetContextCache").checked
-          })
-        });
-        $("statusTitle").textContent = "B안 테스트 완료";
-        $("statusText").textContent = `${result.sampled_query_count}개 질문`;
-        renderModeResult("B안 Context Cache", result, "B");
-        return result;
-      } catch (err) {
-        showError(err);
-        throw err;
-      } finally {
-        setBusy(false);
-      }
-    }
-
-    async function runAB() {
-      setBusy(true, "A+B 테스트 실행 중", "A안을 실행한 뒤 B안을 실행합니다.");
-      try {
-        const a = await api("/api/dp3/answer-cache/batch", {
-          method: "POST",
-          body: JSON.stringify({
-            ...commonPayload(),
-            route_threshold: threshold("routeThreshold"),
-            reset_cache: $("resetAnswerCache").checked
-          })
-        });
-        const b = await api("/api/dp3/context-cache/batch", {
-          method: "POST",
-          body: JSON.stringify({
-            ...commonPayload(),
-            reset_cache: $("resetContextCache").checked
-          })
-        });
-        $("statusTitle").textContent = "A+B 테스트 완료";
-        $("statusText").textContent = `${a.sampled_query_count}개 질문으로 비교`;
-        renderCompare(a, b);
+        let job = started;
+        while (!["completed", "failed"].includes(job.status)) {
+          await sleep(1000);
+          job = await api(`/api/dp3/test-suite/jobs/${started.job_id}`);
+          updateProgress(job);
+          renderRunning(job);
+        }
+        if (job.status === "failed") {
+          throw new Error(job.error || "테스트 실행 중 오류가 발생했습니다.");
+        }
+        const result = job.result;
+        $("statusTitle").textContent = `${label} 완료`;
+        $("statusText").textContent = result.test_case === "scalability"
+          ? `${result.max_scale}개 scale, 질문 ${result.query_count}개`
+          : `${result.query_count}개 질문, dataset=${payload.dataset_name}`;
+        updateProgress({ ...job, progress_percent: 100, completed: job.total });
+        renderSuiteResult(result);
       } catch (err) {
         showError(err);
       } finally {
@@ -554,134 +599,280 @@
       }
     }
 
-    function pct(value, total) {
-      if (!total) return "0.0%";
-      return `${((value / total) * 100).toFixed(1)}%`;
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
     }
 
-    function passLabel(pass) {
-      return {
-        v1_first: "V1 첫 실행",
-        v1_repeat: "V1 반복",
-        v2_validation: "V2 검증"
-      }[pass] || pass;
+    function updateProgress(job) {
+      $("progressWrap").hidden = false;
+      const total = job.total || 1;
+      const done = job.completed || 0;
+      const pct = Number.isFinite(Number(job.progress_percent))
+        ? Number(job.progress_percent)
+        : Math.round((done / total) * 1000) / 10;
+      $("progressStep").textContent = job.current_step || job.status || "-";
+      $("progressCount").textContent = `${done} / ${total} · ${fmt(pct)}%`;
+      $("progressFill").style.width = `${Math.min(100, Math.max(0, pct))}%`;
+      $("statusText").textContent = `${job.current_step || "실행 중"} · ${done}/${total}`;
+    }
+
+    function renderRunning(job) {
+      $("resultRoot").className = "";
+      $("resultRoot").innerHTML = `
+        <div class="card">
+          <h3>테스트 실행 중</h3>
+          ${metric("Job", job.job_id || "-")}
+          ${metric("상태", job.status || "-")}
+          ${metric("현재 단계", job.current_step || "-")}
+          ${metric("진행률", `${fmt(job.progress_percent || 0)}%`)}
+          ${metric("완료", `${job.completed || 0} / ${job.total || 1}`)}
+        </div>
+      `;
+    }
+
+    function pct(ratio) {
+      return `${((ratio || 0) * 100).toFixed(1)}%`;
+    }
+
+    function fmt(value, digits = 1) {
+      if (!Number.isFinite(Number(value))) return "-";
+      return Number(value).toFixed(digits);
+    }
+
+    function stat(summary, key, part = "avg") {
+      return summary?.timing_stats_ms?.[key]?.[part];
+    }
+
+    function statText(summary, key) {
+      const s = summary?.timing_stats_ms?.[key];
+      if (!s) return "-";
+      return `${fmt(s.avg)} / ${fmt(s.min)} / ${fmt(s.max)} ms`;
     }
 
     function metric(label, value, extra = "") {
       return `<div class="metric"><span>${label}</span><b>${value}${extra ? ` <small>${extra}</small>` : ""}</b></div>`;
     }
 
-    function summaryValue(summary, mode, key) {
-      if (mode === "A" && key === "hit") return summary.cache_hits || 0;
-      if (mode === "B" && key === "hit") return summary.context_cache_hits || 0;
-      if (key === "fallback") return summary.fallbacks || summary.full_retrievals || 0;
-      return summary[key] || 0;
+    function passLabel(pass) {
+      return {
+        v1_first: "V1 첫 실행",
+        v1_repeat: "V1 반복",
+        mixed: "혼합 실행",
+        scale: "Scale 실행"
+      }[pass] || pass;
     }
 
-    function timing(summary, key) {
-      const value = summary.timing_avg_ms?.[key];
-      return Number.isFinite(value) ? `${value.toFixed(1)}ms` : "-";
+    function summaryCards(result) {
+      const blocks = [];
+      if (result.a) {
+        blocks.push(...result.a.passes.map((p) => modeCard("A안", p)));
+      }
+      if (result.b) {
+        blocks.push(...result.b.passes.map((p) => modeCard("B안", p)));
+      }
+      return `<div class="cards">${blocks.join("")}</div>`;
     }
 
-    function renderCards(result, mode) {
-      return result.passes.map((p) => {
-        const s = p.summary;
-        const hitLabel = mode === "A" ? "Answer Hit" : "Context Hit";
+    function modeCard(title, pass) {
+      const s = pass.summary;
+      if (pass.mode === "A") {
         return `
           <div class="card">
-            <h3>${passLabel(p.pass)}</h3>
+            <h3>${title} · ${passLabel(pass.pass)}</h3>
             ${metric("Total", s.total)}
-            ${mode === "A" ? metric("Route Passed", s.route_passed, pct(s.route_passed, s.total)) : ""}
-            ${metric(hitLabel, summaryValue(s, mode, "hit"), pct(summaryValue(s, mode, "hit"), s.total))}
-            ${metric("Validation Passed", s.validation_passed, pct(s.validation_passed, s.total))}
-            ${mode === "B" ? metric("Delta Retrieval", s.delta_retrievals || 0) : ""}
-            ${mode === "B" ? metric("Full Retrieval", s.full_retrievals || 0) : metric("Fallback", s.fallbacks || 0)}
-            ${metric("LLM Calls", s.llm_calls)}
-            ${metric("Avg Total", timing(s, "total_ms"))}
-            ${mode === "A" ? metric("Avg RAG", timing(s, "rag_total_ms")) : metric("Avg Full RAG", timing(s, "full_retrieval_total_ms"))}
-            ${mode === "A" ? metric("Avg Rerank", timing(s, "rag_rerank_ms")) : metric("Avg Full Rerank", timing(s, "full_retrieval_rerank_ms"))}
-            ${mode === "B" ? metric("Avg Delta RAG", timing(s, "delta_retrieval_total_ms")) : ""}
-            ${mode === "B" ? metric("Avg Delta Rerank", timing(s, "delta_retrieval_rerank_ms")) : ""}
-            ${metric("Avg LLM", timing(s, "llm_ms"))}
+            ${metric("Route 통과", s.route_passed, pct(s.route_pass_ratio))}
+            ${metric("Cache hit", s.cache_hits, pct(s.cache_hit_ratio))}
+            ${metric("Validator 통과", s.validation_passed, pct(s.validation_pass_ratio))}
+            ${metric("RAG fallback", s.fallbacks, pct(s.fallback_ratio))}
+            ${metric("LLM calls", s.llm_calls)}
           </div>
+        `;
+      }
+      return `
+        <div class="card">
+          <h3>${title} · ${passLabel(pass.pass)}</h3>
+          ${metric("Total", s.total)}
+          ${metric("Cache hit", s.context_cache_hits, pct(s.cache_hit_ratio))}
+          ${metric("Validator 전체 통과", s.validation_full_passed, pct(s.validation_full_pass_ratio))}
+          ${metric("Validator 파셜 통과", s.validation_partial_passed, pct(s.validation_partial_pass_ratio))}
+          ${metric("Full RAG", s.full_retrievals, pct(s.full_retrieval_ratio))}
+          ${metric("Delta RAG", s.delta_retrievals, pct(s.delta_retrieval_ratio))}
+          ${metric("LLM calls", s.llm_calls)}
+        </div>
+      `;
+    }
+
+    function timingRows(pass) {
+      const rowsA = [
+        ["Embedding", "embedding_ms"],
+        ["Routing", "route_ms"],
+        ["Cache lookup", "cache_lookup_ms"],
+        ["Validation", "validation_ms"],
+        ["RAG 전체", "rag_total_ms"],
+        ["RAG retrieval(DB)", "rag_db_ms"],
+        ["RAG scoring", "rag_scoring_ms"],
+        ["RAG score sort", "rag_score_sort_ms"],
+        ["RAG reranking", "rag_rerank_ms"],
+        ["LLM", "llm_ms"],
+        ["Total", "total_ms"]
+      ];
+      const rowsB = [
+        ["Embedding", "embedding_ms"],
+        ["Cache lookup", "cache_lookup_ms"],
+        ["Validation", "validation_ms"],
+        ["FULL RAG 전체", "full_retrieval_total_ms"],
+        ["FULL retrieval(DB)", "full_retrieval_db_ms"],
+        ["FULL scoring", "full_retrieval_scoring_ms"],
+        ["FULL score sort", "full_retrieval_score_sort_ms"],
+        ["FULL reranking", "full_retrieval_rerank_ms"],
+        ["Delta RAG 전체", "delta_retrieval_total_ms"],
+        ["Delta retrieval(DB)", "delta_retrieval_db_ms"],
+        ["Delta scoring", "delta_retrieval_scoring_ms"],
+        ["Delta score sort", "delta_retrieval_score_sort_ms"],
+        ["Delta reranking", "delta_retrieval_rerank_ms"],
+        ["Delta filter", "delta_retrieval_filter_ms"],
+        ["LLM", "llm_ms"],
+        ["Total", "total_ms"]
+      ];
+      const rowsNoCache = [
+        ["Embedding", "embedding_ms"],
+        ["FULL RAG 전체", "full_retrieval_total_ms"],
+        ["FULL retrieval(DB)", "full_retrieval_db_ms"],
+        ["FULL scoring", "full_retrieval_scoring_ms"],
+        ["FULL score sort", "full_retrieval_score_sort_ms"],
+        ["FULL reranking", "full_retrieval_rerank_ms"],
+        ["LLM", "llm_ms"],
+        ["Total", "total_ms"]
+      ];
+      const rows = pass.mode === "A" ? rowsA : pass.mode === "B" ? rowsB : rowsNoCache;
+      return rows.map(([label, key]) => {
+        const s = pass.summary.timing_stats_ms?.[key];
+        return `
+          <tr>
+            <td>${label}</td>
+            <td>${s ? fmt(s.avg) : "-"}</td>
+            <td>${s ? fmt(s.min) : "-"}</td>
+            <td>${s ? fmt(s.max) : "-"}</td>
+            <td>${s ? s.count : "-"}</td>
+          </tr>
         `;
       }).join("");
     }
 
-    function renderModeResult(title, result, mode) {
-      const reasons = result.passes.flatMap((p) =>
-        Object.entries(p.summary.decision_reasons).map(([reason, count]) => ({ pass: p.pass, reason, count }))
-      );
-      const datasets = result.passes[0]?.summary?.by_dataset || {};
-      const datasetRows = Object.entries(datasets)
-        .sort((a, b) => b[1].total - a[1].total)
-        .slice(0, 18)
-        .map(([name, s]) => `
-          <tr>
-            <td>${name}</td>
-            <td>${s.total}</td>
-            <td>${s.route_passed ?? "-"}</td>
-            <td>${s.cache_hit ?? s.context_cache_hit ?? 0}</td>
-            <td>${s.fallbacks ?? s.full_retrievals ?? 0}</td>
-          </tr>
-        `).join("");
-
-      $("resultRoot").className = "";
-      $("resultRoot").innerHTML = `
-        <h2>${title}</h2>
-        <div class="cards">${renderCards(result, mode)}</div>
-        <div class="tables">
-          <div class="card">
-            <h3>Decision Reasons</h3>
-            <table>
-              <thead><tr><th>Pass</th><th>Reason</th><th>Count</th></tr></thead>
-              <tbody>${reasons.map((r) => `<tr><td>${passLabel(r.pass)}</td><td>${r.reason}</td><td>${r.count}</td></tr>`).join("")}</tbody>
-            </table>
+    function timingTable(title, pass) {
+      return `
+        <div class="result-block">
+          <div class="mode-title">
+            <h3>${title} · ${passLabel(pass.pass)}</h3>
+            <span class="pill">avg / min / max</span>
           </div>
-          <div class="card">
-            <h3>Dataset Summary</h3>
+          <div class="table-wrap">
             <table>
-              <thead><tr><th>Dataset</th><th>Total</th><th>Route</th><th>Hit</th><th>Fallback</th></tr></thead>
-              <tbody>${datasetRows}</tbody>
+              <thead><tr><th>구간</th><th>Avg ms</th><th>Min ms</th><th>Max ms</th><th>Count</th></tr></thead>
+              <tbody>${timingRows(pass)}</tbody>
             </table>
           </div>
         </div>
       `;
     }
 
-    function renderCompare(a, b) {
+    function decisionTable(title, pass) {
+      const rows = Object.entries(pass.summary.decision_reasons || {})
+        .map(([reason, count]) => `<tr><td>${reason}</td><td>${count}</td></tr>`)
+        .join("");
+      return `
+        <div class="result-block">
+          <h3>${title} · Decision Reasons</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Reason</th><th>Count</th></tr></thead>
+              <tbody>${rows || `<tr><td>-</td><td>0</td></tr>`}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderSuiteResult(result) {
       $("resultRoot").className = "";
+      if (result.test_case === "scalability") {
+        renderScalability(result);
+        return;
+      }
+      const parts = [
+        `<h2>${result.test_case === "cache" ? "TC1. Cache 동작 확인" : "TC2. 권한/버전 혼합 수행시간"}</h2>`,
+        `<div class="hint">source=${result.source_id}, queries=${result.query_count}, llm=${result.llm_provider}${result.llm_model ? `/${result.llm_model}` : ""}</div>`,
+        summaryCards(result)
+      ];
+      if (result.a) {
+        result.a.passes.forEach((p) => {
+          parts.push(timingTable("A안", p));
+          parts.push(decisionTable("A안", p));
+        });
+      }
+      if (result.b) {
+        result.b.passes.forEach((p) => {
+          parts.push(timingTable("B안", p));
+          parts.push(decisionTable("B안", p));
+        });
+      }
+      $("resultRoot").innerHTML = parts.join("");
+    }
+
+    function renderScalability(result) {
+      const rows = result.scales.map((row) => {
+        const no = row.no_cache.summary;
+        const a = row.a.summary;
+        const b = row.b.summary;
+        return `
+          <tr>
+            <td>${row.scale}x</td>
+            <td>${row.num_examples}</td>
+            <td>${statText(no, "full_retrieval_total_ms")}</td>
+            <td>${statText(a, "rag_total_ms")}</td>
+            <td>${pct(a.cache_hit_ratio)}</td>
+            <td>${statText(b, "full_retrieval_total_ms")}</td>
+            <td>${statText(b, "delta_retrieval_total_ms")}</td>
+            <td>${pct(b.cache_hit_ratio)}</td>
+          </tr>
+        `;
+      }).join("");
+
+      const detail = result.scales.map((row) => `
+        <div class="result-block">
+          <h3>Scale ${row.scale}x · ${row.source_id}</h3>
+          <div class="cards">
+            ${modeCard("A안", row.a)}
+            ${modeCard("B안", row.b)}
+            <div class="card">
+              <h3>No-cache · Scale 실행</h3>
+              ${metric("Total", row.no_cache.summary.total)}
+              ${metric("Full RAG", row.no_cache.summary.full_retrievals)}
+              ${metric("LLM calls", row.no_cache.summary.llm_calls)}
+            </div>
+          </div>
+          ${timingTable("No-cache", row.no_cache)}
+          ${timingTable("A안", row.a)}
+          ${timingTable("B안", row.b)}
+        </div>
+      `).join("");
+
       $("resultRoot").innerHTML = `
-        <h2>A/B 비교</h2>
-        <div class="card" style="margin-bottom:12px">
+        <h2>TC3. 데이터셋 확장성</h2>
+        <div class="hint">dataset=${result.dataset}, base=${result.base_num_examples}, max_scale=${result.max_scale}, queries=${result.query_count}</div>
+        <div class="table-wrap">
           <table>
             <thead>
-              <tr><th>Pass</th><th>A Hit</th><th>A Fallback</th><th>A Total</th><th>A RAG</th><th>A LLM</th><th>B Hit</th><th>B Delta</th><th>B Full</th><th>B Total</th><th>B Full RAG</th><th>B LLM</th></tr>
+              <tr>
+                <th>Scale</th><th>EU 예제</th><th>No-cache FULL RAG avg/min/max</th>
+                <th>A RAG avg/min/max</th><th>A hit</th>
+                <th>B FULL RAG avg/min/max</th><th>B Delta RAG avg/min/max</th><th>B hit</th>
+              </tr>
             </thead>
-            <tbody>
-              ${a.passes.map((ap, i) => {
-                const bp = b.passes[i];
-                const as = ap.summary;
-                const bs = bp.summary;
-                return `<tr>
-                  <td>${passLabel(ap.pass)}</td>
-                  <td>${as.cache_hits || 0}</td>
-                  <td>${as.fallbacks || 0}</td>
-                  <td>${timing(as, "total_ms")}</td>
-                  <td>${timing(as, "rag_total_ms")}</td>
-                  <td>${as.llm_calls || 0}</td>
-                  <td>${bs.context_cache_hits || 0}</td>
-                  <td>${bs.delta_retrievals || 0}</td>
-                  <td>${bs.full_retrievals || 0}</td>
-                  <td>${timing(bs, "total_ms")}</td>
-                  <td>${timing(bs, "full_retrieval_total_ms")}</td>
-                  <td>${bs.llm_calls || 0}</td>
-                </tr>`;
-              }).join("")}
-            </tbody>
+            <tbody>${rows}</tbody>
           </table>
         </div>
-        <div class="cards">${renderCards(a, "A")}${renderCards(b, "B")}</div>
+        ${detail}
       `;
     }
 
@@ -697,14 +888,16 @@
       $("resultRoot").innerHTML = `<div class="log">${String(err.stack || err.message || err)}</div>`;
     }
 
-    ["sampleRate", "routeThreshold", "cacheThreshold"].forEach((id) => {
+    ["sampleRate", "routeThreshold", "cacheThreshold", "testCase"].forEach((id) => {
       $(id).addEventListener("input", updateLabels);
+      $(id).addEventListener("change", updateLabels);
+    });
+    $("queryCount").addEventListener("input", () => {
+      $("queryCount").dataset.userEdited = "true";
     });
     $("prepareBtn").addEventListener("click", prepareLongBench);
     $("seedBtn").addEventListener("click", seedPool);
-    $("runABtn").addEventListener("click", runA);
-    $("runBBtn").addEventListener("click", runB);
-    $("runABBtn").addEventListener("click", runAB);
+    $("runSuiteBtn").addEventListener("click", runSuite);
     $("refreshBtn").addEventListener("click", async () => {
       setBusy(true, "통계 새로고침", "질문풀 상태를 확인합니다.");
       try {
