@@ -17,7 +17,55 @@
 
 DP3 PoC는 DP1/DP2의 기존 실행 방식과 데이터를 직접 수정하지 않도록 DP3 전용 loader, DB table, UI를 사용한다.
 
-## 2. 필요 환경
+## 2. 기능 스펙
+
+현재 DP3 PoC의 주요 기능 스펙은 다음과 같다.
+
+| 항목 | 현재 구현 | 비고 |
+|---|---|---|
+| Dataset | LongBench | DP3 전용 loader가 다운로드/전처리 |
+| Evidence Unit | ROI-RAG 기반 EU | 실패 시 fallback chunk 생성 가능 |
+| Embedding | `all-MiniLM-L6-v2` | sentence-transformers 기반, 미설치 시 hash embedding fallback |
+| A안 Routing | 질문풀 vector 유사도 | TODO: BM25 또는 hybrid routing 검토 |
+| A안 Cache | Verified Answer Cache | answer + source metadata 저장 |
+| B안 Cache | Incremental Context Cache | context pack + source metadata 저장 |
+| Metadata | `scope`, `version`, `fingerprint`, `logical_eu_id` | 권한/버전 validation 기준 |
+| RAG | ROI-RAG EU 대상 vector retrieval | DP3 전용 versioned EU table 기준 |
+| RAG Ranking | similarity score sort + optional cross-encoder reranking | reranker 옵션은 UI에서 켜고 끌 수 있음 |
+| Reranking | `cross-encoder/ms-marco-MiniLM-L-6-v2` | 기본 후보 수 30, 최종 top-k 5 |
+| Retrieval 확장 | vector-only | TODO: BM25, vector+BM25 hybrid 추가 |
+| LLM | Mock 또는 Groq API | 기본 실험 후보: `llama-3.1-8b-instant` |
+| Timing | 구간별 `timings_ms` 저장 | embedding/routing/cache/validation/RAG/LLM/total |
+
+### RAG 세부 단계
+
+현재 retrieval은 다음 단계로 측정한다.
+
+```text
+DB 후보 조회
+-> embedding cosine scoring
+-> score sort
+-> optional cross-encoder reranking
+-> top-k 선택
+```
+
+현재 timing 필드는 다음 의미로 사용한다.
+
+```text
+rag_db_ms                     후보 EU 조회 시간
+rag_scoring_ms                query-context cosine score 계산 시간
+rag_score_sort_ms             vector score 기준 정렬 시간
+rag_rerank_ms                 cross-encoder reranking 시간
+rag_total_ms                  위 RAG 단계 합산 시간
+full_retrieval_*              B안 full retrieval 구간 시간
+delta_retrieval_*             B안 delta retrieval 구간 시간
+llm_ms                        LLM 호출 시간
+total_ms                      요청 전체 처리 시간
+```
+
+주의: reranker 옵션을 끄면 `rerank_ms`는 0에 가깝고, score sort 시간은 `score_sort_ms` 계열 필드에 기록된다.
+
+## 3. 필요 환경
 
 권장 환경은 다음과 같다.
 
@@ -35,7 +83,7 @@ src/data/ 디렉터리 쓰기 권한
 - ROI-RAG 기반 Evidence Unit
 - DP3 versioned metadata
 
-## 3. 최초 환경 설정
+## 4. 최초 환경 설정
 
 프로젝트 루트에서 실행한다.
 
@@ -51,7 +99,7 @@ python -m venv .venv311
 .venv311\Scripts\python -m pip install -r src\requirements.txt
 ```
 
-## 4. 환경 변수
+## 5. 환경 변수
 
 기본값은 `src/.env.example`을 참고한다.
 
@@ -93,7 +141,7 @@ Qwen 27B - qwen/qwen3.6-27b
 
 기본값은 `Mock`이다. 실제 Groq latency를 측정할 때는 `Llama 8B - llama-3.1-8b-instant`를 우선 사용한다.
 
-## 5. 서버 실행
+## 6. 서버 실행
 
 프로젝트 루트에서 다음 명령을 실행한다.
 
@@ -117,7 +165,7 @@ http://127.0.0.1:8000/dp3
 
 VSCode Live Preview로 `dp3.html` 파일을 직접 열면 API 경로가 다르게 잡힐 수 있으므로, 가능하면 FastAPI 서버 주소로 접속한다.
 
-## 6. 웹 UI 사용 순서
+## 7. 웹 UI 사용 순서
 
 권장 실행 순서는 다음과 같다.
 
@@ -144,7 +192,7 @@ VSCode Live Preview로 `dp3.html` 파일을 직접 열면 API 경로가 다르�
 5. `Run A+B`
    - 동일한 질문 샘플로 A안과 B안을 연속 실행한다.
 
-## 7. A안 동작 요약
+## 8. A안 동작 요약
 
 A안은 Answer Cache 전략이다.
 
@@ -160,7 +208,7 @@ A안은 Answer Cache 전략이다.
 
 A안에서 `Cache Hit`은 단순 후보 발견이 아니라, validation까지 통과해서 answer를 재사용한 경우를 의미한다.
 
-## 8. B안 동작 요약
+## 9. B안 동작 요약
 
 B안은 Context Cache 전략이다.
 
@@ -185,7 +233,7 @@ invalid source가 절반 미만이면 invalid_count * 2 만큼 후보 검색
 보충이 부족하면 full retrieval fallback
 ```
 
-## 9. 생성되는 로컬 파일
+## 10. 생성되는 로컬 파일
 
 다음 파일과 디렉터리는 로컬 실행 산출물이다.
 
@@ -197,10 +245,10 @@ src/data/poc.db
 
 이 파일들은 git에 포함하지 않는 것을 전제로 한다. 다른 PC에서 처음 실행하면 다시 생성된다.
 
-## 10. 현재 제약과 주의점
+## 11. 현재 제약과 주의점
 
-- 현재 시간 로그는 주로 `total_ms` 중심이다.
-- RAG, LLM, validation 시간을 분리 저장하는 작업은 TODO로 남아 있다.
+- 시간 로그는 `log_json.timings_ms`와 batch summary의 `timing_avg_ms`에 저장된다.
+- 현재 `rerank_ms`는 score sort 시간이며, 별도 reranker 모델은 아직 적용하지 않았다.
 - mock LLM 환경에서는 실제 LLM latency를 평가할 수 없다.
 - B안 delta retrieval은 데이터와 mutation 조건에 따라 full fallback으로 많이 떨어질 수 있다.
 - A안 route threshold가 낮으면 route pass가 과도하게 많아질 수 있다.

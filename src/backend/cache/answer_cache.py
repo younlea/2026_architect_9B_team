@@ -19,6 +19,11 @@ VERSIONS = ("V1", "V2", "V3")
 DEFAULT_ROUTE_THRESHOLD = 0.70
 DEFAULT_CACHE_THRESHOLD = 0.86
 TOP_K_SOURCES = 5
+DEFAULT_RERANK_CANDIDATES = 30
+DEFAULT_RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+_ROUTE_CACHE: list[dict] | None = None
+_READY_SOURCE_IDS: set[str] = set()
+_RERANKERS: dict[str, object] = {}
 
 
 DP3_SCHEMA = """
@@ -160,6 +165,38 @@ def _set_total_ms(log: dict, start: float) -> None:
     log["total_ms"] = int(round(total))
 
 
+def _clear_runtime_caches() -> None:
+    global _ROUTE_CACHE
+    _ROUTE_CACHE = None
+
+
+def _get_reranker(model_name: str = DEFAULT_RERANK_MODEL):
+    model_name = model_name or DEFAULT_RERANK_MODEL
+    if model_name not in _RERANKERS:
+        from sentence_transformers import CrossEncoder
+
+        _RERANKERS[model_name] = CrossEncoder(model_name)
+    return _RERANKERS[model_name]
+
+
+def ensure_answer_cache_ready(thread_id: str) -> dict:
+    """Prepare DP3 metadata and route pool outside measured query latency."""
+    if thread_id in _READY_SOURCE_IDS:
+        return {"ready": True, "reused": True, "preflight_setup_ms": 0.0}
+
+    start = _timer()
+    context_result = setup_context_units_from_thread(thread_id, reset=False)
+    route_result = seed_answerable_question_pool(reset=False)
+    _READY_SOURCE_IDS.add(thread_id)
+    return {
+        **context_result,
+        **route_result,
+        "ready": True,
+        "reused": False,
+        "preflight_setup_ms": _elapsed_ms(start),
+    }
+
+
 def _chunk_text(text: str, chunk_size: int = 512, overlap: int = 80) -> list[str]:
     chunks = []
     start = 0
@@ -247,6 +284,8 @@ def setup_context_units_from_thread(thread_id: str, reset: bool = False) -> dict
     """
     init_dp3_cache_schema()
     with get_conn() as conn:
+        if reset:
+            _READY_SOURCE_IDS.discard(thread_id)
         if not reset:
             existing = conn.execute(
                 """SELECT COUNT(DISTINCT logical_eu_id) AS unit_count,
@@ -325,6 +364,7 @@ def setup_context_units_from_thread(thread_id: str, reset: bool = False) -> dict
 
 def seed_answerable_question_pool(reset: bool = False) -> dict:
     init_dp3_cache_schema()
+    _clear_runtime_caches()
     with get_conn() as conn:
         if reset:
             conn.execute("DELETE FROM dp3_answerable_question_pool")
@@ -376,6 +416,7 @@ def clear_answer_cache_for_source(source_id: str | None = None) -> dict:
 def setup_answer_cache_poc(thread_id: str, reset: bool = False) -> dict:
     init_dp3_cache_schema()
     if reset:
+        _READY_SOURCE_IDS.discard(thread_id)
         clear_answer_cache_for_source(thread_id)
     context_result = setup_context_units_from_thread(thread_id, reset=reset)
     route_result = seed_answerable_question_pool(reset=reset)
@@ -391,26 +432,37 @@ def _parse_requested_version(query: str, default: str = "V1") -> str:
 
 
 def _find_route(query_embedding: list[float]) -> dict:
+    global _ROUTE_CACHE
     init_dp3_cache_schema()
-    with get_conn() as conn:
-        rows = conn.execute(
-            "SELECT route_id, question_text, route_type, embedding_json FROM dp3_answerable_question_pool"
-        ).fetchall()
-    if not rows:
-        seed_answerable_question_pool()
+    if _ROUTE_CACHE is None:
         with get_conn() as conn:
             rows = conn.execute(
                 "SELECT route_id, question_text, route_type, embedding_json FROM dp3_answerable_question_pool"
             ).fetchall()
+        if not rows:
+            seed_answerable_question_pool()
+            with get_conn() as conn:
+                rows = conn.execute(
+                    "SELECT route_id, question_text, route_type, embedding_json FROM dp3_answerable_question_pool"
+                ).fetchall()
+        _ROUTE_CACHE = [
+            {
+                "route_id": row["route_id"],
+                "route_type": row["route_type"],
+                "route_question": row["question_text"],
+                "embedding": _embedding_from_json(row["embedding_json"]),
+            }
+            for row in rows
+        ]
 
     best = None
-    for row in rows:
-        score = _cosine(query_embedding, _embedding_from_json(row["embedding_json"]))
+    for row in _ROUTE_CACHE:
+        score = _cosine(query_embedding, row["embedding"])
         if best is None or score > best["embedding_score"]:
             best = {
                 "route_id": row["route_id"],
                 "route_type": row["route_type"],
-                "route_question": row["question_text"],
+                "route_question": row["route_question"],
                 "embedding_score": round(score, 4),
             }
     return best or {
@@ -516,11 +568,15 @@ def _validate_cache_sources(cache_id: str, user_scope: str, requested_version: s
 
 def _retrieve_context_units(
     thread_id: str,
+    query: str,
     query_embedding: list[float],
     user_scope: str,
     requested_version: str,
     top_k: int = TOP_K_SOURCES,
     timing: dict | None = None,
+    use_reranker: bool = False,
+    rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+    rerank_model: str = DEFAULT_RERANK_MODEL,
 ) -> list[dict]:
     init_dp3_cache_schema()
     db_start = _timer()
@@ -552,18 +608,36 @@ def _retrieve_context_units(
     if timing is not None:
         timing["scoring_ms"] = _elapsed_ms(scoring_start)
 
-    rerank_start = _timer()
+    sort_start = _timer()
     scored.sort(key=lambda item: item["score"], reverse=True)
-    result = scored[:top_k]
+    vector_candidates = scored[:max(top_k, rerank_candidates if use_reranker else top_k)]
     if timing is not None:
-        timing["rerank_ms"] = _elapsed_ms(rerank_start)
+        timing["score_sort_ms"] = _elapsed_ms(sort_start)
+        timing["vector_top_n"] = len(vector_candidates)
+
+    reranker_ms = 0.0
+    if use_reranker and vector_candidates:
+        reranker_start = _timer()
+        pairs = [(query, item["text"]) for item in vector_candidates]
+        rerank_scores = _get_reranker(rerank_model).predict(pairs)
+        for item, rerank_score in zip(vector_candidates, rerank_scores):
+            item["rerank_score"] = float(rerank_score)
+        vector_candidates.sort(key=lambda item: item["rerank_score"], reverse=True)
+        reranker_ms = _elapsed_ms(reranker_start)
+
+    result = vector_candidates[:top_k]
+    if timing is not None:
+        timing["rerank_ms"] = reranker_ms
         timing["total_ms"] = round(
             timing.get("db_ms", 0.0)
             + timing.get("scoring_ms", 0.0)
+            + timing.get("score_sort_ms", 0.0)
             + timing.get("rerank_ms", 0.0),
             3,
         )
         timing["top_k"] = len(result)
+        timing["reranker_enabled"] = bool(use_reranker)
+        timing["reranker_candidate_count"] = len(vector_candidates) if use_reranker else 0
     return result
 
 
@@ -659,12 +733,12 @@ def run_answer_cache_query(
     llm_provider: str | None = None,
     route_threshold: float = DEFAULT_ROUTE_THRESHOLD,
     cache_threshold: float = DEFAULT_CACHE_THRESHOLD,
+    use_reranker: bool = False,
+    rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+    rerank_model: str = DEFAULT_RERANK_MODEL,
 ) -> dict:
+    preflight = ensure_answer_cache_ready(thread_id)
     start = _timer()
-    setup_start = _timer()
-    setup_context_units_from_thread(thread_id, reset=False)
-    seed_answerable_question_pool(reset=False)
-    setup_ms = _elapsed_ms(setup_start)
 
     requested_version = requested_version or _parse_requested_version(query)
     embedding_start = _timer()
@@ -695,8 +769,11 @@ def run_answer_cache_query(
         "llm_mocked": is_mock_llm(llm_provider),
         "llm_call_count": 0,
         "roi_rag_called": False,
+        "preflight": preflight,
+        "reranker_enabled": use_reranker,
+        "rerank_candidates": rerank_candidates,
+        "rerank_model": rerank_model if use_reranker else None,
     }
-    _set_timing(log, "setup_ms", setup_ms)
     _set_timing(log, "embedding_ms", embedding_ms)
     _set_timing(log, "route_ms", route_ms)
 
@@ -712,6 +789,9 @@ def run_answer_cache_query(
             route["route_id"] or "unrouted",
             model,
             llm_provider,
+            use_reranker,
+            rerank_candidates,
+            rerank_model,
             log,
             start=start,
         )
@@ -786,6 +866,9 @@ def run_answer_cache_query(
         route["route_id"],
         model,
         llm_provider,
+        use_reranker,
+        rerank_candidates,
+        rerank_model,
         log,
         start=start,
     )
@@ -801,6 +884,9 @@ def _fallback_and_store(
     route_id: str,
     model: str,
     llm_provider: str | None,
+    use_reranker: bool,
+    rerank_candidates: int,
+    rerank_model: str,
     log: dict,
     start: float = None,
 ) -> dict:
@@ -808,10 +894,14 @@ def _fallback_and_store(
     rag_timing = {}
     sources = _retrieve_context_units(
         thread_id,
+        query,
         query_embedding,
         user_scope,
         requested_version,
         timing=rag_timing,
+        use_reranker=use_reranker,
+        rerank_candidates=rerank_candidates,
+        rerank_model=rerank_model,
     )
     for key, value in rag_timing.items():
         if key.endswith("_ms"):

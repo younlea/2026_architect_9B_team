@@ -29,6 +29,9 @@ class AnswerCacheRunRequest(BaseModel):
     llm_provider: Optional[str] = None
     route_threshold: float = 0.70
     cache_threshold: float = 0.86
+    use_reranker: bool = False
+    rerank_candidates: int = 30
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 
 class LongBenchPrepareRequest(BaseModel):
@@ -58,6 +61,9 @@ class AnswerCacheBatchRequest(BaseModel):
     cache_threshold: float = 0.86
     llm_provider: Optional[str] = None
     model: Optional[str] = None
+    use_reranker: bool = False
+    rerank_candidates: int = 30
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     include_smoke: bool = False
     reset_cache: bool = True
 
@@ -71,6 +77,9 @@ class ContextCacheBatchRequest(BaseModel):
     cache_threshold: float = 0.86
     llm_provider: Optional[str] = None
     model: Optional[str] = None
+    use_reranker: bool = False
+    rerank_candidates: int = 30
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
     include_smoke: bool = False
     reset_cache: bool = True
 
@@ -91,6 +100,9 @@ def run_answer_cache(body: AnswerCacheRunRequest):
         llm_provider=body.llm_provider,
         route_threshold=body.route_threshold,
         cache_threshold=body.cache_threshold,
+        use_reranker=body.use_reranker,
+        rerank_candidates=body.rerank_candidates,
+        rerank_model=body.rerank_model,
     )
 
 
@@ -181,6 +193,9 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
             body.cache_threshold,
             body.llm_provider,
             body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
         ),
         _run_pass(
             "v1_repeat",
@@ -192,6 +207,9 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
             body.cache_threshold,
             body.llm_provider,
             body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
         ),
         _run_pass(
             "v2_validation",
@@ -203,6 +221,9 @@ def run_answer_cache_batch(body: AnswerCacheBatchRequest):
             body.cache_threshold,
             body.llm_provider,
             body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
         ),
     ]
     return {
@@ -239,11 +260,13 @@ def _summarize_context_results(results: list[dict]) -> dict:
             "valid_current_lookup_ms",
             "delta_retrieval_db_ms",
             "delta_retrieval_scoring_ms",
+            "delta_retrieval_score_sort_ms",
             "delta_retrieval_rerank_ms",
             "delta_retrieval_filter_ms",
             "delta_retrieval_total_ms",
             "full_retrieval_db_ms",
             "full_retrieval_scoring_ms",
+            "full_retrieval_score_sort_ms",
             "full_retrieval_rerank_ms",
             "full_retrieval_total_ms",
             "prompt_build_ms",
@@ -323,6 +346,9 @@ def _run_context_pass(
     cache_threshold: float,
     llm_provider: str | None,
     model: str | None,
+    use_reranker: bool,
+    rerank_candidates: int,
+    rerank_model: str,
 ) -> dict:
     results = []
     for item in queries:
@@ -334,6 +360,9 @@ def _run_context_pass(
             model=model,
             llm_provider=llm_provider,
             cache_threshold=cache_threshold,
+            use_reranker=use_reranker,
+            rerank_candidates=rerank_candidates,
+            rerank_model=rerank_model,
         )
         result["query_id"] = item["query_id"]
         result["dataset"] = item["dataset"]
@@ -362,6 +391,9 @@ def run_context_cache_batch(body: ContextCacheBatchRequest):
             body.cache_threshold,
             body.llm_provider,
             body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
         ),
         _run_context_pass(
             "v1_repeat",
@@ -372,6 +404,9 @@ def run_context_cache_batch(body: ContextCacheBatchRequest):
             body.cache_threshold,
             body.llm_provider,
             body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
         ),
         _run_context_pass(
             "v2_validation",
@@ -382,6 +417,9 @@ def run_context_cache_batch(body: ContextCacheBatchRequest):
             body.cache_threshold,
             body.llm_provider,
             body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
         ),
     ]
     return {

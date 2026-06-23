@@ -1,0 +1,836 @@
+﻿{
+    "source_id":  "dp3_longbench_multifieldqa_en_5",
+    "sampled_query_count":  100,
+    "sampled_datasets":  {
+                             "2wikimqa_e":  1,
+                             "dureader":  2,
+                             "gov_report":  3,
+                             "gov_report_e":  12,
+                             "hotpotqa":  3,
+                             "hotpotqa_e":  6,
+                             "lcc":  6,
+                             "lcc_e":  3,
+                             "multi_news":  3,
+                             "multi_news_e":  3,
+                             "multifieldqa_en_e":  1,
+                             "multifieldqa_zh":  4,
+                             "narrativeqa":  4,
+                             "passage_count_e":  1,
+                             "passage_retrieval_en":  4,
+                             "passage_retrieval_en_e":  4,
+                             "passage_retrieval_zh":  2,
+                             "qasper":  1,
+                             "qasper_e":  4,
+                             "qmsum":  2,
+                             "repobench-p":  5,
+                             "repobench-p_e":  3,
+                             "samsum":  4,
+                             "samsum_e":  3,
+                             "trec":  3,
+                             "trec_e":  4,
+                             "triviaqa":  1,
+                             "triviaqa_e":  6,
+                             "vcsum":  2
+                         },
+    "route_threshold":  0.85,
+    "cache_threshold":  0.86,
+    "passes":  [
+                   {
+                       "pass":  "v1_first",
+                       "summary":  {
+                                       "total":  100,
+                                       "route_passed":  42,
+                                       "cache_hits":  28,
+                                       "validation_passed":  28,
+                                       "fallbacks":  72,
+                                       "llm_calls":  72,
+                                       "timing_avg_ms":  {
+                                                             "embedding_ms":  19.8,
+                                                             "route_ms":  69.728,
+                                                             "cache_lookup_ms":  4.41,
+                                                             "validation_ms":  14.307,
+                                                             "rag_db_ms":  4.111,
+                                                             "rag_scoring_ms":  16.314,
+                                                             "rag_rerank_ms":  0.02,
+                                                             "rag_total_ms":  20.445,
+                                                             "prompt_build_ms":  0.018,
+                                                             "llm_ms":  0.127,
+                                                             "cache_store_ms":  14.931,
+                                                             "total_ms":  125.089,
+                                                             "hit_total_ms":  105.682,
+                                                             "rag_total_request_ms":  132.636
+                                                         },
+                                       "decision_reasons":  {
+                                                                "embedding_score_below_threshold":  58,
+                                                                "cache_candidate_not_found_fallback_to_roi_rag":  14,
+                                                                "answer_cache_hit_valid":  28
+                                                            },
+                                       "by_dataset":  {
+                                                          "2wikimqa_e":  {
+                                                                             "total":  1,
+                                                                             "route_passed":  0,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "dureader":  {
+                                                                           "total":  2,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  2,
+                                                                           "llm_calls":  2
+                                                                       },
+                                                          "gov_report":  {
+                                                                             "total":  3,
+                                                                             "route_passed":  3,
+                                                                             "cache_hit":  2,
+                                                                             "validation_passed":  2,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "gov_report_e":  {
+                                                                               "total":  12,
+                                                                               "route_passed":  12,
+                                                                               "cache_hit":  12,
+                                                                               "validation_passed":  12,
+                                                                               "fallbacks":  0,
+                                                                               "llm_calls":  0
+                                                                           },
+                                                          "hotpotqa":  {
+                                                                           "total":  3,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  3,
+                                                                           "llm_calls":  3
+                                                                       },
+                                                          "hotpotqa_e":  {
+                                                                             "total":  6,
+                                                                             "route_passed":  1,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  6,
+                                                                             "llm_calls":  6
+                                                                         },
+                                                          "lcc":  {
+                                                                      "total":  6,
+                                                                      "route_passed":  6,
+                                                                      "cache_hit":  5,
+                                                                      "validation_passed":  5,
+                                                                      "fallbacks":  1,
+                                                                      "llm_calls":  1
+                                                                  },
+                                                          "lcc_e":  {
+                                                                        "total":  3,
+                                                                        "route_passed":  3,
+                                                                        "cache_hit":  3,
+                                                                        "validation_passed":  3,
+                                                                        "fallbacks":  0,
+                                                                        "llm_calls":  0
+                                                                    },
+                                                          "multi_news":  {
+                                                                             "total":  3,
+                                                                             "route_passed":  3,
+                                                                             "cache_hit":  2,
+                                                                             "validation_passed":  2,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "multi_news_e":  {
+                                                                               "total":  3,
+                                                                               "route_passed":  3,
+                                                                               "cache_hit":  3,
+                                                                               "validation_passed":  3,
+                                                                               "fallbacks":  0,
+                                                                               "llm_calls":  0
+                                                                           },
+                                                          "multifieldqa_en_e":  {
+                                                                                    "total":  1,
+                                                                                    "route_passed":  0,
+                                                                                    "cache_hit":  0,
+                                                                                    "validation_passed":  0,
+                                                                                    "fallbacks":  1,
+                                                                                    "llm_calls":  1
+                                                                                },
+                                                          "multifieldqa_zh":  {
+                                                                                  "total":  4,
+                                                                                  "route_passed":  2,
+                                                                                  "cache_hit":  0,
+                                                                                  "validation_passed":  0,
+                                                                                  "fallbacks":  4,
+                                                                                  "llm_calls":  4
+                                                                              },
+                                                          "narrativeqa":  {
+                                                                              "total":  4,
+                                                                              "route_passed":  0,
+                                                                              "cache_hit":  0,
+                                                                              "validation_passed":  0,
+                                                                              "fallbacks":  4,
+                                                                              "llm_calls":  4
+                                                                          },
+                                                          "passage_count_e":  {
+                                                                                  "total":  1,
+                                                                                  "route_passed":  1,
+                                                                                  "cache_hit":  0,
+                                                                                  "validation_passed":  0,
+                                                                                  "fallbacks":  1,
+                                                                                  "llm_calls":  1
+                                                                              },
+                                                          "passage_retrieval_en":  {
+                                                                                       "total":  4,
+                                                                                       "route_passed":  0,
+                                                                                       "cache_hit":  0,
+                                                                                       "validation_passed":  0,
+                                                                                       "fallbacks":  4,
+                                                                                       "llm_calls":  4
+                                                                                   },
+                                                          "passage_retrieval_en_e":  {
+                                                                                         "total":  4,
+                                                                                         "route_passed":  1,
+                                                                                         "cache_hit":  0,
+                                                                                         "validation_passed":  0,
+                                                                                         "fallbacks":  4,
+                                                                                         "llm_calls":  4
+                                                                                     },
+                                                          "passage_retrieval_zh":  {
+                                                                                       "total":  2,
+                                                                                       "route_passed":  0,
+                                                                                       "cache_hit":  0,
+                                                                                       "validation_passed":  0,
+                                                                                       "fallbacks":  2,
+                                                                                       "llm_calls":  2
+                                                                                   },
+                                                          "qasper":  {
+                                                                         "total":  1,
+                                                                         "route_passed":  0,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  1,
+                                                                         "llm_calls":  1
+                                                                     },
+                                                          "qasper_e":  {
+                                                                           "total":  4,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  4,
+                                                                           "llm_calls":  4
+                                                                       },
+                                                          "qmsum":  {
+                                                                        "total":  2,
+                                                                        "route_passed":  0,
+                                                                        "cache_hit":  0,
+                                                                        "validation_passed":  0,
+                                                                        "fallbacks":  2,
+                                                                        "llm_calls":  2
+                                                                    },
+                                                          "repobench-p":  {
+                                                                              "total":  5,
+                                                                              "route_passed":  1,
+                                                                              "cache_hit":  0,
+                                                                              "validation_passed":  0,
+                                                                              "fallbacks":  5,
+                                                                              "llm_calls":  5
+                                                                          },
+                                                          "repobench-p_e":  {
+                                                                                "total":  3,
+                                                                                "route_passed":  2,
+                                                                                "cache_hit":  0,
+                                                                                "validation_passed":  0,
+                                                                                "fallbacks":  3,
+                                                                                "llm_calls":  3
+                                                                            },
+                                                          "samsum":  {
+                                                                         "total":  4,
+                                                                         "route_passed":  1,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  4,
+                                                                         "llm_calls":  4
+                                                                     },
+                                                          "samsum_e":  {
+                                                                           "total":  3,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  3,
+                                                                           "llm_calls":  3
+                                                                       },
+                                                          "trec":  {
+                                                                       "total":  3,
+                                                                       "route_passed":  0,
+                                                                       "cache_hit":  0,
+                                                                       "validation_passed":  0,
+                                                                       "fallbacks":  3,
+                                                                       "llm_calls":  3
+                                                                   },
+                                                          "trec_e":  {
+                                                                         "total":  4,
+                                                                         "route_passed":  0,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  4,
+                                                                         "llm_calls":  4
+                                                                     },
+                                                          "triviaqa":  {
+                                                                           "total":  1,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  1,
+                                                                           "llm_calls":  1
+                                                                       },
+                                                          "triviaqa_e":  {
+                                                                             "total":  6,
+                                                                             "route_passed":  1,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  6,
+                                                                             "llm_calls":  6
+                                                                         },
+                                                          "vcsum":  {
+                                                                        "total":  2,
+                                                                        "route_passed":  2,
+                                                                        "cache_hit":  1,
+                                                                        "validation_passed":  1,
+                                                                        "fallbacks":  1,
+                                                                        "llm_calls":  1
+                                                                    }
+                                                      }
+                                   }
+                   },
+                   {
+                       "pass":  "v1_repeat",
+                       "summary":  {
+                                       "total":  100,
+                                       "route_passed":  42,
+                                       "cache_hits":  42,
+                                       "validation_passed":  42,
+                                       "fallbacks":  58,
+                                       "llm_calls":  58,
+                                       "timing_avg_ms":  {
+                                                             "embedding_ms":  19.527,
+                                                             "route_ms":  68.945,
+                                                             "cache_lookup_ms":  5.076,
+                                                             "validation_ms":  22.045,
+                                                             "rag_db_ms":  3.888,
+                                                             "rag_scoring_ms":  15.585,
+                                                             "rag_rerank_ms":  0.019,
+                                                             "rag_total_ms":  19.493,
+                                                             "prompt_build_ms":  0.016,
+                                                             "llm_ms":  0.122,
+                                                             "cache_store_ms":  14.466,
+                                                             "total_ms":  121.337,
+                                                             "hit_total_ms":  113.512,
+                                                             "rag_total_request_ms":  127.003
+                                                         },
+                                       "decision_reasons":  {
+                                                                "embedding_score_below_threshold":  58,
+                                                                "answer_cache_hit_valid":  42
+                                                            },
+                                       "by_dataset":  {
+                                                          "2wikimqa_e":  {
+                                                                             "total":  1,
+                                                                             "route_passed":  0,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "dureader":  {
+                                                                           "total":  2,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  2,
+                                                                           "llm_calls":  2
+                                                                       },
+                                                          "gov_report":  {
+                                                                             "total":  3,
+                                                                             "route_passed":  3,
+                                                                             "cache_hit":  3,
+                                                                             "validation_passed":  3,
+                                                                             "fallbacks":  0,
+                                                                             "llm_calls":  0
+                                                                         },
+                                                          "gov_report_e":  {
+                                                                               "total":  12,
+                                                                               "route_passed":  12,
+                                                                               "cache_hit":  12,
+                                                                               "validation_passed":  12,
+                                                                               "fallbacks":  0,
+                                                                               "llm_calls":  0
+                                                                           },
+                                                          "hotpotqa":  {
+                                                                           "total":  3,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  3,
+                                                                           "llm_calls":  3
+                                                                       },
+                                                          "hotpotqa_e":  {
+                                                                             "total":  6,
+                                                                             "route_passed":  1,
+                                                                             "cache_hit":  1,
+                                                                             "validation_passed":  1,
+                                                                             "fallbacks":  5,
+                                                                             "llm_calls":  5
+                                                                         },
+                                                          "lcc":  {
+                                                                      "total":  6,
+                                                                      "route_passed":  6,
+                                                                      "cache_hit":  6,
+                                                                      "validation_passed":  6,
+                                                                      "fallbacks":  0,
+                                                                      "llm_calls":  0
+                                                                  },
+                                                          "lcc_e":  {
+                                                                        "total":  3,
+                                                                        "route_passed":  3,
+                                                                        "cache_hit":  3,
+                                                                        "validation_passed":  3,
+                                                                        "fallbacks":  0,
+                                                                        "llm_calls":  0
+                                                                    },
+                                                          "multi_news":  {
+                                                                             "total":  3,
+                                                                             "route_passed":  3,
+                                                                             "cache_hit":  3,
+                                                                             "validation_passed":  3,
+                                                                             "fallbacks":  0,
+                                                                             "llm_calls":  0
+                                                                         },
+                                                          "multi_news_e":  {
+                                                                               "total":  3,
+                                                                               "route_passed":  3,
+                                                                               "cache_hit":  3,
+                                                                               "validation_passed":  3,
+                                                                               "fallbacks":  0,
+                                                                               "llm_calls":  0
+                                                                           },
+                                                          "multifieldqa_en_e":  {
+                                                                                    "total":  1,
+                                                                                    "route_passed":  0,
+                                                                                    "cache_hit":  0,
+                                                                                    "validation_passed":  0,
+                                                                                    "fallbacks":  1,
+                                                                                    "llm_calls":  1
+                                                                                },
+                                                          "multifieldqa_zh":  {
+                                                                                  "total":  4,
+                                                                                  "route_passed":  2,
+                                                                                  "cache_hit":  2,
+                                                                                  "validation_passed":  2,
+                                                                                  "fallbacks":  2,
+                                                                                  "llm_calls":  2
+                                                                              },
+                                                          "narrativeqa":  {
+                                                                              "total":  4,
+                                                                              "route_passed":  0,
+                                                                              "cache_hit":  0,
+                                                                              "validation_passed":  0,
+                                                                              "fallbacks":  4,
+                                                                              "llm_calls":  4
+                                                                          },
+                                                          "passage_count_e":  {
+                                                                                  "total":  1,
+                                                                                  "route_passed":  1,
+                                                                                  "cache_hit":  1,
+                                                                                  "validation_passed":  1,
+                                                                                  "fallbacks":  0,
+                                                                                  "llm_calls":  0
+                                                                              },
+                                                          "passage_retrieval_en":  {
+                                                                                       "total":  4,
+                                                                                       "route_passed":  0,
+                                                                                       "cache_hit":  0,
+                                                                                       "validation_passed":  0,
+                                                                                       "fallbacks":  4,
+                                                                                       "llm_calls":  4
+                                                                                   },
+                                                          "passage_retrieval_en_e":  {
+                                                                                         "total":  4,
+                                                                                         "route_passed":  1,
+                                                                                         "cache_hit":  1,
+                                                                                         "validation_passed":  1,
+                                                                                         "fallbacks":  3,
+                                                                                         "llm_calls":  3
+                                                                                     },
+                                                          "passage_retrieval_zh":  {
+                                                                                       "total":  2,
+                                                                                       "route_passed":  0,
+                                                                                       "cache_hit":  0,
+                                                                                       "validation_passed":  0,
+                                                                                       "fallbacks":  2,
+                                                                                       "llm_calls":  2
+                                                                                   },
+                                                          "qasper":  {
+                                                                         "total":  1,
+                                                                         "route_passed":  0,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  1,
+                                                                         "llm_calls":  1
+                                                                     },
+                                                          "qasper_e":  {
+                                                                           "total":  4,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  4,
+                                                                           "llm_calls":  4
+                                                                       },
+                                                          "qmsum":  {
+                                                                        "total":  2,
+                                                                        "route_passed":  0,
+                                                                        "cache_hit":  0,
+                                                                        "validation_passed":  0,
+                                                                        "fallbacks":  2,
+                                                                        "llm_calls":  2
+                                                                    },
+                                                          "repobench-p":  {
+                                                                              "total":  5,
+                                                                              "route_passed":  1,
+                                                                              "cache_hit":  1,
+                                                                              "validation_passed":  1,
+                                                                              "fallbacks":  4,
+                                                                              "llm_calls":  4
+                                                                          },
+                                                          "repobench-p_e":  {
+                                                                                "total":  3,
+                                                                                "route_passed":  2,
+                                                                                "cache_hit":  2,
+                                                                                "validation_passed":  2,
+                                                                                "fallbacks":  1,
+                                                                                "llm_calls":  1
+                                                                            },
+                                                          "samsum":  {
+                                                                         "total":  4,
+                                                                         "route_passed":  1,
+                                                                         "cache_hit":  1,
+                                                                         "validation_passed":  1,
+                                                                         "fallbacks":  3,
+                                                                         "llm_calls":  3
+                                                                     },
+                                                          "samsum_e":  {
+                                                                           "total":  3,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  3,
+                                                                           "llm_calls":  3
+                                                                       },
+                                                          "trec":  {
+                                                                       "total":  3,
+                                                                       "route_passed":  0,
+                                                                       "cache_hit":  0,
+                                                                       "validation_passed":  0,
+                                                                       "fallbacks":  3,
+                                                                       "llm_calls":  3
+                                                                   },
+                                                          "trec_e":  {
+                                                                         "total":  4,
+                                                                         "route_passed":  0,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  4,
+                                                                         "llm_calls":  4
+                                                                     },
+                                                          "triviaqa":  {
+                                                                           "total":  1,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  1,
+                                                                           "llm_calls":  1
+                                                                       },
+                                                          "triviaqa_e":  {
+                                                                             "total":  6,
+                                                                             "route_passed":  1,
+                                                                             "cache_hit":  1,
+                                                                             "validation_passed":  1,
+                                                                             "fallbacks":  5,
+                                                                             "llm_calls":  5
+                                                                         },
+                                                          "vcsum":  {
+                                                                        "total":  2,
+                                                                        "route_passed":  2,
+                                                                        "cache_hit":  2,
+                                                                        "validation_passed":  2,
+                                                                        "fallbacks":  0,
+                                                                        "llm_calls":  0
+                                                                    }
+                                                      }
+                                   }
+                   },
+                   {
+                       "pass":  "v2_validation",
+                       "summary":  {
+                                       "total":  100,
+                                       "route_passed":  42,
+                                       "cache_hits":  28,
+                                       "validation_passed":  28,
+                                       "fallbacks":  72,
+                                       "llm_calls":  72,
+                                       "timing_avg_ms":  {
+                                                             "embedding_ms":  19.919,
+                                                             "route_ms":  70.27,
+                                                             "cache_lookup_ms":  5.521,
+                                                             "validation_ms":  21.881,
+                                                             "rag_db_ms":  3.503,
+                                                             "rag_scoring_ms":  10.805,
+                                                             "rag_rerank_ms":  0.015,
+                                                             "rag_total_ms":  14.322,
+                                                             "prompt_build_ms":  0.017,
+                                                             "llm_ms":  0.125,
+                                                             "cache_store_ms":  16.274,
+                                                             "total_ms":  125.843,
+                                                             "hit_total_ms":  109.295,
+                                                             "rag_total_request_ms":  132.279
+                                                         },
+                                       "decision_reasons":  {
+                                                                "embedding_score_below_threshold":  58,
+                                                                "cache_candidates_invalid_fallback_to_roi_rag":  14,
+                                                                "answer_cache_hit_valid":  28
+                                                            },
+                                       "by_dataset":  {
+                                                          "2wikimqa_e":  {
+                                                                             "total":  1,
+                                                                             "route_passed":  0,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "dureader":  {
+                                                                           "total":  2,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  2,
+                                                                           "llm_calls":  2
+                                                                       },
+                                                          "gov_report":  {
+                                                                             "total":  3,
+                                                                             "route_passed":  3,
+                                                                             "cache_hit":  2,
+                                                                             "validation_passed":  2,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "gov_report_e":  {
+                                                                               "total":  12,
+                                                                               "route_passed":  12,
+                                                                               "cache_hit":  12,
+                                                                               "validation_passed":  12,
+                                                                               "fallbacks":  0,
+                                                                               "llm_calls":  0
+                                                                           },
+                                                          "hotpotqa":  {
+                                                                           "total":  3,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  3,
+                                                                           "llm_calls":  3
+                                                                       },
+                                                          "hotpotqa_e":  {
+                                                                             "total":  6,
+                                                                             "route_passed":  1,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  6,
+                                                                             "llm_calls":  6
+                                                                         },
+                                                          "lcc":  {
+                                                                      "total":  6,
+                                                                      "route_passed":  6,
+                                                                      "cache_hit":  5,
+                                                                      "validation_passed":  5,
+                                                                      "fallbacks":  1,
+                                                                      "llm_calls":  1
+                                                                  },
+                                                          "lcc_e":  {
+                                                                        "total":  3,
+                                                                        "route_passed":  3,
+                                                                        "cache_hit":  3,
+                                                                        "validation_passed":  3,
+                                                                        "fallbacks":  0,
+                                                                        "llm_calls":  0
+                                                                    },
+                                                          "multi_news":  {
+                                                                             "total":  3,
+                                                                             "route_passed":  3,
+                                                                             "cache_hit":  2,
+                                                                             "validation_passed":  2,
+                                                                             "fallbacks":  1,
+                                                                             "llm_calls":  1
+                                                                         },
+                                                          "multi_news_e":  {
+                                                                               "total":  3,
+                                                                               "route_passed":  3,
+                                                                               "cache_hit":  3,
+                                                                               "validation_passed":  3,
+                                                                               "fallbacks":  0,
+                                                                               "llm_calls":  0
+                                                                           },
+                                                          "multifieldqa_en_e":  {
+                                                                                    "total":  1,
+                                                                                    "route_passed":  0,
+                                                                                    "cache_hit":  0,
+                                                                                    "validation_passed":  0,
+                                                                                    "fallbacks":  1,
+                                                                                    "llm_calls":  1
+                                                                                },
+                                                          "multifieldqa_zh":  {
+                                                                                  "total":  4,
+                                                                                  "route_passed":  2,
+                                                                                  "cache_hit":  0,
+                                                                                  "validation_passed":  0,
+                                                                                  "fallbacks":  4,
+                                                                                  "llm_calls":  4
+                                                                              },
+                                                          "narrativeqa":  {
+                                                                              "total":  4,
+                                                                              "route_passed":  0,
+                                                                              "cache_hit":  0,
+                                                                              "validation_passed":  0,
+                                                                              "fallbacks":  4,
+                                                                              "llm_calls":  4
+                                                                          },
+                                                          "passage_count_e":  {
+                                                                                  "total":  1,
+                                                                                  "route_passed":  1,
+                                                                                  "cache_hit":  0,
+                                                                                  "validation_passed":  0,
+                                                                                  "fallbacks":  1,
+                                                                                  "llm_calls":  1
+                                                                              },
+                                                          "passage_retrieval_en":  {
+                                                                                       "total":  4,
+                                                                                       "route_passed":  0,
+                                                                                       "cache_hit":  0,
+                                                                                       "validation_passed":  0,
+                                                                                       "fallbacks":  4,
+                                                                                       "llm_calls":  4
+                                                                                   },
+                                                          "passage_retrieval_en_e":  {
+                                                                                         "total":  4,
+                                                                                         "route_passed":  1,
+                                                                                         "cache_hit":  0,
+                                                                                         "validation_passed":  0,
+                                                                                         "fallbacks":  4,
+                                                                                         "llm_calls":  4
+                                                                                     },
+                                                          "passage_retrieval_zh":  {
+                                                                                       "total":  2,
+                                                                                       "route_passed":  0,
+                                                                                       "cache_hit":  0,
+                                                                                       "validation_passed":  0,
+                                                                                       "fallbacks":  2,
+                                                                                       "llm_calls":  2
+                                                                                   },
+                                                          "qasper":  {
+                                                                         "total":  1,
+                                                                         "route_passed":  0,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  1,
+                                                                         "llm_calls":  1
+                                                                     },
+                                                          "qasper_e":  {
+                                                                           "total":  4,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  4,
+                                                                           "llm_calls":  4
+                                                                       },
+                                                          "qmsum":  {
+                                                                        "total":  2,
+                                                                        "route_passed":  0,
+                                                                        "cache_hit":  0,
+                                                                        "validation_passed":  0,
+                                                                        "fallbacks":  2,
+                                                                        "llm_calls":  2
+                                                                    },
+                                                          "repobench-p":  {
+                                                                              "total":  5,
+                                                                              "route_passed":  1,
+                                                                              "cache_hit":  0,
+                                                                              "validation_passed":  0,
+                                                                              "fallbacks":  5,
+                                                                              "llm_calls":  5
+                                                                          },
+                                                          "repobench-p_e":  {
+                                                                                "total":  3,
+                                                                                "route_passed":  2,
+                                                                                "cache_hit":  0,
+                                                                                "validation_passed":  0,
+                                                                                "fallbacks":  3,
+                                                                                "llm_calls":  3
+                                                                            },
+                                                          "samsum":  {
+                                                                         "total":  4,
+                                                                         "route_passed":  1,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  4,
+                                                                         "llm_calls":  4
+                                                                     },
+                                                          "samsum_e":  {
+                                                                           "total":  3,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  3,
+                                                                           "llm_calls":  3
+                                                                       },
+                                                          "trec":  {
+                                                                       "total":  3,
+                                                                       "route_passed":  0,
+                                                                       "cache_hit":  0,
+                                                                       "validation_passed":  0,
+                                                                       "fallbacks":  3,
+                                                                       "llm_calls":  3
+                                                                   },
+                                                          "trec_e":  {
+                                                                         "total":  4,
+                                                                         "route_passed":  0,
+                                                                         "cache_hit":  0,
+                                                                         "validation_passed":  0,
+                                                                         "fallbacks":  4,
+                                                                         "llm_calls":  4
+                                                                     },
+                                                          "triviaqa":  {
+                                                                           "total":  1,
+                                                                           "route_passed":  0,
+                                                                           "cache_hit":  0,
+                                                                           "validation_passed":  0,
+                                                                           "fallbacks":  1,
+                                                                           "llm_calls":  1
+                                                                       },
+                                                          "triviaqa_e":  {
+                                                                             "total":  6,
+                                                                             "route_passed":  1,
+                                                                             "cache_hit":  0,
+                                                                             "validation_passed":  0,
+                                                                             "fallbacks":  6,
+                                                                             "llm_calls":  6
+                                                                         },
+                                                          "vcsum":  {
+                                                                        "total":  2,
+                                                                        "route_passed":  2,
+                                                                        "cache_hit":  1,
+                                                                        "validation_passed":  1,
+                                                                        "fallbacks":  1,
+                                                                        "llm_calls":  1
+                                                                    }
+                                                      }
+                                   }
+                   }
+               ]
+}

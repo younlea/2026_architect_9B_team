@@ -74,13 +74,13 @@ def _timing_value(row: dict, key: str) -> float | None:
 
 def _timing_summary(results: list[dict]) -> dict:
     keys = [
-        "setup_ms",
         "embedding_ms",
         "route_ms",
         "cache_lookup_ms",
         "validation_ms",
         "rag_db_ms",
         "rag_scoring_ms",
+        "rag_score_sort_ms",
         "rag_rerank_ms",
         "rag_total_ms",
         "prompt_build_ms",
@@ -153,6 +153,9 @@ def _run_pass(
     cache_threshold: float,
     llm_provider: str | None = None,
     model: str | None = None,
+    use_reranker: bool = False,
+    rerank_candidates: int = 30,
+    rerank_model: str = "cross-encoder/ms-marco-MiniLM-L-6-v2",
 ) -> dict:
     results = []
     for item in queries:
@@ -165,6 +168,9 @@ def _run_pass(
             llm_provider=llm_provider,
             route_threshold=route_threshold,
             cache_threshold=cache_threshold,
+            use_reranker=use_reranker,
+            rerank_candidates=rerank_candidates,
+            rerank_model=rerank_model,
         )
         result["query_id"] = item["query_id"]
         result["dataset"] = item["dataset"]
@@ -184,6 +190,9 @@ def main():
     parser.add_argument("--cache-threshold", type=float, default=0.86)
     parser.add_argument("--llm-provider", default=None, choices=[None, "mock", "groq", "default"])
     parser.add_argument("--model", default=None)
+    parser.add_argument("--use-reranker", action="store_true")
+    parser.add_argument("--rerank-candidates", type=int, default=30)
+    parser.add_argument("--rerank-model", default="cross-encoder/ms-marco-MiniLM-L-6-v2")
     parser.add_argument("--include-smoke", action="store_true")
     args = parser.parse_args()
 
@@ -204,6 +213,9 @@ def main():
             args.cache_threshold,
             args.llm_provider,
             args.model,
+            args.use_reranker,
+            args.rerank_candidates,
+            args.rerank_model,
         ),
         _run_pass(
             "v1_repeat",
@@ -215,6 +227,9 @@ def main():
             args.cache_threshold,
             args.llm_provider,
             args.model,
+            args.use_reranker,
+            args.rerank_candidates,
+            args.rerank_model,
         ),
         _run_pass(
             "v2_validation",
@@ -226,6 +241,9 @@ def main():
             args.cache_threshold,
             args.llm_provider,
             args.model,
+            args.use_reranker,
+            args.rerank_candidates,
+            args.rerank_model,
         ),
     ]
 

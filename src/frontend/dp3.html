@@ -302,6 +302,20 @@
         <label for="cacheThreshold">공통 Cache Threshold <span id="cacheText" class="pill">0.86</span></label>
         <input id="cacheThreshold" type="range" min="0" max="100" value="86">
 
+        <label class="checkline"><input id="useReranker" type="checkbox"> Cross-Encoder reranking 사용</label>
+        <div class="row">
+          <div>
+            <label for="rerankCandidates">Rerank 후보 수</label>
+            <input id="rerankCandidates" type="number" min="5" max="100" value="30">
+          </div>
+          <div>
+            <label for="rerankModel">Reranker</label>
+            <select id="rerankModel">
+              <option value="cross-encoder/ms-marco-MiniLM-L-6-v2">ms-marco-MiniLM-L-6-v2</option>
+            </select>
+          </div>
+        </div>
+
         <label class="checkline"><input id="resetAnswerCache" type="checkbox" checked> 실행 전 Answer Cache 초기화</label>
         <label class="checkline"><input id="resetContextCache" type="checkbox" checked> 실행 전 Context Cache 초기화</label>
       </div>
@@ -343,7 +357,7 @@
       "dataset", "numExamples", "queryCount", "scope", "seed",
       "llmOption",
       "sampleRate", "minPerDataset", "poolSeed",
-      "routeThreshold", "cacheThreshold", "resetAnswerCache",
+      "routeThreshold", "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "resetAnswerCache",
       "resetContextCache", "resetMetadata"
     ];
 
@@ -460,6 +474,9 @@
         user_scope: $("scope").value,
         cache_threshold: threshold("cacheThreshold"),
         ...llmPayload(),
+        use_reranker: $("useReranker").checked,
+        rerank_candidates: Number($("rerankCandidates").value),
+        rerank_model: $("rerankModel").value,
         include_smoke: false
       };
     }
@@ -581,9 +598,10 @@
             ${mode === "B" ? metric("Full Retrieval", s.full_retrievals || 0) : metric("Fallback", s.fallbacks || 0)}
             ${metric("LLM Calls", s.llm_calls)}
             ${metric("Avg Total", timing(s, "total_ms"))}
-            ${mode === "A" ? metric("Avg Setup", timing(s, "setup_ms")) : ""}
             ${mode === "A" ? metric("Avg RAG", timing(s, "rag_total_ms")) : metric("Avg Full RAG", timing(s, "full_retrieval_total_ms"))}
+            ${mode === "A" ? metric("Avg Rerank", timing(s, "rag_rerank_ms")) : metric("Avg Full Rerank", timing(s, "full_retrieval_rerank_ms"))}
             ${mode === "B" ? metric("Avg Delta RAG", timing(s, "delta_retrieval_total_ms")) : ""}
+            ${mode === "B" ? metric("Avg Delta Rerank", timing(s, "delta_retrieval_rerank_ms")) : ""}
             ${metric("Avg LLM", timing(s, "llm_ms"))}
           </div>
         `;

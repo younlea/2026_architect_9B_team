@@ -62,6 +62,8 @@
 
 현재 샘플에서는 A안 cache hit 평균 시간이 RAG fallback 평균 시간보다 크게 나오는 현상이 있었다. 이는 실제 성능 특성이라기보다 PoC 구현의 후보 검색, validation 반복, mock LLM, route fail fallback 처리 방식이 섞인 결과일 가능성이 있다.
 
+상태: 완료. A안 이상치는 per-query setup 비용과 route pool DB load/embedding JSON decode 비용이 online latency에 섞인 영향으로 확인했다. setup은 preflight로 분리했고, route pool은 메모리 캐시로 전환했다.
+
 ### TODO
 
 - A안 hit 경로가 느린 이유를 분해한다.
@@ -124,7 +126,9 @@
 
 현재 PoC의 retrieval은 embedding similarity score를 계산한 뒤 score sort로 top-k를 고른다. Cache 전략의 성능 개선 효과를 더 현실적으로 보려면, 일반적인 RAG pipeline에서 비용이 드는 별도 reranking 단계를 추가하는 것이 좋다.
 
-### TODO
+상태: 완료. `cross-encoder/ms-marco-MiniLM-L-6-v2` 기반 reranking 옵션을 추가했다. UI에서 켜고 끌 수 있으며, 기본 후보 수는 30개다.
+
+### 완료된 내용
 
 - 1차 retrieval에서 top-n 후보를 가져온다.
 - 별도 reranker를 사용해 query-context relevance 기준으로 재정렬한다.
@@ -133,7 +137,12 @@
   - `reranker_ms`
   - `reranker_candidate_count`
   - `reranker_top_k`
-- A안/B안 cache hit 시 reranker 비용이 얼마나 절감되는지 비교한다.
+- A안/B안 cache hit 시 reranker 비용이 얼마나 절감되는지 비교할 수 있도록 timing summary에 반영한다.
+
+### 후속 TODO
+
+- reranker 후보 수 10/20/30/50에 따른 latency와 hit 효과를 비교한다.
+- reranker 적용 전후 RAG 품질이 실제로 개선되는지 샘플 기반으로 확인한다.
 
 ### 확인 기준
 

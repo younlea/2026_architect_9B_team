@@ -4,6 +4,8 @@ import uuid
 
 from backend.cache.answer_cache import (
     DEFAULT_CACHE_THRESHOLD,
+    DEFAULT_RERANK_CANDIDATES,
+    DEFAULT_RERANK_MODEL,
     TOP_K_SOURCES,
     _build_prompt,
     _cosine,
@@ -238,11 +240,15 @@ def _current_units_for_sources(
 
 def _delta_retrieve(
     source_id: str,
+    query: str,
     query_embedding: list[float],
     user_scope: str,
     requested_version: str,
     valid_sources: list[dict],
     invalid_sources: list[dict],
+    use_reranker: bool,
+    rerank_candidates: int,
+    rerank_model: str,
 ) -> dict:
     needed = len(invalid_sources)
     candidate_count = max(needed * 2, needed)
@@ -253,11 +259,15 @@ def _delta_retrieve(
     retrieval_timing = {}
     candidates = _retrieve_context_units(
         source_id,
+        query,
         query_embedding,
         user_scope,
         requested_version,
         top_k=candidate_count,
         timing=retrieval_timing,
+        use_reranker=use_reranker,
+        rerank_candidates=max(candidate_count * 2, rerank_candidates),
+        rerank_model=rerank_model,
     )
     filter_start = _timer()
     replacements = []
@@ -280,9 +290,12 @@ def _delta_retrieve(
         "timing": {
             "db_ms": retrieval_timing.get("db_ms", 0.0),
             "scoring_ms": retrieval_timing.get("scoring_ms", 0.0),
+            "score_sort_ms": retrieval_timing.get("score_sort_ms", 0.0),
             "rerank_ms": retrieval_timing.get("rerank_ms", 0.0),
             "filter_ms": filter_ms,
             "total_ms": round(retrieval_timing.get("total_ms", 0.0) + filter_ms, 3),
+            "reranker_enabled": retrieval_timing.get("reranker_enabled", False),
+            "reranker_candidate_count": retrieval_timing.get("reranker_candidate_count", 0),
         },
     }
 
@@ -364,17 +377,24 @@ def _full_retrieval_and_store(
     requested_version: str,
     model: str | None,
     llm_provider: str | None,
+    use_reranker: bool,
+    rerank_candidates: int,
+    rerank_model: str,
     log: dict,
     start: float,
 ) -> dict:
     retrieval_timing = {}
     sources = _retrieve_context_units(
         source_id,
+        query,
         query_embedding,
         user_scope,
         requested_version,
         top_k=TOP_K_SOURCES,
         timing=retrieval_timing,
+        use_reranker=use_reranker,
+        rerank_candidates=rerank_candidates,
+        rerank_model=rerank_model,
     )
     for key, value in retrieval_timing.items():
         if key.endswith("_ms"):
@@ -410,6 +430,9 @@ def run_context_cache_query(
     model: str | None = None,
     llm_provider: str | None = None,
     cache_threshold: float = DEFAULT_CACHE_THRESHOLD,
+    use_reranker: bool = False,
+    rerank_candidates: int = DEFAULT_RERANK_CANDIDATES,
+    rerank_model: str = DEFAULT_RERANK_MODEL,
 ) -> dict:
     start = _timer()
     init_context_cache_schema()
@@ -433,6 +456,9 @@ def run_context_cache_query(
         "retrieval_called": False,
         "delta_retrieval_count": 0,
         "full_retrieval": False,
+        "reranker_enabled": use_reranker,
+        "rerank_candidates": rerank_candidates,
+        "rerank_model": rerank_model if use_reranker else None,
     }
     _set_timing(log, "embedding_ms", embedding_ms)
 
@@ -456,6 +482,9 @@ def run_context_cache_query(
             requested_version,
             model,
             llm_provider,
+            use_reranker,
+            rerank_candidates,
+            rerank_model,
             log,
             start,
         )
@@ -475,6 +504,9 @@ def run_context_cache_query(
             requested_version,
             model,
             llm_provider,
+            use_reranker,
+            rerank_candidates,
+            rerank_model,
             log,
             start,
         )
@@ -532,6 +564,9 @@ def run_context_cache_query(
             requested_version,
             model,
             llm_provider,
+            use_reranker,
+            rerank_candidates,
+            rerank_model,
             log,
             start,
         )
@@ -545,11 +580,15 @@ def run_context_cache_query(
     _set_timing(log, "valid_current_lookup_ms", _elapsed_ms(current_units_start))
     delta = _delta_retrieve(
         source_id,
+        query,
         query_embedding,
         user_scope,
         requested_version,
         validation["valid_sources"],
         validation["invalid_sources"],
+        use_reranker,
+        rerank_candidates,
+        rerank_model,
     )
     log["delta_retrieval"] = {
         "needed": delta["needed"],
@@ -569,6 +608,9 @@ def run_context_cache_query(
             requested_version,
             model,
             llm_provider,
+            use_reranker,
+            rerank_candidates,
+            rerank_model,
             log,
             start,
         )
