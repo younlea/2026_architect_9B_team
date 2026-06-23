@@ -6,14 +6,14 @@
 
 현재 PoC에는 다음 기능이 포함되어 있다.
 
-- DP3 전용 LongBench 다운로드
-- LongBench 예제 기반 ROI-RAG Evidence Unit 생성
+- DP3 전용 LongBench/RAGBench 다운로드
+- LongBench/RAGBench 예제 기반 ROI-RAG Evidence Unit 생성
 - DP3 전용 원본 EU 저장
 - `scope=A/B`, `version=V1/V2/V3`, `fingerprint` metadata 생성
 - A안 Verified Answer Cache 테스트
 - B안 Incremental Context Cache 테스트
-- LongBench 질문풀 생성
-- 웹 UI 기반 A/B 테스트 실행
+- LongBench/RAGBench 질문풀 생성
+- 웹 UI 기반 A/B/No-cache 테스트 실행
 
 DP3 PoC는 DP1/DP2의 기존 실행 방식과 데이터를 직접 수정하지 않도록 DP3 전용 loader, DB table, UI를 사용한다.
 
@@ -23,7 +23,7 @@ DP3 PoC는 DP1/DP2의 기존 실행 방식과 데이터를 직접 수정하지 �
 
 | 항목 | 현재 구현 | 비고 |
 |---|---|---|
-| Dataset | LongBench | DP3 전용 loader가 다운로드/전처리 |
+| Dataset | LongBench, RAGBench | LongBench는 개발 baseline, RAGBench는 평가용 |
 | Evidence Unit | ROI-RAG 기반 EU | 실패 시 fallback chunk 생성 가능 |
 | Embedding | `all-MiniLM-L6-v2` | sentence-transformers 기반, 미설치 시 hash embedding fallback |
 | A안 Routing | 질문풀 vector 유사도 | TODO: BM25 또는 hybrid routing 검토 |
@@ -36,6 +36,28 @@ DP3 PoC는 DP1/DP2의 기존 실행 방식과 데이터를 직접 수정하지 �
 | Retrieval 확장 | vector-only | TODO: BM25, vector+BM25 hybrid 추가 |
 | LLM | Mock 또는 Groq API | 기본 실험 후보: `llama-3.1-8b-instant` |
 | Timing | 구간별 `timings_ms` 저장 | embedding/routing/cache/validation/RAG/LLM/total |
+
+## 3. Test Case 기본 구성
+
+최종 DP3 평가는 다음 Test Case를 기준으로 한다. HTML에서 Test Case를 고르면 아래 값이 기본값으로 적용된다.
+
+| TC | 목적 | 기본 Dataset | 기본 질문 수 |
+|---|---|---|---:|
+| TC1 Cache Benefit | Cache off / miss / hit 비용 비교 | RAGBench `techqa` | 50 |
+| TC2 Mixed Workload Performance | 권한/버전 혼합 + 유사질문 set workload | RAGBench `emanual` | 32 |
+| TC3 Scale Cost | 데이터셋 규모 증가에 따른 RAG 비용 증가 확인 | RAGBench `techqa` | 30 |
+| TC4 Similar Query Pair Quality | cache-hit pair에서 A/B 답변 재사용 방식 비교 | RAGBench `emanual` | 18 |
+
+TC2는 eManual test split에서 생성한 유사질문 set을 사용한다. 현재 생성 기준으로 8개 set, 총 32개 질문이 만들어진다.
+
+```text
+same
+paraphrase
+near_miss
+random
+```
+
+TC4는 eManual test split에서 생성한 cache-hit pair를 사용한다. 현재 생성 기준으로 9개 pair, 총 18개 질문이 만들어진다. 각 pair는 질문 embedding 유사도가 높지만 reference answer가 서로 달라야 한다. TC4의 목적은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 답변을 다시 만들 수 있음을 확인하는 것이다.
 
 ### RAG 세부 단계
 
@@ -65,7 +87,7 @@ total_ms                      요청 전체 처리 시간
 
 주의: reranker 옵션을 끄면 `rerank_ms`는 0에 가깝고, score sort 시간은 `score_sort_ms` 계열 필드에 기록된다.
 
-## 3. 필요 환경
+## 4. 필요 환경
 
 권장 환경은 다음과 같다.
 
@@ -83,7 +105,7 @@ src/data/ 디렉터리 쓰기 권한
 - ROI-RAG 기반 Evidence Unit
 - DP3 versioned metadata
 
-## 4. 최초 환경 설정
+## 5. 최초 환경 설정
 
 프로젝트 루트에서 실행한다.
 
@@ -99,7 +121,7 @@ python -m venv .venv311
 .venv311\Scripts\python -m pip install -r src\requirements.txt
 ```
 
-## 5. 환경 변수
+## 6. 환경 변수
 
 기본값은 `src/.env.example`을 참고한다.
 
@@ -141,7 +163,7 @@ Qwen 27B - qwen/qwen3.6-27b
 
 기본값은 `Mock`이다. 실제 Groq latency를 측정할 때는 `Llama 8B - llama-3.1-8b-instant`를 우선 사용한다.
 
-## 6. 서버 실행
+## 7. 서버 실행
 
 프로젝트 루트에서 다음 명령을 실행한다.
 
@@ -165,7 +187,7 @@ http://127.0.0.1:8000/dp3
 
 VSCode Live Preview로 `dp3.html` 파일을 직접 열면 API 경로가 다르게 잡힐 수 있으므로, 가능하면 FastAPI 서버 주소로 접속한다.
 
-## 7. 웹 UI 사용 순서
+## 8. 웹 UI 사용 순서
 
 권장 실행 순서는 다음과 같다.
 
@@ -192,7 +214,7 @@ VSCode Live Preview로 `dp3.html` 파일을 직접 열면 API 경로가 다르�
 5. `Run A+B`
    - 동일한 질문 샘플로 A안과 B안을 연속 실행한다.
 
-## 8. A안 동작 요약
+## 9. A안 동작 요약
 
 A안은 Answer Cache 전략이다.
 
@@ -208,7 +230,7 @@ A안은 Answer Cache 전략이다.
 
 A안에서 `Cache Hit`은 단순 후보 발견이 아니라, validation까지 통과해서 answer를 재사용한 경우를 의미한다.
 
-## 9. B안 동작 요약
+## 10. B안 동작 요약
 
 B안은 Context Cache 전략이다.
 
@@ -233,7 +255,7 @@ invalid source가 절반 미만이면 invalid_count * 2 만큼 후보 검색
 보충이 부족하면 full retrieval fallback
 ```
 
-## 10. 생성되는 로컬 파일
+## 11. 생성되는 로컬 파일
 
 다음 파일과 디렉터리는 로컬 실행 산출물이다.
 
@@ -245,7 +267,7 @@ src/data/poc.db
 
 이 파일들은 git에 포함하지 않는 것을 전제로 한다. 다른 PC에서 처음 실행하면 다시 생성된다.
 
-## 11. 현재 제약과 주의점
+## 12. 현재 제약과 주의점
 
 - 시간 로그는 `log_json.timings_ms`와 batch summary의 `timing_avg_ms`에 저장된다.
 - 현재 `rerank_ms`는 score sort 시간이며, 별도 reranker 모델은 아직 적용하지 않았다.

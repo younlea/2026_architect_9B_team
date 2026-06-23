@@ -1,3 +1,4 @@
+import json
 import random
 import threading
 import time
@@ -8,6 +9,7 @@ from typing import Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+import backend.cache.answer_cache as answer_cache_module
 from backend.cache.answer_cache import (
     TOP_K_SOURCES,
     _build_prompt,
@@ -24,8 +26,10 @@ from backend.cache.answer_cache import (
 from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
 from backend.cache.context_cache import clear_context_cache_for_source, run_context_cache_query
 from backend.db.database import init_db
+from build_dp3_ragbench_query_assets import build_query_assets
 from load_longbench_dp3 import prepare_dp3_longbench
 from load_ragbench_dp3 import (
+    RAGBENCH_DATA_DIR,
     RAGBENCH_SUBSETS,
     iter_ragbench_queries,
     list_local_ragbench_datasets,
@@ -734,6 +738,65 @@ def _sample_ragbench_queries(dataset_name: str, split: str, count: int, seed: in
     return sorted(rng.sample(queries, count), key=lambda item: (item["dataset"], item["index"]))
 
 
+def _ragbench_asset_path(dataset_name: str, split: str, filename: str):
+    return RAGBENCH_DATA_DIR / dataset_name.strip().lower() / f"{split.strip().lower()}_{filename}.jsonl"
+
+
+def _ensure_emanual_assets(body: TestSuiteRunRequest) -> dict:
+    dataset = body.dataset_name.strip().lower()
+    split = body.dataset_split.strip().lower()
+    tc2_path = _ragbench_asset_path(dataset, split, "tc2_query_sets")
+    tc4_path = _ragbench_asset_path(dataset, split, "tc4_query_pairs")
+    if tc2_path.exists() and tc4_path.exists():
+        return {
+            "subset": dataset,
+            "split": split,
+            "tc2_path": str(tc2_path),
+            "tc4_path": str(tc4_path),
+            "reused": True,
+        }
+    result = build_query_assets(
+        subset=dataset,
+        split=split,
+        seed=body.seed,
+        cache_threshold=body.cache_threshold,
+    )
+    result["reused"] = False
+    return result
+
+
+def _read_jsonl(path) -> list[dict]:
+    rows = []
+    with open(path, encoding="utf-8") as f:
+        for line in f:
+            if line.strip():
+                rows.append(json.loads(line))
+    return rows
+
+
+def _tc2_asset_queries(body: TestSuiteRunRequest) -> list[dict]:
+    assets = _ensure_emanual_assets(body)
+    rows = _read_jsonl(assets["tc2_path"])
+    rng = random.Random(body.seed)
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["group_id"], []).append(row)
+    groups = list(grouped.values())
+    rng.shuffle(groups)
+    flattened = [row for group in groups for row in sorted(group, key=lambda r: r["role"])]
+    count = min(body.query_count, len(flattened)) if body.query_count > 0 else len(flattened)
+    return flattened[:count]
+
+
+def _tc4_asset_pairs(body: TestSuiteRunRequest) -> list[dict]:
+    assets = _ensure_emanual_assets(body)
+    rows = _read_jsonl(assets["tc4_path"])
+    rng = random.Random(body.seed)
+    rng.shuffle(rows)
+    max_pairs = body.query_count // 2 if body.query_count > 0 else len(rows)
+    return rows[: max(1, min(max_pairs, len(rows)))]
+
+
 def _suite_queries(body: TestSuiteRunRequest, count: int | None = None) -> list[dict]:
     if _dataset_family(body) == "ragbench":
         queries = _sample_ragbench_queries(
@@ -1021,17 +1084,30 @@ def _pass_result(pass_name: str, mode: str, results: list[dict]) -> dict:
 def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
     if progress:
         warm_count = min(body.warmup_count, body.query_count)
-        progress.reset(body.query_count * 4 + warm_count * 2 + 1, "LongBench/EU 준비")
-        progress.step("LongBench/EU 준비")
+        progress.reset(body.query_count * 5 + warm_count * 2 + 1, "Dataset/EU 준비")
+        progress.step("Dataset/EU 준비")
     prepared = _prepare_suite_source(body)
     if progress:
-        progress.advance("LongBench/EU 준비 완료")
+        progress.advance("Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
     queries = _suite_queries(body)
     llm_provider = "mock"
     model = None
 
     _warm_up_suite(source_id, queries, body, llm_provider=llm_provider, model=model, progress=progress)
+    no_cache = _run_no_cache_items(
+        source_id,
+        queries,
+        body.user_scope,
+        "V1",
+        llm_provider,
+        model,
+        body.use_reranker,
+        body.rerank_candidates,
+        body.rerank_model,
+        progress,
+        "No-cache V1 실행",
+    )
     clear_answer_cache_for_source(source_id)
     a_first = _run_answer_items(
         source_id,
@@ -1101,6 +1177,7 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
         "query_count": len(queries),
         "sampled_datasets": _query_dataset_counts(queries),
         "llm_provider": llm_provider,
+        "no_cache": {"passes": [_pass_result("v1", "no_cache", no_cache)]},
         "a": {
             "passes": [
                 _pass_result("v1_first", "A", a_first),
@@ -1117,15 +1194,23 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
 
 
 def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
+    use_tc2_assets = _dataset_family(body) == "ragbench" and body.dataset_name.strip().lower() == "emanual"
+    if use_tc2_assets:
+        base_queries = _tc2_asset_queries(body)
+        prepare_count = max(body.num_examples, max((int(q["index"]) for q in base_queries), default=0) + 1)
+    else:
+        base_queries = _suite_queries(body)
+        prepare_count = body.num_examples
+
     if progress:
-        warm_count = min(body.warmup_count, body.query_count)
-        progress.reset(body.query_count * 2 + warm_count * 2 + 1, "LongBench/EU 준비")
-        progress.step("LongBench/EU 준비")
-    prepared = _prepare_suite_source(body)
+        warm_count = min(body.warmup_count, len(base_queries))
+        progress.reset(len(base_queries) * 2 + warm_count * 2 + 1, "Dataset/EU 준비")
+        progress.step("Dataset/EU 준비")
+    prepared = _prepare_suite_source(body, prepare_count)
     if progress:
-        progress.advance("LongBench/EU 준비 완료")
+        progress.advance("Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
-    queries = _mixed_queries(_suite_queries(body), body.seed + 101)
+    queries = _mixed_queries(base_queries, body.seed + 101)
 
     _warm_up_suite(source_id, queries, body, progress=progress)
     clear_answer_cache_for_source(source_id)
@@ -1167,6 +1252,7 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
         "source_id": source_id,
         "query_count": len(queries),
         "sampled_datasets": _query_dataset_counts(queries),
+        "query_asset": "tc2_query_sets" if use_tc2_assets else "random",
         "llm_provider": get_dp3_llm_provider(body.llm_provider),
         "llm_model": body.model,
         "a": {"passes": [_pass_result("mixed", "A", a_results)]},
@@ -1261,12 +1347,179 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
     return {
         "test_case": "scalability",
         "dataset": body.dataset_name,
+        "dataset_family": _dataset_family(body),
         "base_num_examples": body.num_examples,
         "query_count": body.query_count,
         "max_scale": max_scale,
         "llm_provider": get_dp3_llm_provider(llm_provider),
         "llm_model": model,
         "scales": scale_results,
+    }
+
+
+def _tc4_pair_query(pair: dict, side: str) -> dict:
+    item = pair[side]
+    return {
+        "query_id": item["query_id"],
+        "dataset": pair["dataset"],
+        "index": item["index"],
+        "query": item["query"],
+        "reference_answer": item.get("reference_answer", ""),
+        "pair_id": pair["pair_id"],
+        "pair_side": side,
+    }
+
+
+def _answers_equal(left: dict, right: dict) -> bool:
+    return " ".join(str(left.get("answer", "")).split()) == " ".join(str(right.get("answer", "")).split())
+
+
+def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
+    if _dataset_family(body) != "ragbench" or body.dataset_name.strip().lower() != "emanual":
+        raise ValueError("TC4 requires dataset_family=ragbench and dataset_name=emanual.")
+
+    pairs = _tc4_asset_pairs(body)
+    if not pairs:
+        raise RuntimeError("TC4 pair asset is empty. Run the RAGBench query asset builder first.")
+    prepare_count = max(body.num_examples, max(max(p["left"]["index"], p["right"]["index"]) for p in pairs) + 1)
+
+    if progress:
+        progress.reset(len(pairs) * 4 + 1, "TC4 Dataset/EU 준비")
+        progress.step("TC4 Dataset/EU 준비")
+    prepared = _prepare_suite_source(body, prepare_count)
+    if progress:
+        progress.advance("TC4 Dataset/EU 준비 완료")
+    source_id = prepared["source_id"]
+    answer_cache_module._READY_SOURCE_IDS.add(source_id)
+
+    a_left_results = []
+    a_right_results = []
+    b_left_results = []
+    b_right_results = []
+    pair_results = []
+    for pair in pairs:
+        left = _tc4_pair_query(pair, "left")
+        right = _tc4_pair_query(pair, "right")
+
+        clear_answer_cache_for_source(source_id)
+        previous_route_cache = answer_cache_module._ROUTE_CACHE
+        answer_cache_module._ROUTE_CACHE = [{
+            "route_id": f"tc4_shared:{pair['pair_id']}",
+            "route_type": "tc4_shared_pair",
+            "route_question": left["query"],
+            "embedding": _embed(left["query"]),
+        }]
+        try:
+            a_left = _run_answer_items(
+                source_id,
+                [left],
+                body.user_scope,
+                "V1",
+                body.route_threshold,
+                body.cache_threshold,
+                body.llm_provider,
+                body.model,
+                body.use_reranker,
+                body.rerank_candidates,
+                body.rerank_model,
+                progress,
+                "TC4 A left",
+            )[0]
+            a_right = _run_answer_items(
+                source_id,
+                [right],
+                body.user_scope,
+                "V1",
+                body.route_threshold,
+                body.cache_threshold,
+                body.llm_provider,
+                body.model,
+                body.use_reranker,
+                body.rerank_candidates,
+                body.rerank_model,
+                progress,
+                "TC4 A right",
+            )[0]
+        finally:
+            answer_cache_module._ROUTE_CACHE = previous_route_cache
+
+        clear_context_cache_for_source(source_id)
+        b_left = _run_context_items(
+            source_id,
+            [left],
+            body.user_scope,
+            "V1",
+            body.cache_threshold,
+            body.llm_provider,
+            body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
+            progress,
+            "TC4 B left",
+        )[0]
+        b_right = _run_context_items(
+            source_id,
+            [right],
+            body.user_scope,
+            "V1",
+            body.cache_threshold,
+            body.llm_provider,
+            body.model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
+            progress,
+            "TC4 B right",
+        )[0]
+
+        a_left_results.append(a_left)
+        a_right_results.append(a_right)
+        b_left_results.append(b_left)
+        b_right_results.append(b_right)
+        pair_results.append({
+            "pair_id": pair["pair_id"],
+            "similarity": pair["similarity"],
+            "answer_jaccard": pair["answer_jaccard"],
+            "left_query": left["query"],
+            "right_query": right["query"],
+            "a_right_cache_hit": bool(a_right.get("cache_hit")),
+            "b_right_cache_hit": bool(b_right.get("cache_hit")),
+            "a_answers_equal": _answers_equal(a_left, a_right),
+            "b_answers_equal": _answers_equal(b_left, b_right),
+            "a_right_decision": a_right.get("decision_reason"),
+            "b_right_decision": b_right.get("decision_reason"),
+            "left_reference_answer": left.get("reference_answer", ""),
+            "right_reference_answer": right.get("reference_answer", ""),
+            "a_left_answer": a_left.get("answer", ""),
+            "a_right_answer": a_right.get("answer", ""),
+            "b_left_answer": b_left.get("answer", ""),
+            "b_right_answer": b_right.get("answer", ""),
+        })
+
+    return {
+        "test_case": "similar_pair_quality",
+        "prepared": prepared,
+        "source_id": source_id,
+        "query_asset": "tc4_query_pairs",
+        "pair_count": len(pairs),
+        "query_count": len(pairs) * 2,
+        "sampled_datasets": _query_dataset_counts([_tc4_pair_query(p, "left") for p in pairs]),
+        "llm_provider": get_dp3_llm_provider(body.llm_provider),
+        "llm_model": body.model,
+        "a": {
+            "passes": [
+                _pass_result("left_seed", "A", a_left_results),
+                _pass_result("right_probe", "A", a_right_results),
+            ]
+        },
+        "b": {
+            "passes": [
+                _pass_result("left_seed", "B", b_left_results),
+                _pass_result("right_probe", "B", b_right_results),
+            ]
+        },
+        "pairs": pair_results,
     }
 
 
@@ -1279,6 +1532,8 @@ def _run_test_suite_internal(body: TestSuiteRunRequest, progress: _SuiteProgress
         return _run_mixed_timing_test(body, progress)
     if normalized in {"scalability", "scale"}:
         return _run_scalability_test(body, progress)
+    if normalized in {"similar_pair_quality", "tc4", "pair_quality"}:
+        return _run_similar_pair_quality_test(body, progress)
     raise ValueError(f"Unknown DP3 test_case: {body.test_case}")
 
 

@@ -286,6 +286,7 @@
           <option value="cache">TC1. Cache 동작 확인</option>
           <option value="mixed_timing">TC2. 권한/버전 혼합 수행시간</option>
           <option value="scalability">TC3. 데이터셋 확장성</option>
+          <option value="similar_pair_quality">TC4. 유사질문 Pair 품질</option>
         </select>
         <div id="caseHint" class="hint"></div>
       </div>
@@ -444,7 +445,8 @@
     const caseHints = {
       cache: "A/B 각각 V1 질문을 한 번 실행한 뒤 같은 V1 질문을 반복 실행합니다. Cache가 실제로 재사용되는지 확인합니다.",
       mixed_timing: "권한과 버전을 섞은 질문 N개를 A/B에 동일하게 던지고, route/cache/RAG/LLM 시간을 비교합니다.",
-      scalability: "데이터셋을 1배부터 최대 5배까지 키우며 No-cache, A안, B안의 RAG 비용 증가를 비교합니다."
+      scalability: "데이터셋을 1배부터 최대 5배까지 키우며 No-cache, A안, B안의 RAG 비용 증가를 비교합니다.",
+      similar_pair_quality: "Cache hit가 나는 유사질문 pair에서 A안과 B안의 답변 재사용 방식을 비교합니다."
     };
 
     function setBusy(isBusy, title, text) {
@@ -462,8 +464,42 @@
       $("routeText").textContent = threshold("routeThreshold").toFixed(2);
       $("cacheText").textContent = threshold("cacheThreshold").toFixed(2);
       $("caseHint").textContent = caseHints[$("testCase").value] || "";
-      if ($("testCase").value === "mixed_timing" && $("queryCount").dataset.userEdited !== "true") {
-        $("queryCount").value = 200;
+    }
+
+    function applyCaseDefaults() {
+      const tc = $("testCase").value;
+      if (tc === "cache") {
+        $("datasetFamily").value = "ragbench";
+        $("datasetSplit").value = "test";
+        $("numExamples").value = 20;
+        $("queryCount").value = 50;
+        $("routeThreshold").value = 70;
+        $("cacheThreshold").value = 86;
+        $("llmOption").value = "mock";
+      } else if (tc === "mixed_timing") {
+        $("datasetFamily").value = "ragbench";
+        $("datasetSplit").value = "test";
+        $("numExamples").value = 132;
+        $("queryCount").value = 32;
+        $("routeThreshold").value = 70;
+        $("cacheThreshold").value = 78;
+        $("llmOption").value = "mock";
+      } else if (tc === "scalability") {
+        $("datasetFamily").value = "ragbench";
+        $("datasetSplit").value = "test";
+        $("numExamples").value = 20;
+        $("queryCount").value = 30;
+        $("maxScale").value = 5;
+        $("routeThreshold").value = 70;
+        $("cacheThreshold").value = 86;
+        $("llmOption").value = "mock";
+      } else if (tc === "similar_pair_quality") {
+        $("datasetFamily").value = "ragbench";
+        $("datasetSplit").value = "test";
+        $("numExamples").value = 132;
+        $("queryCount").value = 18;
+        $("routeThreshold").value = 70;
+        $("cacheThreshold").value = 78;
       }
     }
 
@@ -699,13 +735,19 @@
       return {
         v1_first: "V1 첫 실행",
         v1_repeat: "V1 반복",
+        v1: "V1 실행",
         mixed: "혼합 실행",
+        left_seed: "Left seed",
+        right_probe: "Right probe",
         scale: "Scale 실행"
       }[pass] || pass;
     }
 
     function summaryCards(result) {
       const blocks = [];
+      if (result.no_cache) {
+        blocks.push(...result.no_cache.passes.map((p) => modeCard("No-cache", p)));
+      }
       if (result.a) {
         blocks.push(...result.a.passes.map((p) => modeCard("A안", p)));
       }
@@ -726,6 +768,16 @@
             ${metric("Cache hit", s.cache_hits, pct(s.cache_hit_ratio))}
             ${metric("Validator 통과", s.validation_passed, pct(s.validation_pass_ratio))}
             ${metric("RAG fallback", s.fallbacks, pct(s.fallback_ratio))}
+            ${metric("LLM calls", s.llm_calls)}
+          </div>
+        `;
+      }
+      if (pass.mode === "no_cache") {
+        return `
+          <div class="card">
+            <h3>${title} · ${passLabel(pass.pass)}</h3>
+            ${metric("Total", s.total)}
+            ${metric("Full RAG", s.full_retrievals)}
             ${metric("LLM calls", s.llm_calls)}
           </div>
         `;
@@ -841,11 +893,22 @@
         renderScalability(result);
         return;
       }
+      const titleByCase = {
+        cache: "TC1. Cache Benefit",
+        mixed_timing: "TC2. Mixed Workload Performance",
+        similar_pair_quality: "TC4. Similar Query Pair Quality"
+      };
       const parts = [
-        `<h2>${result.test_case === "cache" ? "TC1. Cache 동작 확인" : "TC2. 권한/버전 혼합 수행시간"}</h2>`,
+        `<h2>${titleByCase[result.test_case] || result.test_case}</h2>`,
         `<div class="hint">source=${result.source_id}, queries=${result.query_count}, llm=${result.llm_provider}${result.llm_model ? `/${result.llm_model}` : ""}</div>`,
         summaryCards(result)
       ];
+      if (result.no_cache) {
+        result.no_cache.passes.forEach((p) => {
+          parts.push(timingTable("No-cache", p));
+          parts.push(decisionTable("No-cache", p));
+        });
+      }
       if (result.a) {
         result.a.passes.forEach((p) => {
           parts.push(timingTable("A안", p));
@@ -858,7 +921,35 @@
           parts.push(decisionTable("B안", p));
         });
       }
+      if (result.pairs) {
+        parts.push(pairTable(result.pairs));
+      }
       $("resultRoot").innerHTML = parts.join("");
+    }
+
+    function pairTable(pairs) {
+      const rows = pairs.map((p) => `
+        <tr>
+          <td>${p.pair_id}</td>
+          <td>${fmt(p.similarity, 3)}</td>
+          <td>${p.a_right_cache_hit ? "Y" : "N"}</td>
+          <td>${p.b_right_cache_hit ? "Y" : "N"}</td>
+          <td>${p.a_answers_equal ? "Y" : "N"}</td>
+          <td>${p.b_answers_equal ? "Y" : "N"}</td>
+          <td>${p.left_query}<br><b>→</b> ${p.right_query}</td>
+        </tr>
+      `).join("");
+      return `
+        <div class="result-block">
+          <h3>TC4 Pair 결과</h3>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Pair</th><th>Sim</th><th>A hit</th><th>B hit</th><th>A same answer</th><th>B same answer</th><th>Queries</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
     }
 
     function renderScalability(result) {
@@ -937,7 +1028,11 @@
     ["datasetFamily", "datasetSplit", "testCase"].forEach((id) => {
       $(id).addEventListener("change", async () => {
         try {
+          if (id === "testCase") {
+            applyCaseDefaults();
+          }
           await loadDatasets();
+          updateLabels();
         } catch (err) {
           showError(err);
         }
@@ -964,6 +1059,7 @@
     });
 
     (async function init() {
+      applyCaseDefaults();
       updateLabels();
       setBusy(true, "초기화 중", "LongBench dataset과 질문풀 상태를 불러옵니다.");
       try {
