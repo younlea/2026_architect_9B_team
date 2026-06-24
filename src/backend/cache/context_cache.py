@@ -137,6 +137,7 @@ def _store_context_cache(
 
 
 def _find_context_cache_candidate(
+    source_id: str,
     user_scope: str,
     query_embedding: list[float],
     timing: dict | None = None,
@@ -145,11 +146,15 @@ def _find_context_cache_candidate(
     db_start = _timer()
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT context_cache_id, anchor_query_text, anchor_query_embedding_json,
-                      context_pack_text, scope, created_version, source_count
-               FROM dp3_context_cache_entries
-               WHERE scope=?""",
-            (user_scope,),
+            """SELECT DISTINCT cce.context_cache_id, cce.anchor_query_text,
+                      cce.anchor_query_embedding_json, cce.context_pack_text,
+                      cce.scope, cce.created_version, cce.source_count
+               FROM dp3_context_cache_entries cce
+               JOIN dp3_context_cache_sources ccs
+                 ON ccs.context_cache_id = cce.context_cache_id
+               WHERE cce.scope=?
+                 AND ccs.logical_eu_id LIKE ?""",
+            (user_scope, f"{source_id}:%"),
         ).fetchall()
     if timing is not None:
         timing["db_ms"] = _elapsed_ms(db_start)
@@ -481,6 +486,7 @@ def run_context_cache_query(
 
     cache_lookup_timing = {}
     candidate = _find_context_cache_candidate(
+        source_id,
         user_scope,
         query_embedding,
         timing=cache_lookup_timing,

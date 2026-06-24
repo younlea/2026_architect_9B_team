@@ -497,7 +497,7 @@
       cache: "선택한 techqa row scale 안에서 질문을 뽑아 No-cache와 A/B 반복 실행의 cache 절감 효과를 비교합니다.",
       scalability: "techqa row 100, 200, 300을 고정 비교하며 No-cache RAG 비용 증가를 확인합니다.",
       mixed_timing: "emanual 전체 row와 유사질문 set을 사용해 A/B route/cache/RAG/LLM 시간을 비교합니다.",
-      similar_pair_quality: "Cache hit가 나는 유사질문 pair에서 A안과 B안의 답변 재사용 방식을 비교합니다."
+      similar_pair_quality: "techqa의 의미 차이가 있는 유사질문 pair에서 A안과 B안의 답변 재사용 방식을 비교합니다."
     };
 
     function setBusy(isBusy, title, text) {
@@ -582,8 +582,8 @@
       } else if (tc === "similar_pair_quality") {
         $("datasetFamily").value = "ragbench";
         $("datasetSplit").value = "test";
-        $("numExamples").value = 132;
-        $("queryCount").value = 18;
+        $("numExamples").value = 314;
+        $("queryCount").value = 20;
         $("routeThreshold").value = 70;
         $("cacheThreshold").value = 86;
         $("routePoolMode").value = "similar_only";
@@ -655,8 +655,10 @@
           return `<option value="${name}">${name}${rows ? ` (${rows})` : ""}</option>`;
         }).join("");
         const tc = $("testCase").value;
-        if (["mixed_timing", "similar_pair_quality"].includes(tc)) {
+        if (tc === "mixed_timing") {
           $("dataset").value = "emanual";
+        } else if (tc === "similar_pair_quality") {
+          $("dataset").value = "techqa";
         } else {
           $("dataset").value = "techqa";
         }

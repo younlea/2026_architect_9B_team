@@ -2173,8 +2173,9 @@ def _summarize_official_ragas(records: list[dict]) -> dict:
 
 
 def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
-    if _dataset_family(body) != "ragbench" or body.dataset_name.strip().lower() != "emanual":
-        raise ValueError("TC4 requires dataset_family=ragbench and dataset_name=emanual.")
+    dataset_name = body.dataset_name.strip().lower()
+    if _dataset_family(body) != "ragbench" or dataset_name not in {"emanual", "techqa"}:
+        raise ValueError("TC4 requires dataset_family=ragbench and dataset_name=techqa or emanual.")
 
     pairs = _tc4_asset_pairs(body)
     if not pairs:
