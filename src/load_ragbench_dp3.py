@@ -150,6 +150,7 @@ def seed_ragbench_question_pool_sampled(
     seed: int = 42,
     sample_limit: int | None = None,
     exclude_indexes: set[int] | None = None,
+    max_index: int | None = None,
 ) -> dict:
     init_db()
     init_dp3_cache_schema()
@@ -158,6 +159,7 @@ def seed_ragbench_question_pool_sampled(
         item
         for item in iter_ragbench_queries(subset, split)
         if int(item["index"]) not in exclude_indexes
+        and (max_index is None or int(item["index"]) < max_index)
     ]
     total_questions = len(items)
     if sample_limit is not None:
@@ -205,6 +207,7 @@ def seed_ragbench_question_pool_sampled(
         "seed": seed,
         "total_questions": total_questions,
         "excluded_questions": len(exclude_indexes),
+        "max_index": max_index,
         "seeded_questions": inserted,
         "seeded_indexes": [int(item["index"]) for item in sampled],
     }

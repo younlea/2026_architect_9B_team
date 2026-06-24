@@ -284,8 +284,8 @@
         <label for="testCase">Test Case</label>
         <select id="testCase">
           <option value="cache">TC1. Cache 동작 확인</option>
-          <option value="mixed_timing">TC2. 권한/버전 혼합 수행시간</option>
-          <option value="scalability">TC3. 데이터셋 확장성</option>
+          <option value="scalability">TC2. 데이터셋 확장성</option>
+          <option value="mixed_timing">TC3. 유사질문 혼합 수행시간</option>
           <option value="similar_pair_quality">TC4. 유사질문 Pair 품질</option>
         </select>
         <div id="caseHint" class="hint"></div>
@@ -311,7 +311,7 @@
 
         <div class="row">
           <div>
-            <label for="numExamples">기준 EU 예제 수</label>
+            <label for="numExamples">RAG corpus row 수</label>
             <input id="numExamples" type="number" min="1" max="500" value="5">
           </div>
           <div>
@@ -358,7 +358,7 @@
           <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
         </select>
         <div class="hint">Mock Est. Total+LLM = total_ms + llm_call_count * 700ms (GROQ llama-3.1-8b-instant, about 5.6K tokens).</div>
-        <div class="hint">TC1은 Cache 검증용이라 항상 Mock으로 실행합니다. TC2/TC3은 선택한 LLM을 사용합니다.</div>
+        <div class="hint">TC1은 항상 Mock으로 실행합니다. TC2는 기본 Mock, TC3/TC4는 선택한 LLM을 사용할 수 있습니다.</div>
       </div>
 
       <div class="section">
@@ -444,9 +444,9 @@
     ];
 
     const caseHints = {
-      cache: "A/B 각각 V1 질문을 한 번 실행한 뒤 같은 V1 질문을 반복 실행합니다. Cache가 실제로 재사용되는지 확인합니다.",
-      mixed_timing: "권한과 버전을 섞은 질문 N개를 A/B에 동일하게 던지고, route/cache/RAG/LLM 시간을 비교합니다.",
-      scalability: "데이터셋을 1배부터 최대 5배까지 키우며 No-cache, A안, B안의 RAG 비용 증가를 비교합니다.",
+      cache: "선택한 techqa row scale 안에서 질문을 뽑아 No-cache와 A/B 반복 실행의 cache 절감 효과를 비교합니다.",
+      scalability: "techqa row 100, 200, 300을 고정 비교하며 No-cache RAG 비용 증가를 확인합니다.",
+      mixed_timing: "emanual 전체 row와 유사질문 set을 사용해 A/B route/cache/RAG/LLM 시간을 비교합니다.",
       similar_pair_quality: "Cache hit가 나는 유사질문 pair에서 A안과 B안의 답변 재사용 방식을 비교합니다."
     };
 
@@ -474,8 +474,20 @@
       return match ? Number(match[1]) : null;
     }
 
+    function effectivePoolRows() {
+      const datasetRows = selectedDatasetRows();
+      let rows = datasetRows;
+      const tc = $("testCase").value;
+      if (tc === "cache") {
+        rows = Math.min(datasetRows || Number($("numExamples").value), Number($("numExamples").value));
+      } else if (tc === "scalability") {
+        rows = Math.min(datasetRows || 100, 100);
+      }
+      return rows;
+    }
+
     function updatePoolEstimate() {
-      const rows = selectedDatasetRows();
+      const rows = effectivePoolRows();
       if (!rows) {
         $("poolInfo").textContent = "pool: -";
         return;
@@ -492,8 +504,17 @@
       if (tc === "cache") {
         $("datasetFamily").value = "ragbench";
         $("datasetSplit").value = "test";
-        $("numExamples").value = 20;
+        $("numExamples").value = 100;
         $("queryCount").value = 50;
+        $("routeThreshold").value = 70;
+        $("cacheThreshold").value = 86;
+        $("llmOption").value = "mock";
+      } else if (tc === "scalability") {
+        $("datasetFamily").value = "ragbench";
+        $("datasetSplit").value = "test";
+        $("numExamples").value = 100;
+        $("queryCount").value = 50;
+        $("maxScale").value = 3;
         $("routeThreshold").value = 70;
         $("cacheThreshold").value = 86;
         $("llmOption").value = "mock";
@@ -504,15 +525,6 @@
         $("queryCount").value = 32;
         $("routeThreshold").value = 70;
         $("cacheThreshold").value = 78;
-        $("llmOption").value = "mock";
-      } else if (tc === "scalability") {
-        $("datasetFamily").value = "ragbench";
-        $("datasetSplit").value = "test";
-        $("numExamples").value = 20;
-        $("queryCount").value = 30;
-        $("maxScale").value = 5;
-        $("routeThreshold").value = 70;
-        $("cacheThreshold").value = 86;
         $("llmOption").value = "mock";
       } else if (tc === "similar_pair_quality") {
         $("datasetFamily").value = "ragbench";
@@ -607,7 +619,7 @@
 
     async function refreshStats() {
       const stats = await api("/api/dp3/question-pool/stats");
-      updatePoolEstimate(`pool: ${stats.total}`);
+      updatePoolEstimate();
       return stats;
     }
 
@@ -650,6 +662,7 @@
             sample_rate: threshold("sampleRate"),
             min_per_dataset: Number($("minPerDataset").value),
             seed: Number($("poolSeed").value),
+            row_limit: effectivePoolRows(),
             reset: true,
             include_smoke: false
           })
@@ -752,6 +765,11 @@
       return `${fmt(s.avg)} / ${fmt(s.min)} / ${fmt(s.max)} ms`;
     }
 
+    function avgMs(summary, key) {
+      const value = stat(summary, key, "avg");
+      return Number.isFinite(Number(value)) ? `${fmt(value)}ms` : "-";
+    }
+
     function estimatedTotalMetric(summary) {
       const s = summary?.estimated_total_with_llm_ms;
       if (!s) return "";
@@ -770,7 +788,9 @@
         mixed: "혼합 실행",
         left_seed: "Left seed",
         right_probe: "Right probe",
-        scale: "Scale 실행"
+        scale: "Scale 실행",
+        scale_first: "Scale 첫 실행",
+        scale_repeat: "Scale 반복"
       }[pass] || pass;
     }
 
@@ -795,10 +815,12 @@
           <div class="card">
             <h3>${title} · ${passLabel(pass.pass)}</h3>
             ${metric("Total", s.total)}
+            ${metric("Avg Total", avgMs(s, "total_ms"))}
             ${metric("Route 통과", s.route_passed, pct(s.route_pass_ratio))}
             ${metric("Cache hit", s.cache_hits, pct(s.cache_hit_ratio))}
             ${metric("Validator 통과", s.validation_passed, pct(s.validation_pass_ratio))}
             ${metric("RAG fallback", s.fallbacks, pct(s.fallback_ratio))}
+            ${metric("Avg RAG", avgMs(s, "rag_total_ms"))}
             ${metric("LLM calls", s.llm_calls)}
             ${estimatedTotalMetric(s)}
           </div>
@@ -809,7 +831,9 @@
           <div class="card">
             <h3>${title} · ${passLabel(pass.pass)}</h3>
             ${metric("Total", s.total)}
+            ${metric("Avg Total", avgMs(s, "total_ms"))}
             ${metric("Full RAG", s.full_retrievals)}
+            ${metric("Avg Full RAG", avgMs(s, "full_retrieval_total_ms"))}
             ${metric("LLM calls", s.llm_calls)}
             ${estimatedTotalMetric(s)}
           </div>
@@ -819,11 +843,14 @@
         <div class="card">
           <h3>${title} · ${passLabel(pass.pass)}</h3>
           ${metric("Total", s.total)}
+          ${metric("Avg Total", avgMs(s, "total_ms"))}
           ${metric("Cache hit", s.context_cache_hits, pct(s.cache_hit_ratio))}
           ${metric("Validator 전체 통과", s.validation_full_passed, pct(s.validation_full_pass_ratio))}
           ${metric("Validator 파셜 통과", s.validation_partial_passed, pct(s.validation_partial_pass_ratio))}
           ${metric("Full RAG", s.full_retrievals, pct(s.full_retrieval_ratio))}
+          ${metric("Avg Full RAG", avgMs(s, "full_retrieval_total_ms"))}
           ${metric("Delta RAG", s.delta_retrievals, pct(s.delta_retrieval_ratio))}
+          ${metric("Avg Delta RAG", avgMs(s, "delta_retrieval_total_ms"))}
           ${metric("LLM calls", s.llm_calls)}
           ${estimatedTotalMetric(s)}
         </div>
@@ -942,7 +969,7 @@
       }
       const titleByCase = {
         cache: "TC1. Cache Benefit",
-        mixed_timing: "TC2. Mixed Workload Performance",
+        mixed_timing: "TC3. Mixed Workload Performance",
         similar_pair_quality: "TC4. Similar Query Pair Quality"
       };
       const parts = [
@@ -1003,51 +1030,72 @@
     function renderScalability(result) {
       const rows = result.scales.map((row) => {
         const no = row.no_cache.summary;
-        const a = row.a.summary;
-        const b = row.b.summary;
+        const aFirst = row.a_first.summary;
+        const aRepeat = row.a_repeat.summary;
+        const bFirst = row.b_first.summary;
+        const bRepeat = row.b_repeat.summary;
+        const baseEu = row.prepared?.base_eu_count ?? row.prepared?.context_unit_count ?? "-";
         return `
           <tr>
-            <td>${row.scale}x</td>
-            <td>${row.num_examples}</td>
+            <td>${row.row_count || row.num_examples}</td>
+            <td>${baseEu}</td>
+            <td>${statText(no, "total_ms")}</td>
             <td>${statText(no, "full_retrieval_total_ms")}</td>
-            <td>${statText(a, "rag_total_ms")}</td>
-            <td>${pct(a.cache_hit_ratio)}</td>
-            <td>${statText(b, "full_retrieval_total_ms")}</td>
-            <td>${statText(b, "delta_retrieval_total_ms")}</td>
-            <td>${pct(b.cache_hit_ratio)}</td>
+            <td>${statText(aFirst, "total_ms")}</td>
+            <td>${statText(aFirst, "rag_total_ms")}</td>
+            <td>${pct(aFirst.cache_hit_ratio)}</td>
+            <td>${statText(aRepeat, "total_ms")}</td>
+            <td>${statText(aRepeat, "rag_total_ms")}</td>
+            <td>${pct(aRepeat.cache_hit_ratio)}</td>
+            <td>${statText(bFirst, "total_ms")}</td>
+            <td>${statText(bFirst, "full_retrieval_total_ms")}</td>
+            <td>${pct(bFirst.cache_hit_ratio)}</td>
+            <td>${statText(bRepeat, "total_ms")}</td>
+            <td>${statText(bRepeat, "full_retrieval_total_ms")}</td>
+            <td>${pct(bRepeat.cache_hit_ratio)}</td>
           </tr>
         `;
       }).join("");
 
       const detail = result.scales.map((row) => `
         <div class="result-block">
-          <h3>Scale ${row.scale}x · ${row.source_id}</h3>
+          <h3>${row.row_count || row.num_examples} rows · ${row.source_id}</h3>
           <div class="cards">
-            ${modeCard("A안", row.a)}
-            ${modeCard("B안", row.b)}
             <div class="card">
               <h3>No-cache · Scale 실행</h3>
               ${metric("Total", row.no_cache.summary.total)}
+              ${metric("Avg Total", avgMs(row.no_cache.summary, "total_ms"))}
               ${metric("Full RAG", row.no_cache.summary.full_retrievals)}
+              ${metric("Avg Full RAG", avgMs(row.no_cache.summary, "full_retrieval_total_ms"))}
               ${metric("LLM calls", row.no_cache.summary.llm_calls)}
+              ${estimatedTotalMetric(row.no_cache.summary)}
             </div>
+            ${modeCard("A안", row.a_first)}
+            ${modeCard("A안", row.a_repeat)}
+            ${modeCard("B안", row.b_first)}
+            ${modeCard("B안", row.b_repeat)}
           </div>
           ${timingTable("No-cache", row.no_cache)}
-          ${timingTable("A안", row.a)}
-          ${timingTable("B안", row.b)}
+          ${timingTable("A안", row.a_first)}
+          ${timingTable("A안", row.a_repeat)}
+          ${timingTable("B안", row.b_first)}
+          ${timingTable("B안", row.b_repeat)}
         </div>
       `).join("");
 
       $("resultRoot").innerHTML = `
-        <h2>TC3. 데이터셋 확장성</h2>
-        <div class="hint">dataset=${result.dataset}, base=${result.base_num_examples}, max_scale=${result.max_scale}, queries=${result.query_count}</div>
+        <h2>TC2. 데이터셋 확장성</h2>
+        <div class="hint">dataset=${result.dataset}, rows=${(result.scale_rows || []).join(" / ")}, queries=${result.query_count}</div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Scale</th><th>EU 예제</th><th>No-cache FULL RAG avg/min/max</th>
-                <th>A RAG avg/min/max</th><th>A hit</th>
-                <th>B FULL RAG avg/min/max</th><th>B Delta RAG avg/min/max</th><th>B hit</th>
+                <th>Rows</th><th>Base EU</th>
+                <th>No-cache Total avg/min/max</th><th>No-cache FULL RAG avg/min/max</th>
+                <th>A first Total avg/min/max</th><th>A first RAG avg/min/max</th><th>A first hit</th>
+                <th>A repeat Total avg/min/max</th><th>A repeat RAG avg/min/max</th><th>A repeat hit</th>
+                <th>B first Total avg/min/max</th><th>B first FULL RAG avg/min/max</th><th>B first hit</th>
+                <th>B repeat Total avg/min/max</th><th>B repeat FULL RAG avg/min/max</th><th>B repeat hit</th>
               </tr>
             </thead>
             <tbody>${rows}</tbody>
@@ -1069,7 +1117,7 @@
       $("resultRoot").innerHTML = `<div class="log">${String(err.stack || err.message || err)}</div>`;
     }
 
-    ["sampleRate", "minPerDataset", "routeThreshold", "cacheThreshold", "testCase"].forEach((id) => {
+    ["sampleRate", "minPerDataset", "numExamples", "routeThreshold", "cacheThreshold", "testCase"].forEach((id) => {
       $(id).addEventListener("input", updateLabels);
       $(id).addEventListener("change", updateLabels);
     });
@@ -1096,10 +1144,9 @@
     $("refreshBtn").addEventListener("click", async () => {
       setBusy(true, "통계 새로고침", "질문풀 상태를 확인합니다.");
       try {
-        const stats = await refreshStats();
-        renderLog(stats);
+        await refreshStats();
         $("statusTitle").textContent = "통계 갱신 완료";
-        $("statusText").textContent = `현재 질문풀 ${stats.total}개`;
+        $("statusText").textContent = "현재 설정 기준 route pool 예상치를 갱신했습니다.";
       } catch (err) {
         showError(err);
       } finally {
@@ -1113,9 +1160,9 @@
       setBusy(true, "초기화 중", "LongBench dataset과 질문풀 상태를 불러옵니다.");
       try {
         await loadDatasets();
-        const stats = await refreshStats();
+        await refreshStats();
         $("statusTitle").textContent = "준비됨";
-        $("statusText").textContent = `현재 질문풀 ${stats.total}개`;
+        $("statusText").textContent = "테스트 종류와 옵션을 지정한 뒤 시작하세요.";
       } catch (err) {
         showError(err);
       } finally {

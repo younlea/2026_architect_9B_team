@@ -9,6 +9,9 @@ __pycache__/
 src/.env
 
 # 로컬 DB / 벡터 저장소 (재생성 가능)
+data/poc.db
+data/*.db
+data/*.db-journal
 src/data/poc.db
 src/data/chroma/
 src/data/longbench/

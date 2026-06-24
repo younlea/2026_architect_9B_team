@@ -380,7 +380,7 @@ def seed_answerable_question_pool(reset: bool = False) -> dict:
     return {"route_count": count}
 
 
-def clear_answer_cache_for_source(source_id: str | None = None) -> dict:
+def clear_answer_cache_for_source(source_id: str | None = None, clear_logs: bool = True) -> dict:
     init_dp3_cache_schema()
     with get_conn() as conn:
         if source_id:
@@ -392,13 +392,15 @@ def clear_answer_cache_for_source(source_id: str | None = None) -> dict:
                 (f"{source_id}:%",),
             ).fetchall()
             cache_ids = [r["cache_id"] for r in cache_rows]
-            conn.execute("DELETE FROM dp3_answer_cache_logs WHERE thread_id=?", (source_id,))
+            if clear_logs:
+                conn.execute("DELETE FROM dp3_answer_cache_logs WHERE thread_id=?", (source_id,))
         else:
             cache_ids = [
                 r["cache_id"]
                 for r in conn.execute("SELECT cache_id FROM dp3_answer_cache_entries").fetchall()
             ]
-            conn.execute("DELETE FROM dp3_answer_cache_logs")
+            if clear_logs:
+                conn.execute("DELETE FROM dp3_answer_cache_logs")
 
         if cache_ids:
             placeholders = ",".join("?" for _ in cache_ids)
@@ -707,7 +709,7 @@ def _store_log(thread_id: str, query: str, log: dict) -> None:
                 roi_rag_called, total_ms, log_json)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
-                "verified_answer_cache",
+                log.get("mode", "verified_answer_cache"),
                 thread_id,
                 query,
                 log.get("requested_version"),

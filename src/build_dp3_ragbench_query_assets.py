@@ -34,12 +34,12 @@ def build_query_assets(
     split: str = "test",
     seed: int = 42,
     cache_threshold: float = 0.86,
-    paraphrase_threshold: float = 0.78,
     near_miss_min: float = 0.55,
-    tc4_min_similarity: float = 0.78,
+    tc4_min_similarity: float | None = None,
     max_sets: int = 50,
     max_pairs: int = 50,
 ) -> dict:
+    tc4_min_similarity = cache_threshold if tc4_min_similarity is None else tc4_min_similarity
     rng = random.Random(seed)
     items = list(iter_ragbench_queries(subset, split))
     if len(items) < 4:
@@ -51,7 +51,6 @@ def build_query_assets(
         items,
         pair_scores,
         rng,
-        paraphrase_threshold=paraphrase_threshold,
         near_miss_min=near_miss_min,
         cache_threshold=cache_threshold,
         max_sets=max_sets,
@@ -67,17 +66,19 @@ def build_query_assets(
     out_dir.mkdir(parents=True, exist_ok=True)
     tc2_path = out_dir / f"{split}_tc2_query_sets.jsonl"
     tc4_path = out_dir / f"{split}_tc4_query_pairs.jsonl"
+    meta_path = out_dir / f"{split}_query_assets_meta.json"
     _write_jsonl(tc2_path, tc2_rows)
     _write_jsonl(tc4_path, tc4_rows)
 
-    return {
+    result = {
         "subset": subset,
         "split": split,
         "source_queries": len(items),
         "cache_threshold": cache_threshold,
-        "paraphrase_threshold": paraphrase_threshold,
         "near_miss_min": near_miss_min,
         "tc4_min_similarity": tc4_min_similarity,
+        "max_sets": max_sets,
+        "max_pairs": max_pairs,
         "tc2_path": str(tc2_path),
         "tc2_rows": len(tc2_rows),
         "tc2_groups": len({row["group_id"] for row in tc2_rows}),
@@ -86,7 +87,61 @@ def build_query_assets(
         "tc4_pairs": len(tc4_rows),
         "tc4_similarity_min": round(min((row["similarity"] for row in tc4_rows), default=0.0), 4),
         "tc4_similarity_max": round(max((row["similarity"] for row in tc4_rows), default=0.0), 4),
+        "meta_path": str(meta_path),
     }
+    meta_path.write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    return result
+
+
+def ensure_query_assets(
+    subset: str = "emanual",
+    split: str = "test",
+    seed: int = 42,
+    cache_threshold: float = 0.86,
+    near_miss_min: float = 0.55,
+    tc4_min_similarity: float | None = None,
+    max_sets: int = 50,
+    max_pairs: int = 50,
+    force: bool = False,
+) -> dict:
+    tc4_min_similarity = cache_threshold if tc4_min_similarity is None else tc4_min_similarity
+    out_dir = RAGBENCH_DATA_DIR / subset
+    tc2_path = out_dir / f"{split}_tc2_query_sets.jsonl"
+    tc4_path = out_dir / f"{split}_tc4_query_pairs.jsonl"
+    meta_path = out_dir / f"{split}_query_assets_meta.json"
+    expected = {
+        "subset": subset,
+        "split": split,
+        "seed": seed,
+        "cache_threshold": cache_threshold,
+        "near_miss_min": near_miss_min,
+        "tc4_min_similarity": tc4_min_similarity,
+        "max_sets": max_sets,
+        "max_pairs": max_pairs,
+    }
+    if not force and tc2_path.exists() and tc4_path.exists() and meta_path.exists():
+        try:
+            meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            meta = {}
+        if all(meta.get(key) == value for key, value in expected.items()):
+            meta["reused"] = True
+            return meta
+
+    result = build_query_assets(
+        subset=subset,
+        split=split,
+        seed=seed,
+        cache_threshold=cache_threshold,
+        near_miss_min=near_miss_min,
+        tc4_min_similarity=tc4_min_similarity,
+        max_sets=max_sets,
+        max_pairs=max_pairs,
+    )
+    result.update(expected)
+    result["reused"] = False
+    Path(result["meta_path"]).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
+    return result
 
 
 def _pair_scores(items: list[dict], embeddings: list[list[float]]) -> list[dict]:
@@ -110,7 +165,6 @@ def _build_tc2_rows(
     items: list[dict],
     pair_scores: list[dict],
     rng: random.Random,
-    paraphrase_threshold: float,
     near_miss_min: float,
     cache_threshold: float,
     max_sets: int,
@@ -127,38 +181,30 @@ def _build_tc2_rows(
     for seed_idx in seed_order:
         candidates = by_seed.get(seed_idx, [])
         seed_query_key = _normalize_query(items[seed_idx]["query"])
-        paraphrase = next(
+        similar = next(
             (
                 row for row in sorted(candidates, key=lambda r: r["similarity"], reverse=True)
-                if paraphrase_threshold <= row["similarity"] < cache_threshold
+                if row["similarity"] >= cache_threshold
                 and _normalize_query(items[row["j"]]["query"]) != seed_query_key
             ),
             None,
         )
-        if paraphrase is None:
-            paraphrase = next(
-                (
-                    row for row in sorted(candidates, key=lambda r: r["similarity"], reverse=True)
-                    if row["similarity"] >= paraphrase_threshold
-                    and _normalize_query(items[row["j"]]["query"]) != seed_query_key
-                ),
-                None,
-            )
         near_miss = next(
             (
-                row for row in sorted(candidates, key=lambda r: abs(r["similarity"] - near_miss_min))
-                if near_miss_min <= row["similarity"] < paraphrase_threshold
+                row for row in sorted(candidates, key=lambda r: abs(r["similarity"] - cache_threshold))
+                if near_miss_min <= row["similarity"] < cache_threshold
+                and _normalize_query(items[row["j"]]["query"]) != seed_query_key
             ),
             None,
         )
         random_pool = [idx for idx in range(len(items)) if idx != seed_idx]
         random_idx = rng.choice(random_pool)
-        if paraphrase is None or near_miss is None:
+        if similar is None or near_miss is None:
             continue
 
         group_id = f"tc2:{used_groups + 1:03d}:{items[seed_idx]['source_row_id']}"
         rows.append(_tc2_row(group_id, "same", items[seed_idx], seed_idx, 1.0))
-        rows.append(_tc2_row(group_id, "paraphrase", items[paraphrase["j"]], paraphrase["j"], paraphrase["similarity"]))
+        rows.append(_tc2_row(group_id, "similar", items[similar["j"]], similar["j"], similar["similarity"]))
         rows.append(_tc2_row(group_id, "near_miss", items[near_miss["j"]], near_miss["j"], near_miss["similarity"]))
         rows.append(_tc2_row(group_id, "random", items[random_idx], random_idx, None))
         used_groups += 1
@@ -260,23 +306,23 @@ def main() -> None:
     parser.add_argument("--split", default="test")
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cache-threshold", type=float, default=0.86)
-    parser.add_argument("--paraphrase-threshold", type=float, default=0.78)
     parser.add_argument("--near-miss-min", type=float, default=0.55)
-    parser.add_argument("--tc4-min-similarity", type=float, default=0.78)
+    parser.add_argument("--tc4-min-similarity", type=float, default=None)
     parser.add_argument("--max-sets", type=int, default=50)
     parser.add_argument("--max-pairs", type=int, default=50)
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
-    result = build_query_assets(
+    result = ensure_query_assets(
         subset=args.subset,
         split=args.split,
         seed=args.seed,
         cache_threshold=args.cache_threshold,
-        paraphrase_threshold=args.paraphrase_threshold,
         near_miss_min=args.near_miss_min,
         tc4_min_similarity=args.tc4_min_similarity,
         max_sets=args.max_sets,
         max_pairs=args.max_pairs,
+        force=args.force,
     )
     print(json.dumps(result, ensure_ascii=False, indent=2))
 

@@ -77,7 +77,7 @@ RAG 대상 규모가 커질수록 RAG 비용이 증가하는지 확인한다.
   - `dp3_ragbench_techqa_test_300`
 - 질문은 각 scale에 포함된 row 범위 안에서 seed 기반 random sampling으로 뽑는다.
 - NoCache는 필수로 실행한다.
-- A안/B안은 첫 실행 1회씩 참고용으로 실행한다.
+- A안/B안은 첫 실행과 반복 실행을 모두 수행한다.
 - TC2에서는 반복 cache benefit보다 corpus 규모 증가에 따른 retrieval/scoring 비용 증가를 본다.
 - LLM은 기본적으로 mock을 사용한다.
 
@@ -86,7 +86,7 @@ RAG 대상 규모가 커질수록 RAG 비용이 증가하는지 확인한다.
 - scale별 실제 base EU 수
 - scale별 NoCache full RAG 평균 시간
 - scale별 retrieval DB / scoring / sort / reranking 시간
-- A/B 첫 실행의 cache hit, validation, fallback/delta retrieval 양상
+- A/B 첫 실행과 반복 실행의 cache hit, validation, fallback/delta retrieval 양상
 - 전체 corpus 증가에 따라 scoring 비용이 증가하는지
 
 ### TC3. Mixed Workload Performance
@@ -106,7 +106,7 @@ RAG 대상 규모가 커질수록 RAG 비용이 증가하는지 확인한다.
 - 유사질문 set 생성 방식:
   - `emanual` 전체 질문에 대해 brute force similarity를 계산한다.
   - cache hit threshold `0.86` 이상인 유사 질문이 하나라도 있는 질문을 set 후보로 둔다.
-  - 필요하면 `same`, `paraphrase`, `near_miss`, `random` 역할을 같이 기록한다.
+  - 필요하면 `same`, `similar`, `near_miss`, `random` 역할을 같이 기록한다.
   - 생성된 set은 매 실행마다 새로 만들지 않고 local asset으로 저장해 재사용한다.
 - 같은 질문 set을 NoCache, A안, B안에 던진다.
 - LLM은 HTML에서 선택 가능하게 둔다.

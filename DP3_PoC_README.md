@@ -44,20 +44,28 @@ DP3 PoC는 DP1/DP2의 기존 실행 방식과 데이터를 직접 수정하지 �
 | TC | 목적 | 기본 Dataset | 기본 질문 수 |
 |---|---|---|---:|
 | TC1 Cache Benefit | Cache off / miss / hit 비용 비교 | RAGBench `techqa` | 50 |
-| TC2 Mixed Workload Performance | 권한/버전 혼합 + 유사질문 set workload | RAGBench `emanual` | 32 |
-| TC3 Scale Cost | 데이터셋 규모 증가에 따른 RAG 비용 증가 확인 | RAGBench `techqa` | 30 |
+| TC2 Scale Cost | 데이터셋 규모 증가에 따른 RAG 비용 증가 확인 | RAGBench `techqa` | 50 |
+| TC3 Mixed Workload Performance | 권한/버전 혼합 + 유사질문 set workload | RAGBench `emanual` | 32 |
 | TC4 Similar Query Pair Quality | cache-hit pair에서 A/B 답변 재사용 방식 비교 | RAGBench `emanual` | 18 |
 
-TC2는 eManual test split에서 생성한 유사질문 set을 사용한다. 현재 생성 기준으로 8개 set, 총 32개 질문이 만들어진다.
+TC3는 eManual test split에서 생성한 유사질문 set을 사용한다. 저장된 asset이 없거나 생성 기준이 바뀌면 `src/build_dp3_ragbench_query_assets.py`가 다시 생성한다. 현재 생성 기준으로 8개 set, 총 32개 질문이 만들어진다.
 
 ```text
 same
-paraphrase
+similar
 near_miss
 random
 ```
 
-TC4는 eManual test split에서 생성한 cache-hit pair를 사용한다. 현재 생성 기준으로 9개 pair, 총 18개 질문이 만들어진다. 각 pair는 질문 embedding 유사도가 높지만 reference answer가 서로 달라야 한다. TC4의 목적은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 답변을 다시 만들 수 있음을 확인하는 것이다.
+TC4는 eManual test split에서 생성한 cache-hit pair를 사용한다. 저장된 asset이 없거나 생성 기준이 바뀌면 `src/build_dp3_ragbench_query_assets.py`가 다시 생성한다. 현재 생성 기준으로 9개 pair, 총 18개 질문이 만들어진다. 각 pair는 질문 embedding 유사도가 `0.86` 이상이면서 reference answer가 서로 다른 후보를 우선한다. TC4의 목적은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 답변을 다시 만들 수 있음을 확인하는 것이다.
+
+유사질문 asset은 아래 경로에 저장된다.
+
+```text
+src/data/ragbench/emanual/test_tc2_query_sets.jsonl
+src/data/ragbench/emanual/test_tc4_query_pairs.jsonl
+src/data/ragbench/emanual/test_query_assets_meta.json
+```
 
 TC4 결과는 RAGAS 입력 JSONL로 변환할 수 있다. 실제 RAGAS 평가는 `ragas` 패키지와 evaluator LLM 설정이 있는 환경에서 `--evaluate` 옵션으로 수행한다.
 

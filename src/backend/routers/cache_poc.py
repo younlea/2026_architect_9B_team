@@ -18,6 +18,7 @@ from backend.cache.answer_cache import (
     _retrieve_context_units,
     _set_timing,
     _set_total_ms,
+    _store_log,
     _timer,
     clear_answer_cache_for_source,
     run_answer_cache_query,
@@ -26,7 +27,7 @@ from backend.cache.answer_cache import (
 from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
 from backend.cache.context_cache import clear_context_cache_for_source, run_context_cache_query
 from backend.db.database import init_db
-from build_dp3_ragbench_query_assets import build_query_assets
+from build_dp3_ragbench_query_assets import ensure_query_assets
 from load_longbench_dp3 import prepare_dp3_longbench
 from load_ragbench_dp3 import (
     RAGBENCH_DATA_DIR,
@@ -88,6 +89,7 @@ class QuestionPoolSeedRequest(BaseModel):
     sample_rate: float = 0.10
     min_per_dataset: int = 5
     seed: int = 42
+    row_limit: Optional[int] = None
     reset: bool = True
     include_smoke: bool = False
 
@@ -256,6 +258,7 @@ def seed_pool(body: QuestionPoolSeedRequest):
             sample_rate=body.sample_rate,
             min_count=body.min_per_dataset,
             seed=body.seed,
+            max_index=body.row_limit,
         )
     return seed_question_pool(
         dataset=body.dataset,
@@ -764,7 +767,11 @@ def _prepare_suite_source(body: TestSuiteRunRequest, num_examples: int | None = 
     )
 
 
-def _seed_suite_route_pool(body: TestSuiteRunRequest, exclude_indexes: set[int] | None = None) -> dict:
+def _seed_suite_route_pool(
+    body: TestSuiteRunRequest,
+    exclude_indexes: set[int] | None = None,
+    row_limit: int | None = None,
+) -> dict:
     sample_rate = max(0.0, min(1.0, body.sample_rate))
     min_count = max(1, body.min_per_dataset)
     if _dataset_family(body) == "ragbench":
@@ -776,6 +783,7 @@ def _seed_suite_route_pool(body: TestSuiteRunRequest, exclude_indexes: set[int] 
             min_count=min_count,
             seed=body.pool_seed,
             exclude_indexes=exclude_indexes,
+            max_index=row_limit,
         )
     return seed_question_pool(
         dataset=body.dataset_name,
@@ -793,12 +801,14 @@ def _sample_ragbench_queries(
     count: int,
     seed: int,
     exclude_indexes: set[int] | None = None,
+    row_limit: int | None = None,
 ) -> list[dict]:
     exclude_indexes = exclude_indexes or set()
     queries = [
         item
         for item in iter_ragbench_queries(dataset_name, split)
         if int(item["index"]) not in exclude_indexes
+        and (row_limit is None or int(item["index"]) < row_limit)
     ]
     rng = random.Random(seed)
     if count >= len(queries):
@@ -813,24 +823,13 @@ def _ragbench_asset_path(dataset_name: str, split: str, filename: str):
 def _ensure_emanual_assets(body: TestSuiteRunRequest) -> dict:
     dataset = body.dataset_name.strip().lower()
     split = body.dataset_split.strip().lower()
-    tc2_path = _ragbench_asset_path(dataset, split, "tc2_query_sets")
-    tc4_path = _ragbench_asset_path(dataset, split, "tc4_query_pairs")
-    if tc2_path.exists() and tc4_path.exists():
-        return {
-            "subset": dataset,
-            "split": split,
-            "tc2_path": str(tc2_path),
-            "tc4_path": str(tc4_path),
-            "reused": True,
-        }
-    result = build_query_assets(
+    return ensure_query_assets(
         subset=dataset,
         split=split,
         seed=body.seed,
         cache_threshold=body.cache_threshold,
+        tc4_min_similarity=body.cache_threshold,
     )
-    result["reused"] = False
-    return result
 
 
 def _read_jsonl(path) -> list[dict]:
@@ -846,12 +845,17 @@ def _tc2_asset_queries(body: TestSuiteRunRequest) -> list[dict]:
     assets = _ensure_emanual_assets(body)
     rows = _read_jsonl(assets["tc2_path"])
     rng = random.Random(body.seed)
+    role_order = {"same": 0, "similar": 1, "paraphrase": 1, "near_miss": 2, "random": 3}
     grouped = {}
     for row in rows:
         grouped.setdefault(row["group_id"], []).append(row)
     groups = list(grouped.values())
     rng.shuffle(groups)
-    flattened = [row for group in groups for row in sorted(group, key=lambda r: r["role"])]
+    flattened = [
+        row
+        for group in groups
+        for row in sorted(group, key=lambda r: (role_order.get(r["role"], 99), r["query_id"]))
+    ]
     count = min(body.query_count, len(flattened)) if body.query_count > 0 else len(flattened)
     return flattened[:count]
 
@@ -869,6 +873,7 @@ def _suite_queries(
     body: TestSuiteRunRequest,
     count: int | None = None,
     route_pool_indexes: set[int] | None = None,
+    row_limit: int | None = None,
 ) -> list[dict]:
     if _dataset_family(body) == "ragbench":
         queries = _sample_ragbench_queries(
@@ -877,6 +882,7 @@ def _suite_queries(
             count or body.query_count,
             body.seed,
             exclude_indexes=route_pool_indexes,
+            row_limit=row_limit,
         )
         if not queries:
             raise RuntimeError("RAGBench 질문을 찾지 못했습니다. dataset 준비 상태를 확인하세요.")
@@ -1045,6 +1051,7 @@ def _run_no_cache_query(
     log["llm_call_count"] = 1
     log["fallback_source_count"] = len(sources)
     _set_total_ms(log, start)
+    _store_log(source_id, query, log)
     return log
 
 
@@ -1163,9 +1170,14 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
     if progress:
         progress.advance("Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
-    route_pool = _seed_suite_route_pool(body)
+    row_limit = prepared.get("num_examples", body.num_examples)
+    route_pool = _seed_suite_route_pool(body, row_limit=row_limit)
     prepared["route_pool"] = route_pool
-    queries = _suite_queries(body, route_pool_indexes=set(route_pool.get("seeded_indexes", [])))
+    queries = _suite_queries(
+        body,
+        route_pool_indexes=set(route_pool.get("seeded_indexes", [])),
+        row_limit=row_limit,
+    )
     llm_provider = "mock"
     model = None
 
@@ -1183,7 +1195,7 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
         progress,
         "No-cache V1 실행",
     )
-    clear_answer_cache_for_source(source_id)
+    clear_answer_cache_for_source(source_id, clear_logs=False)
     a_first = _run_answer_items(
         source_id,
         queries,
@@ -1340,23 +1352,27 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
 
 def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
     scale_results = []
-    max_scale = max(1, min(body.max_scale, 5))
+    scale_rows = [100, 200, 300]
     llm_provider = body.llm_provider or "mock"
     model = body.model if llm_provider != "mock" else None
     if progress:
-        per_scale = body.query_count * 3 + min(body.warmup_count, body.query_count) * 3 + 1
-        progress.reset(per_scale * max_scale, "TC3 준비")
+        per_scale = body.query_count * 5 + min(body.warmup_count, body.query_count) * 3 + 1
+        progress.reset(per_scale * len(scale_rows), "TC2 준비")
 
-    for scale in range(1, max_scale + 1):
+    for scale, row_count in enumerate(scale_rows, start=1):
         if progress:
-            progress.step(f"Scale {scale}x LongBench/EU 준비")
-        prepared = _prepare_suite_source(body, body.num_examples * scale)
+            progress.step(f"Scale {scale} ({row_count} rows) Dataset/EU 준비")
+        prepared = _prepare_suite_source(body, row_count)
         if progress:
-            progress.advance(f"Scale {scale}x LongBench/EU 준비 완료")
+            progress.advance(f"Scale {scale} ({row_count} rows) Dataset/EU 준비 완료")
         source_id = prepared["source_id"]
-        route_pool = _seed_suite_route_pool(body)
+        route_pool = _seed_suite_route_pool(body, row_limit=row_count)
         prepared["route_pool"] = route_pool
-        queries = _suite_queries(body, route_pool_indexes=set(route_pool.get("seeded_indexes", [])))
+        queries = _suite_queries(
+            body,
+            route_pool_indexes=set(route_pool.get("seeded_indexes", [])),
+            row_limit=row_count,
+        )
         _warm_up_suite(
             source_id,
             queries,
@@ -1366,6 +1382,8 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
             model=model,
             progress=progress,
         )
+        clear_answer_cache_for_source(clear_logs=False)
+        clear_context_cache_for_source()
 
         no_cache = _run_no_cache_items(
             source_id,
@@ -1381,8 +1399,8 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
             f"Scale {scale}x No-cache",
         )
 
-        clear_answer_cache_for_source(source_id)
-        a_results = _run_answer_items(
+        clear_answer_cache_for_source(clear_logs=False)
+        a_first = _run_answer_items(
             source_id,
             queries,
             body.user_scope,
@@ -1395,11 +1413,26 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
             body.rerank_candidates,
             body.rerank_model,
             progress,
-            f"Scale {scale}x A안",
+            f"Scale {scale}x A안 첫 실행",
+        )
+        a_repeat = _run_answer_items(
+            source_id,
+            queries,
+            body.user_scope,
+            "V1",
+            body.route_threshold,
+            body.cache_threshold,
+            llm_provider,
+            model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
+            progress,
+            f"Scale {scale}x A안 반복",
         )
 
-        clear_context_cache_for_source(source_id)
-        b_results = _run_context_items(
+        clear_context_cache_for_source()
+        b_first = _run_context_items(
             source_id,
             queries,
             body.user_scope,
@@ -1411,26 +1444,44 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
             body.rerank_candidates,
             body.rerank_model,
             progress,
-            f"Scale {scale}x B안",
+            f"Scale {scale}x B안 첫 실행",
+        )
+        b_repeat = _run_context_items(
+            source_id,
+            queries,
+            body.user_scope,
+            "V1",
+            body.cache_threshold,
+            llm_provider,
+            model,
+            body.use_reranker,
+            body.rerank_candidates,
+            body.rerank_model,
+            progress,
+            f"Scale {scale}x B안 반복",
         )
 
         scale_results.append({
             "scale": scale,
+            "row_count": row_count,
             "num_examples": prepared["num_examples"],
             "source_id": source_id,
             "prepared": prepared,
             "no_cache": _pass_result("scale", "no_cache", no_cache),
-            "a": _pass_result("scale", "A", a_results),
-            "b": _pass_result("scale", "B", b_results),
+            "a_first": _pass_result("scale_first", "A", a_first),
+            "a_repeat": _pass_result("scale_repeat", "A", a_repeat),
+            "b_first": _pass_result("scale_first", "B", b_first),
+            "b_repeat": _pass_result("scale_repeat", "B", b_repeat),
         })
 
     return {
         "test_case": "scalability",
         "dataset": body.dataset_name,
         "dataset_family": _dataset_family(body),
-        "base_num_examples": body.num_examples,
+        "base_num_examples": scale_rows[0],
         "query_count": body.query_count,
-        "max_scale": max_scale,
+        "max_scale": len(scale_rows),
+        "scale_rows": scale_rows,
         "llm_provider": get_dp3_llm_provider(llm_provider),
         "llm_model": model,
         "scales": scale_results,
