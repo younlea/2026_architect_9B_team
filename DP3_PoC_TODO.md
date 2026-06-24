@@ -235,15 +235,17 @@ cache 전략은 속도만 개선하면 안 되고, answer quality 또는 grounde
 
 ### TODO
 
-- RAGAS 실행 스크립트를 추가한다.
-- A안, B안, no-cache baseline 결과를 RAGAS 입력 형식으로 저장한다.
-- 우선 검토할 metric을 정한다.
+- [x] RAGAS 실행 스크립트를 추가한다.
+- [x] A안/B안 TC4 결과를 RAGAS 입력 형식으로 저장한다.
+- [x] HTML에서 optional official RAGAS 실행 옵션을 제공한다.
+- [x] 우선 검토할 metric을 정한다.
   - faithfulness
   - answer relevancy
   - context precision
   - context recall
-- LongBench 기반 RAGAS 가능성을 제한적으로 확인한다.
-- RAGBench 계열 데이터셋으로 본 평가를 수행한다.
+- [ ] TC4를 실제 LLM으로 실행한 뒤 official RAGAS 점수를 비교한다.
+- [ ] 필요하면 no-cache baseline도 RAGAS 입력에 포함한다.
+- [ ] RAGBench 계열 데이터셋으로 본 평가를 수행한다.
 
 ### 확인 기준
 

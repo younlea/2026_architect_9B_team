@@ -5,10 +5,17 @@ import threading
 import time
 import uuid
 from collections import Counter
+from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter
 from pydantic import BaseModel
+
+try:
+    from langchain_core.callbacks import BaseCallbackHandler
+except Exception:
+    class BaseCallbackHandler:
+        pass
 
 import backend.cache.answer_cache as answer_cache_module
 from backend.cache.answer_cache import (
@@ -153,6 +160,13 @@ class TestSuiteRunRequest(BaseModel):
     reset_metadata: bool = False
     max_scale: int = 5
     include_smoke: bool = False
+
+
+class RagasRunRequest(BaseModel):
+    input_path: str
+    run_official: bool = False
+    max_rows: int = 2
+    model: Optional[str] = None
 
 
 @router.post("/answer-cache/setup")
@@ -1827,6 +1841,248 @@ def _ragas_proxy_from_input(path: str) -> dict:
     }
 
 
+def _resolve_ragas_input_path(path_value: str) -> str:
+    requested = Path(path_value)
+    if not requested.is_absolute():
+        requested = (Path.cwd() / requested).resolve()
+    else:
+        requested = requested.resolve()
+    data_root = (Path.cwd() / "data").resolve()
+    src_data_root = (Path(__file__).resolve().parents[2] / "data").resolve()
+    allowed_roots = [data_root, src_data_root]
+    if not any(requested == root or root in requested.parents for root in allowed_roots):
+        raise ValueError("RAGAS input_path must be under the project data directory.")
+    if not requested.exists():
+        raise FileNotFoundError(f"RAGAS input file not found: {requested}")
+    return str(requested)
+
+
+def _import_ragas_metrics():
+    try:
+        from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
+    except ImportError:
+        from ragas.metrics._answer_relevance import answer_relevancy
+        from ragas.metrics._context_precision import context_precision
+        from ragas.metrics._context_recall import context_recall
+        from ragas.metrics._faithfulness import faithfulness
+    return [faithfulness, answer_relevancy, context_precision, context_recall]
+
+
+def _estimate_text_tokens_for_ragas(text: str) -> int:
+    words = re.findall(r"\S+", str(text))
+    by_words = int(len(words) * 1.35) if words else 0
+    by_chars = int(len(str(text)) / 6.0)
+    return max(1, by_words, by_chars)
+
+
+def _ragas_message_text(message) -> str:
+    content = getattr(message, "content", message)
+    if isinstance(content, list):
+        return " ".join(
+            str(part.get("text", part)) if isinstance(part, dict) else str(part)
+            for part in content
+        )
+    return str(content)
+
+
+class _RagasUsageCallback(BaseCallbackHandler):
+    def __init__(self):
+        self.llm_calls = 0
+        self.prompt_count = 0
+        self.estimated_prompt_tokens = 0
+        self.reported_prompt_tokens = 0
+        self.reported_completion_tokens = 0
+        self.reported_total_tokens = 0
+
+    def on_llm_start(self, serialized, prompts, **kwargs):
+        prompt_list = prompts or []
+        self.llm_calls += len(prompt_list)
+        self.prompt_count += len(prompt_list)
+        self.estimated_prompt_tokens += sum(_estimate_text_tokens_for_ragas(prompt) for prompt in prompt_list)
+
+    def on_chat_model_start(self, serialized, messages, **kwargs):
+        message_batches = messages or []
+        self.llm_calls += len(message_batches)
+        self.prompt_count += len(message_batches)
+        for batch in message_batches:
+            text = "\n".join(_ragas_message_text(message) for message in (batch or []))
+            self.estimated_prompt_tokens += _estimate_text_tokens_for_ragas(text)
+
+    def on_llm_end(self, response, **kwargs):
+        usage = {}
+        llm_output = getattr(response, "llm_output", None) or {}
+        if isinstance(llm_output, dict):
+            usage = llm_output.get("token_usage") or llm_output.get("usage") or {}
+        if not usage:
+            for generation_list in getattr(response, "generations", []) or []:
+                for generation in generation_list or []:
+                    message = getattr(generation, "message", None)
+                    usage = getattr(message, "usage_metadata", None) or getattr(message, "response_metadata", {}).get("token_usage", {})
+                    if usage:
+                        break
+                if usage:
+                    break
+        self.reported_prompt_tokens += int(
+            usage.get("prompt_tokens")
+            or usage.get("input_tokens")
+            or 0
+        )
+        self.reported_completion_tokens += int(
+            usage.get("completion_tokens")
+            or usage.get("output_tokens")
+            or 0
+        )
+        self.reported_total_tokens += int(
+            usage.get("total_tokens")
+            or usage.get("total_token_count")
+            or 0
+        )
+
+    def summary(self) -> dict:
+        return {
+            "llm_calls": self.llm_calls,
+            "prompt_count": self.prompt_count,
+            "estimated_prompt_tokens": self.estimated_prompt_tokens,
+            "reported_prompt_tokens": self.reported_prompt_tokens,
+            "reported_completion_tokens": self.reported_completion_tokens,
+            "reported_total_tokens": self.reported_total_tokens,
+        }
+
+
+def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None = None) -> dict:
+    started = time.perf_counter()
+    rows = _read_jsonl(path)
+    if max_rows and max_rows > 0:
+        rows = rows[:max_rows]
+    rows = [
+        row for row in rows
+        if row.get("question") and row.get("answer") and row.get("contexts") and row.get("ground_truth")
+    ]
+    if not rows:
+        return {
+            "type": "official_ragas",
+            "status": "skipped",
+            "reason": "No complete RAGAS rows with question, answer, contexts, and ground_truth.",
+            "input_path": path,
+            "row_count": 0,
+        }
+
+    try:
+        from datasets import Dataset
+        from ragas import evaluate
+        from ragas.embeddings import LangchainEmbeddingsWrapper
+        from ragas.llms import LangchainLLMWrapper
+        from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_openai import ChatOpenAI
+        from backend.config import EMBEDDING_MODEL, GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL, OPENAI_API_KEY, OPENAI_MODEL
+    except Exception as exc:
+        return {
+            "type": "official_ragas",
+            "status": "unavailable",
+            "reason": f"{type(exc).__name__}: {exc}",
+            "input_path": path,
+            "row_count": len(rows),
+        }
+
+    try:
+        if GROQ_API_KEY:
+            evaluator_model = model or GROQ_MODEL
+            llm = ChatOpenAI(
+                model=evaluator_model,
+                api_key=GROQ_API_KEY,
+                base_url=GROQ_BASE_URL,
+                temperature=0,
+                max_tokens=1024,
+            )
+            evaluator_provider = "groq"
+        elif OPENAI_API_KEY:
+            evaluator_model = OPENAI_MODEL
+            llm = ChatOpenAI(
+                model=evaluator_model,
+                api_key=OPENAI_API_KEY,
+                temperature=0,
+                max_tokens=1024,
+            )
+            evaluator_provider = "openai"
+        else:
+            return {
+                "type": "official_ragas",
+                "status": "unavailable",
+                "reason": "GROQ_API_KEY or OPENAI_API_KEY is required for the evaluator LLM.",
+                "input_path": path,
+                "row_count": len(rows),
+            }
+
+        embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        dataset = Dataset.from_list([
+            {
+                "user_input": row["question"],
+                "response": row["answer"],
+                "retrieved_contexts": row["contexts"],
+                "reference": row["ground_truth"],
+                "pair_id": row.get("pair_id"),
+                "mode": row.get("mode"),
+            }
+            for row in rows
+        ])
+        usage_callback = _RagasUsageCallback()
+        result = evaluate(
+            dataset,
+            metrics=_import_ragas_metrics(),
+            llm=LangchainLLMWrapper(llm),
+            embeddings=LangchainEmbeddingsWrapper(embeddings),
+            callbacks=[usage_callback],
+            raise_exceptions=False,
+            show_progress=False,
+        )
+        records = result.to_pandas().to_dict(orient="records")
+        for index, record in enumerate(records):
+            if index < len(rows):
+                record["pair_id"] = rows[index].get("pair_id")
+                record["mode"] = rows[index].get("mode")
+        score_path = str(Path(path).with_suffix(".official_ragas_scores.json"))
+        Path(score_path).write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+        return {
+            "type": "official_ragas",
+            "status": "completed",
+            "input_path": path,
+            "score_path": score_path,
+            "row_count": len(records),
+            "evaluator_provider": evaluator_provider,
+            "evaluator_model": evaluator_model,
+            "evaluator_usage": usage_callback.summary(),
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+            "by_mode": _summarize_official_ragas(records),
+        }
+    except Exception as exc:
+        return {
+            "type": "official_ragas",
+            "status": "failed",
+            "reason": f"{type(exc).__name__}: {exc}",
+            "input_path": path,
+            "row_count": len(rows),
+            "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+        }
+
+
+def _summarize_official_ragas(records: list[dict]) -> dict:
+    metric_names = ["faithfulness", "answer_relevancy", "context_precision", "context_recall"]
+    by_mode: dict[str, dict] = {}
+    for row in records:
+        mode = str(row.get("mode") or "unknown")
+        item = by_mode.setdefault(mode, {"count": 0, **{name: 0.0 for name in metric_names}})
+        item["count"] += 1
+        for name in metric_names:
+            value = row.get(name)
+            if isinstance(value, (int, float)) and value == value:
+                item[name] += float(value)
+    for item in by_mode.values():
+        count = max(1, item["count"])
+        for name in metric_names:
+            item[name] = round(item[name] / count, 4)
+    return by_mode
+
+
 def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
     if _dataset_family(body) != "ragbench" or body.dataset_name.strip().lower() != "emanual":
         raise ValueError("TC4 requires dataset_family=ragbench and dataset_name=emanual.")
@@ -1971,7 +2227,6 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
         source_id,
         pair_results,
     )
-    ragas_proxy = _ragas_proxy_from_input(ragas_input_path)
     public_pair_results = [
         {k: v for k, v in pair.items() if k not in {"a_right_result", "b_right_result"}}
         for pair in pair_results
@@ -1985,7 +2240,8 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
         "pair_count": len(pairs),
         "query_count": len(pairs) * 2,
         "ragas_input_path": ragas_input_path,
-        "ragas_proxy": ragas_proxy,
+        "ragas_proxy": None,
+        "official_ragas": None,
         "sampled_datasets": _query_dataset_counts([_tc4_pair_query(p, "left") for p in pairs]),
         "llm_provider": get_dp3_llm_provider(body.llm_provider),
         "llm_model": body.model,
@@ -2022,6 +2278,23 @@ def _run_test_suite_internal(body: TestSuiteRunRequest, progress: _SuiteProgress
 @router.post("/test-suite/run")
 def run_test_suite(body: TestSuiteRunRequest):
     return _run_test_suite_internal(body)
+
+
+@router.post("/ragas/run")
+def run_ragas(body: RagasRunRequest):
+    input_path = _resolve_ragas_input_path(body.input_path)
+    result = {
+        "input_path": input_path,
+        "ragas_proxy": _ragas_proxy_from_input(input_path),
+        "official_ragas": None,
+    }
+    if body.run_official:
+        result["official_ragas"] = _official_ragas_from_input(
+            input_path,
+            max_rows=body.max_rows,
+            model=body.model,
+        )
+    return result
 
 
 def _run_suite_job(job_id: str, body: TestSuiteRunRequest) -> None:

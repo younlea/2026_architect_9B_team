@@ -26,7 +26,11 @@ os.environ.setdefault("CHROMA_PERSIST_DIR", str(BASE_DIR / "data" / "chroma"))
 sys.path.insert(0, str(BASE_DIR))
 
 from backend.cache.answer_cache import TOP_K_SOURCES, _embed, _retrieve_context_units  # noqa: E402
-from backend.routers.cache_poc import TestSuiteRunRequest, _run_test_suite_internal  # noqa: E402
+from backend.routers.cache_poc import (  # noqa: E402
+    TestSuiteRunRequest,
+    _official_ragas_from_input,
+    _run_test_suite_internal,
+)
 
 
 DEFAULT_OUTPUT = BASE_DIR / "data" / "ragbench" / "emanual" / "test_tc4_ragas_input.jsonl"
@@ -48,7 +52,11 @@ def main() -> int:
     }, ensure_ascii=False, indent=2))
 
     if args.evaluate:
-        scores = run_ragas_evaluate(rows)
+        scores = _official_ragas_from_input(
+            str(output),
+            max_rows=args.ragas_max_rows,
+            model=args.ragas_model or args.model,
+        )
         score_path = output.with_suffix(".scores.json")
         score_path.write_text(json.dumps(scores, ensure_ascii=False, indent=2), encoding="utf-8")
         print(json.dumps({"scores": str(score_path)}, ensure_ascii=False, indent=2))
@@ -66,6 +74,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--route-threshold", type=float, default=0.70)
     parser.add_argument("--top-k", type=int, default=TOP_K_SOURCES)
     parser.add_argument("--evaluate", action="store_true")
+    parser.add_argument("--ragas-max-rows", type=int, default=2)
+    parser.add_argument("--ragas-model", default=None)
     return parser.parse_args()
 
 
@@ -142,36 +152,6 @@ def write_jsonl(path: Path, rows: list[dict]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for row in rows:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
-
-
-def run_ragas_evaluate(rows: list[dict]) -> dict:
-    try:
-        from datasets import Dataset
-        from ragas import evaluate
-        from ragas.metrics import answer_relevancy, context_precision, context_recall, faithfulness
-    except ModuleNotFoundError as exc:
-        raise RuntimeError(
-            "ragas is not installed. Install ragas and configure evaluator LLM credentials, "
-            "or run without --evaluate to create the JSONL input only."
-        ) from exc
-
-    dataset = Dataset.from_list([
-        {
-            "question": row["question"],
-            "answer": row["answer"],
-            "contexts": row["contexts"],
-            "ground_truth": row["ground_truth"],
-        }
-        for row in rows
-    ])
-    result = evaluate(
-        dataset,
-        metrics=[faithfulness, answer_relevancy, context_precision, context_recall],
-    )
-    try:
-        return result.to_pandas().to_dict(orient="records")
-    except Exception:
-        return dict(result)
 
 
 if __name__ == "__main__":

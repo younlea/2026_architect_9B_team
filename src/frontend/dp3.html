@@ -485,6 +485,7 @@
   <script>
     const $ = (id) => document.getElementById(id);
     const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
+    let latestRagasInputPath = null;
     const controls = [
       "testCase", "datasetFamily", "dataset", "datasetSplit", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
       "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
@@ -769,6 +770,57 @@
       }
     }
 
+    async function runRagasForLatest(runOfficial) {
+      if (!latestRagasInputPath) {
+        showError(new Error("먼저 TC4를 실행해서 RAGAS input을 생성해 주세요."));
+        return;
+      }
+      const proxyBtn = $("runProxyRagasBtn");
+      const officialBtn = $("runOfficialRagasBtn");
+      const target = $("ragasResultRoot");
+      const maxRows = Number($("ragasResultMaxRows")?.value || 2);
+      const selectedModel = $("llmOption").value === "mock" ? null : $("llmOption").value;
+      if (proxyBtn) proxyBtn.disabled = true;
+      if (officialBtn) officialBtn.disabled = true;
+      if (target) {
+        target.innerHTML = `<div class="hint">${runOfficial ? "Official RAGAS 실행 중입니다. evaluator LLM 호출 때문에 오래 걸릴 수 있습니다." : "Proxy RAGAS 계산 중입니다."}</div>`;
+      }
+      try {
+        const result = await api("/api/dp3/ragas/run", {
+          method: "POST",
+          body: JSON.stringify({
+            input_path: latestRagasInputPath,
+            run_official: runOfficial,
+            max_rows: maxRows,
+            model: selectedModel
+          })
+        });
+        if (target) {
+          target.innerHTML = renderRagasRunResult(result);
+        }
+      } catch (err) {
+        if (target) {
+          target.innerHTML = `<div class="log">${escapeHtml(String(err.stack || err.message || err))}</div>`;
+        } else {
+          showError(err);
+        }
+      } finally {
+        if (proxyBtn) proxyBtn.disabled = false;
+        if (officialBtn) officialBtn.disabled = false;
+      }
+    }
+
+    function renderRagasRunResult(result) {
+      const parts = [];
+      if (result.official_ragas) {
+        parts.push(officialRagasTable(result.official_ragas));
+      }
+      if (result.ragas_proxy) {
+        parts.push(ragasProxyTable(result.ragas_proxy));
+      }
+      return parts.join("") || `<div class="hint">RAGAS 결과가 없습니다.</div>`;
+    }
+
     function sleep(ms) {
       return new Promise((resolve) => setTimeout(resolve, ms));
     }
@@ -1039,6 +1091,7 @@
 
     function renderSuiteResult(result) {
       $("resultRoot").className = "";
+      latestRagasInputPath = result.ragas_input_path || null;
       if (result.test_case === "scalability") {
         renderScalability(result);
         return;
@@ -1076,12 +1129,85 @@
         if (result.ragas_input_path) {
           parts.push(`<div class="hint">RAGAS input: ${result.ragas_input_path}</div>`);
         }
+        if (result.official_ragas) {
+          parts.push(officialRagasTable(result.official_ragas));
+        }
         if (result.ragas_proxy) {
           parts.push(ragasProxyTable(result.ragas_proxy));
         }
         parts.push(pairTable(result.pairs));
+        if (result.ragas_input_path) {
+          parts.push(ragasActionPanel(result.ragas_input_path));
+        }
       }
       $("resultRoot").innerHTML = parts.join("");
+    }
+
+    function ragasActionPanel(inputPath) {
+      return `
+        <div class="result-block">
+          <h3>TC4 RAGAS 실행</h3>
+          <div class="hint">TC4를 다시 실행하지 않고, 저장된 최신 RAGAS input으로만 평가합니다. Proxy는 API를 쓰지 않는 단어 겹침 기반 참고값이고, Official RAGAS는 evaluator LLM API를 호출합니다.</div>
+          <div class="row">
+            <div>
+              <label for="ragasResultMaxRows">Official RAGAS max rows</label>
+              <input id="ragasResultMaxRows" type="number" min="1" max="100" value="2">
+            </div>
+            <div>
+              <label>Input</label>
+              <div class="hint">${escapeHtml(inputPath)}</div>
+            </div>
+          </div>
+          <div class="actions">
+            <button id="runProxyRagasBtn" onclick="runRagasForLatest(false)">Run Proxy RAGAS</button>
+            <button id="runOfficialRagasBtn" class="secondary" onclick="runRagasForLatest(true)">Run Official RAGAS</button>
+          </div>
+          <div id="ragasResultRoot"></div>
+        </div>
+      `;
+    }
+
+    function officialRagasTable(ragas) {
+      if (!ragas) return "";
+      if (ragas.status !== "completed") {
+        return `
+          <div class="result-block">
+            <h3>TC4 Official RAGAS</h3>
+            <div class="hint">status=${escapeHtml(ragas.status || "-")}, reason=${escapeHtml(ragas.reason || "-")}</div>
+          </div>
+        `;
+      }
+      const rows = Object.entries(ragas.by_mode || {}).map(([mode, item]) => `
+        <tr>
+          <td>${mode}</td>
+          <td>${fmt(item.faithfulness, 3)}</td>
+          <td>${fmt(item.answer_relevancy, 3)}</td>
+          <td>${fmt(item.context_precision, 3)}</td>
+          <td>${fmt(item.context_recall, 3)}</td>
+          <td>${item.count}</td>
+        </tr>
+      `).join("");
+      return `
+        <div class="result-block">
+          <h3>TC4 Official RAGAS</h3>
+          <div class="hint">evaluator=${escapeHtml(ragas.evaluator_provider || "-")}/${escapeHtml(ragas.evaluator_model || "-")}, rows=${ragas.row_count}, elapsed=${fmt(ragas.elapsed_ms)}ms, ${ragasUsageText(ragas.evaluator_usage)}, scores=${escapeHtml(ragas.score_path || "-")}</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Mode</th><th>Faithfulness</th><th>Answer Relevancy</th><th>Context Precision</th><th>Context Recall</th><th>N</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function ragasUsageText(usage) {
+      if (!usage) return "usage=-";
+      const reported = usage.reported_total_tokens || 0;
+      const estimated = usage.estimated_prompt_tokens || 0;
+      const prompt = usage.reported_prompt_tokens || 0;
+      const completion = usage.reported_completion_tokens || 0;
+      return `evaluator calls=${usage.llm_calls ?? "-"}, reported total=${reported || "-"}, reported prompt=${prompt || "-"}, reported completion=${completion || "-"}, estimated prompt=${estimated || "-"}`;
     }
 
     function ragasProxyTable(proxy) {

@@ -67,7 +67,17 @@ src/data/ragbench/emanual/test_tc4_query_pairs.jsonl
 src/data/ragbench/emanual/test_query_assets_meta.json
 ```
 
-TC4 결과는 RAGAS 입력 JSONL로 변환할 수 있다. 실제 RAGAS 평가는 `ragas` 패키지와 evaluator LLM 설정이 있는 환경에서 `--evaluate` 옵션으로 수행한다.
+TC4 결과는 RAGAS 입력 JSONL로 변환할 수 있다. HTML에서 TC4를 먼저 실행하면 결과 하단에 `Run Proxy RAGAS`, `Run Official RAGAS` 버튼이 표시된다. 두 버튼은 TC4를 다시 실행하지 않고, 저장된 최신 RAGAS input JSONL만 사용한다.
+
+Proxy RAGAS는 API를 쓰지 않고 answer/reference/context/question의 단어 겹침을 계산하는 lightweight sanity check다. 정식 RAGAS 점수는 아니며, context가 완전히 엉뚱한지 또는 mock 답변이라 품질 평가 의미가 약한지 빠르게 확인하는 용도다.
+
+Official RAGAS는 테스트용 LLM과 별개로 evaluator LLM을 추가 호출한다. 현재 구현은 `GROQ_API_KEY`가 있으면 Groq OpenAI-compatible endpoint를 evaluator로 사용하고, 없으면 `OPENAI_API_KEY`를 확인한다. RAGAS 의존성은 기본 PoC 실행과 분리하기 위해 별도 파일로 둔다. 1 row 평가도 1분 이상 걸릴 수 있으므로 UI 기본값은 `Official RAGAS max rows=2`로 둔다. 전체 TC4 18 row 평가는 의도적으로 값을 올려 실행한다. Official RAGAS 결과에는 evaluator LLM 호출 수와 reported/estimated token usage를 함께 표시한다.
+
+```powershell
+.\.venv311\Scripts\python.exe -m pip install -r src\requirements-ragas.txt
+```
+
+CLI로도 RAGAS input 생성과 정식 평가를 실행할 수 있다.
 
 ```powershell
 $env:PYTHONPATH='src'
