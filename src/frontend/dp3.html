@@ -1188,13 +1188,19 @@
           </div>
         `;
       }
+      const metricCell = (item, key) => {
+        const valid = item.valid_counts?.[key] ?? 0;
+        const total = item.count ?? 0;
+        const nan = item.nan_counts?.[key] ?? Math.max(0, total - valid);
+        return `${fmt(item[key], 3)}<br><small>valid ${valid}/${total}${nan ? `, NaN ${nan}` : ""}</small>`;
+      };
       const rows = Object.entries(ragas.by_mode || {}).map(([mode, item]) => `
         <tr>
           <td>${mode}</td>
-          <td>${fmt(item.faithfulness, 3)}</td>
-          <td>${fmt(item.answer_relevancy, 3)}</td>
-          <td>${fmt(item.context_precision, 3)}</td>
-          <td>${fmt(item.context_recall, 3)}</td>
+          <td>${metricCell(item, "faithfulness")}</td>
+          <td>${metricCell(item, "answer_relevancy")}</td>
+          <td>${metricCell(item, "context_precision")}</td>
+          <td>${metricCell(item, "context_recall")}</td>
           <td>${item.count}</td>
         </tr>
       `).join("");
@@ -1202,6 +1208,7 @@
         <div class="result-block">
           <h3>TC4 Official RAGAS</h3>
           <div class="hint">evaluator=${escapeHtml(ragas.evaluator_provider || "-")}/${escapeHtml(ragas.evaluator_model || "-")}, rows=${ragas.row_count}, elapsed=${fmt(ragas.elapsed_ms)}ms, ${ragasUsageText(ragas.evaluator_usage)}, ${ragasAttemptText(ragas.evaluator_attempts)}, scores=${escapeHtml(ragas.score_path || "-")}</div>
+          <div class="hint">Metric averages exclude NaN values. N is the total evaluated rows per mode.</div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Mode</th><th>Faithfulness</th><th>Answer Relevancy</th><th>Context Precision</th><th>Context Recall</th><th>N</th></tr></thead>

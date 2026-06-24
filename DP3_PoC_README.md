@@ -46,7 +46,7 @@ DP3 PoC는 DP1/DP2의 기존 실행 방식과 데이터를 직접 수정하지 �
 | TC1 Cache Benefit | Cache off / miss / hit 비용 비교 | RAGBench `techqa` | 50 |
 | TC2 Scale Cost | 데이터셋 규모 증가에 따른 RAG 비용 증가 확인 | RAGBench `techqa` | 50 |
 | TC3 Mixed Workload Performance | 권한/버전 혼합 + 유사질문 set workload | RAGBench `emanual` | 32 |
-| TC4 Similar Query Pair Quality | cache-hit pair에서 A/B 답변 재사용 방식 비교 | RAGBench `emanual` | 18 |
+| TC4 Similar Query Pair Quality | cache-hit pair에서 A/B 답변 재사용 방식 비교 | RAGBench `techqa` | 20 |
 
 TC3는 eManual test split에서 생성한 유사질문 set을 사용한다. 저장된 asset이 없거나 생성 기준이 바뀌면 `src/build_dp3_ragbench_query_assets.py`가 다시 생성한다. 현재 생성 기준으로 8개 set, 총 32개 질문이 만들어진다.
 
@@ -57,7 +57,7 @@ near_miss
 random
 ```
 
-TC4는 eManual test split에서 생성한 cache-hit pair를 사용한다. 저장된 asset이 없거나 생성 기준이 바뀌면 `src/build_dp3_ragbench_query_assets.py`가 다시 생성한다. 현재 생성 기준으로 9개 pair, 총 18개 질문이 만들어진다. 각 pair는 질문 embedding 유사도가 `0.86` 이상이면서 reference answer가 서로 다른 후보를 우선한다. TC4의 목적은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 답변을 다시 만들 수 있음을 확인하는 것이다.
+TC4는 TechQA test split에서 생성한 cache-hit pair를 기본으로 사용한다. 저장된 asset이 없거나 생성 기준이 바뀌면 `src/build_dp3_ragbench_query_assets.py`가 다시 생성한다. 현재 생성 기준으로 10개 pair, 총 20개 질문이 만들어진다. 각 pair는 질문 embedding 유사도가 `0.86` 이상이면서 reference answer가 서로 다른 후보를 우선한다. TC4의 목적은 A안이 answer-level cache reuse로 동일 답변을 반환할 위험이 있고, B안은 context-level cache reuse 후 질문별로 답변을 다시 만들 수 있음을 확인하는 것이다.
 
 유사질문 asset은 아래 경로에 저장된다.
 
@@ -65,13 +65,15 @@ TC4는 eManual test split에서 생성한 cache-hit pair를 사용한다. 저장
 src/data/ragbench/emanual/test_tc2_query_sets.jsonl
 src/data/ragbench/emanual/test_tc4_query_pairs.jsonl
 src/data/ragbench/emanual/test_query_assets_meta.json
+src/data/ragbench/techqa/test_tc4_query_pairs.jsonl
+src/data/ragbench/techqa/test_query_assets_meta.json
 ```
 
 TC4 결과는 RAGAS 입력 JSONL로 변환할 수 있다. HTML에서 TC4를 먼저 실행하면 결과 하단에 `Run Proxy RAGAS`, `Run Official RAGAS` 버튼이 표시된다. 두 버튼은 TC4를 다시 실행하지 않고, 저장된 최신 RAGAS input JSONL만 사용한다.
 
 Proxy RAGAS는 API를 쓰지 않고 answer/reference/context/question의 단어 겹침을 계산하는 lightweight sanity check다. 정식 RAGAS 점수는 아니며, context가 완전히 엉뚱한지 또는 mock 답변이라 품질 평가 의미가 약한지 빠르게 확인하는 용도다.
 
-Official RAGAS는 테스트용 LLM과 별개로 evaluator LLM을 추가 호출한다. 현재 구현은 `GROQ_API_KEY`가 있으면 Groq OpenAI-compatible endpoint를 evaluator로 사용하고, 없으면 `OPENAI_API_KEY`를 확인한다. Groq evaluator는 기본적으로 `llama-3.3-70b-versatile`을 사용하고, token-per-day 한도에 막힌 경우에만 `qwen/qwen3-32b`, `qwen/qwen3.6-27b` 순서로 fallback한다. RAGAS 의존성은 기본 PoC 실행과 분리하기 위해 별도 파일로 둔다. 1 row 평가도 1분 이상 걸릴 수 있으므로 UI 기본값은 `Official RAGAS max rows=2`로 둔다. 전체 TC4 18 row 평가는 의도적으로 값을 올려 실행한다. Official RAGAS 결과에는 evaluator LLM 호출 수와 reported/estimated token usage를 함께 표시한다.
+Official RAGAS는 테스트용 LLM과 별개로 evaluator LLM을 추가 호출한다. 현재 구현은 `GROQ_API_KEY`가 있으면 Groq OpenAI-compatible endpoint를 evaluator로 사용하고, 없으면 `OPENAI_API_KEY`를 확인한다. Groq evaluator 기본 후보는 `meta-llama/llama-4-scout-17b-16e-instruct`이며, token-per-day 한도에 막힌 경우 `llama-3.3-70b-versatile`, `qwen/qwen3-32b`, `qwen/qwen3.6-27b` 순서로 fallback한다. RAGAS 의존성은 기본 PoC 실행과 분리하기 위해 별도 파일로 둔다. 1 row 평가도 1분 이상 걸릴 수 있으므로 UI 기본값은 `Official RAGAS max rows=2`로 둔다. 전체 TC4 20 row 평가는 의도적으로 값을 올려 실행한다. Official RAGAS 결과에는 evaluator LLM 호출 수와 reported/estimated token usage를 함께 표시한다.
 
 TC4/RAGAS 비교의 언어 변수를 줄이기 위해 DP3 PoC 답변 prompt는 영어 답변을 강제한다.
 
@@ -153,6 +155,51 @@ python -m venv .venv311
 .venv311\Scripts\python -m pip install -r src\requirements.txt
 ```
 
+## 5.1 다른 PC에서 처음 실행하는 순서
+
+다른 컴퓨터에서 새로 실행할 때는 git에 포함되지 않는 `src/data` 산출물이 없어도 된다. 아래 순서대로 실행하면 LongBench/RAGBench 원본, DP3 전용 EU, SQLite DB, metadata, query asset이 필요한 시점에 자동으로 다운로드 또는 생성된다.
+
+1. 저장소를 clone하고 프로젝트 루트로 이동한다.
+
+```powershell
+git clone <repository-url>
+cd 2026_architect_9B_team
+```
+
+2. Python 3.11 가상환경을 만들고 의존성을 설치한다.
+
+```powershell
+python -m venv .venv311
+.\.venv311\Scripts\python.exe -m pip install -r src\requirements.txt
+```
+
+3. RAGAS까지 실행할 계획이면 추가 의존성을 설치한다.
+
+```powershell
+.\.venv311\Scripts\python.exe -m pip install -r src\requirements-ragas.txt
+```
+
+4. 실제 Groq LLM을 사용할 경우 Windows 사용자 환경 변수 또는 `src/.env`에 `GROQ_API_KEY`를 설정한다. Mock만 사용할 경우 생략해도 된다.
+
+```text
+GROQ_API_KEY=your_groq_api_key_here
+```
+
+5. FastAPI 서버를 실행하고 브라우저에서 `http://127.0.0.1:8000/dp3`로 접속한다.
+
+```powershell
+cd src
+..\.venv311\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+```
+
+6. UI에서 필요한 TC를 선택하고 `Prepare` 또는 `선택 테스트 시작`을 누른다. 최초 실행은 데이터 다운로드, embedding model 로딩, EU 생성 때문에 오래 걸릴 수 있다. 같은 설정으로 다시 실행하면 저장된 로컬 산출물을 재사용하므로 준비 시간이 줄어든다.
+
+주의:
+
+- `src/data/poc.db`, `src/data/ragbench/`, `src/data/longbench/`는 로컬 산출물이며 git에 올리지 않는다.
+- 다른 PC에서 이 파일들이 없으면 다시 생성된다.
+- DP3 전용 DB와 loader를 사용하므로 DP1/DP2 실행 방식이나 기존 데이터는 직접 변경하지 않는다.
+
 ## 6. 환경 변수
 
 기본값은 `src/.env.example`을 참고한다.
@@ -201,14 +248,14 @@ Qwen 27B - qwen/qwen3.6-27b
 
 ```powershell
 cd src
-..\ .venv311\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+..\.venv311\Scripts\python -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 PowerShell에서 위 명령의 공백이 불편하면 다음처럼 실행한다.
 
 ```powershell
 cd src
-..\ .venv311\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
+..\.venv311\Scripts\python.exe -m uvicorn backend.main:app --host 127.0.0.1 --port 8000
 ```
 
 정상 실행 후 브라우저에서 접속한다.
@@ -294,6 +341,7 @@ invalid source가 절반 미만이면 invalid_count * 2 만큼 후보 검색
 ```text
 src/data/longbench/
 src/data/longbench.zip
+src/data/ragbench/
 src/data/poc.db
 ```
 

@@ -433,3 +433,160 @@ mock LLM은 실제 LLM latency를 거의 반영하지 않으므로, Groq `llama-
 - B안은 context cache hit 이후에도 LLM을 호출하지만, Full RAG를 줄이는 효과가 크다. B repeat에서는 Full RAG가 5회로 줄고 Delta RAG가 6회 발생해 mock total 평균이 `312.7 ms`까지 낮아졌다.
 - Delta RAG는 reranker 후보 수가 6/12로 제한되면서 Full RAG보다 짧아졌다. B first 기준 Full RAG avg `1,064.5 ms`, Delta RAG avg `432.3 ms`로 측정됐다.
 - 절반 이상 invalid인 경우는 partial이 아니라 validator failed로 분류되며, Full RAG fallback으로 처리된다.
+
+## 5. TC4 유사 질문 Pair 품질 평가 - TechQA
+
+### 실행 조건
+
+| 항목 | 값 |
+|---|---|
+| Dataset | RAGBench `techqa` |
+| TC 목적 | 유사 질문 pair에서 A안 answer cache 재사용과 B안 context cache 재생성의 답변 적합성 비교 |
+| Pair 수 | 10 pair |
+| 평가 row 수 | A 10개 + B 10개 = 20개 |
+| TC4 입력 파일 | `src/data/ragbench/techqa/test_tc4_ragas_input.jsonl` |
+| RAGAS score 파일 | `src/data/ragbench/techqa/test_tc4_ragas_input.official_ragas_scores.json` |
+| Answer LLM | Groq `llama-3.1-8b-instant` |
+| RAGAS evaluator | Groq `meta-llama/llama-4-scout-17b-16e-instruct` |
+
+### TC4 동작 요약
+
+| Mode | Cache hit | Validator | LLM answer calls | 의미 |
+|---|---:|---:|---:|---|
+| A | 10 / 10 | 10 / 10 valid | 0 / 10 | 유사 질문 right가 answer cache를 hit하여 left 답변을 재사용 |
+| B | 10 / 10 | 10 / 10 valid | 10 / 10 | 유사 질문 right가 context cache를 hit하고, right 질문 기준으로 답변 재생성 |
+
+해석:
+
+- A안은 cache hit 시 RAG와 LLM을 모두 생략하므로 응답속도 측면에서 가장 유리하다.
+- B안은 cache hit 후에도 LLM을 호출하지만, right 질문에 맞춰 답변을 다시 생성하므로 유사 질문 pair에서 답변 적합성이 더 좋아질 수 있다.
+- 최신 TC4에서는 A/B 모두 cache hit 및 validation이 정상적으로 동작했다.
+
+### LLM / RAGAS 사용량
+
+| 구분 | 값 |
+|---|---:|
+| TC4 B answer generation calls | 10 |
+| TC4 B answer generation reported total tokens | 20,249 |
+| TC4 B answer generation reported prompt tokens | 18,999 |
+| TC4 B answer generation reported completion tokens | 1,250 |
+| Official RAGAS evaluator calls | 507 |
+| Official RAGAS reported total tokens | 235,877 |
+| Official RAGAS reported prompt tokens | 208,527 |
+| Official RAGAS reported completion tokens | 27,350 |
+| Official RAGAS elapsed | 439,758.7 ms |
+
+### Official RAGAS 결과
+
+아래 표는 최신 score 파일을 기준으로 한다. 기존 화면 표시는 `NaN`이 있는 metric을 사실상 0처럼 포함한 보수 평균이었고, 이후 UI는 `NaN`을 제외한 유효값 평균과 `valid/total`을 함께 표시하도록 수정했다.
+
+| Mode | Faithfulness valid avg | Faithfulness valid/N | Answer Relevancy | Context Precision | Context Recall valid avg | Context Recall valid/N |
+|---|---:|---:|---:|---:|---:|---:|
+| A | 0.769 | 4 / 10 | 0.822 | 0.505 | 1.000 | 5 / 10 |
+| B | 0.513 | 5 / 10 | 0.896 | 0.495 | 1.000 | 4 / 10 |
+
+보수 평균 기준 참고:
+
+| Mode | Faithfulness | Answer Relevancy | Context Precision | Context Recall | N |
+|---|---:|---:|---:|---:|---:|
+| A | 0.307 | 0.822 | 0.505 | 0.500 | 10 |
+| B | 0.257 | 0.896 | 0.495 | 0.400 | 10 |
+
+해석:
+
+- 이번 TC4의 핵심 지표는 `Answer Relevancy`로 본다. TC4는 “유사하지만 다른 질문”에 대해 현재 질문에 맞는 답변을 내는지가 목적이기 때문이다.
+- `Answer Relevancy`는 A `0.822`, B `0.896`으로 B가 더 높다. 즉 B안은 context cache를 재사용하면서도 질문별 답변 재생성으로 더 현재 질문에 맞는 답변을 만들었다.
+- `Faithfulness`는 A가 더 높다. 다만 TC4에서는 answer cache와 context cache의 동작 차이를 보는 것이 목적이고, Faithfulness는 RAG context 구성과 LLM grounding 품질의 영향을 크게 받는다. 따라서 이번 DP3 기능적합성 판단에서는 보조 지표로 둔다.
+- `Context Precision`은 A/B가 거의 비슷하다. B가 높은 Answer Relevancy를 보였지만, context precision 자체는 아직 개선 여지가 있다.
+
+### 예시 관찰
+
+| Pair 유형 | A안 관찰 | B안 관찰 |
+|---|---|---|
+| 서로 다른 CVE를 묻는 보안 bulletin 질문 | left 질문의 CVE/제품 답변을 right 질문에 재사용하는 사례가 있었다. | right 질문의 CVE/제품에 맞춰 답변을 다시 생성했다. |
+| 서로 다른 IBM 제품 문서 URL을 묻는 질문 | 유사 질문 hit으로 이전 제품 URL이 유지되는 사례가 있었다. | 현재 질문의 제품명/API에 맞는 URL과 설명을 생성했다. |
+
+## 6. DP3 QA 평가 수치 후보
+
+이 섹션의 별점 기준은 외부 표준 절대 기준이 아니라, 현재 PoC raw data를 기준으로 한 내부 비교 기준이다. 최종 발표나 보고서에서 절대 기준처럼 사용하려면 외부 논문, 사내 SLA, 또는 추가 benchmark 근거가 필요하다.
+
+### QA-1. 응답속도
+
+평가 기준: cache hit 이후 생략 가능한 고비용 stage.
+
+| 별점 | 기준 |
+|---:|---|
+| 3 | cache hit valid 케이스의 80% 이상에서 RAG와 LLM을 모두 생략 |
+| 2 | cache hit valid 케이스의 80% 이상에서 RAG는 생략하지만 LLM은 호출 |
+| 1 | cache hit valid 비율이 낮거나, RAG/LLM 생략 효과가 불명확 |
+
+PoC 적용:
+
+| 안 | 근거 수치 | 판정 |
+|---|---|---:|
+| A | TC4 A cache hit valid `10/10`, LLM answer calls `0/10` | 3 |
+| B | TC4 B cache hit valid `10/10`, LLM answer calls `10/10`, 단 Full RAG는 생략 | 2 |
+
+보조 근거:
+
+- Groq `llama-3.1-8b-instant`, 약 5.6K tokens 기준 LLM HTTP round-trip 평균은 약 `683.8 ms`로 측정됐다.
+- A안은 valid answer cache hit 시 이 LLM 비용까지 생략할 수 있다.
+- B안은 Full RAG 비용은 줄일 수 있지만, 답변 생성을 위해 LLM 비용은 남는다.
+
+### QA-2. 기능적합성
+
+평가 기준: TC4 유사 질문 pair에서 현재 질문에 맞는 답변을 생성하는 정도. 주 지표는 Official RAGAS `Answer Relevancy`로 둔다.
+
+| 별점 | 기준 |
+|---:|---|
+| 3 | Answer Relevancy `0.88` 이상 |
+| 2 | Answer Relevancy `0.75` 이상 `0.88` 미만 |
+| 1 | Answer Relevancy `0.75` 미만 |
+
+PoC 적용:
+
+| 안 | 근거 수치 | 판정 |
+|---|---:|---:|
+| A | TC4 Official RAGAS Answer Relevancy `0.822` | 2 |
+| B | TC4 Official RAGAS Answer Relevancy `0.896` | 3 |
+
+해석:
+
+- A안은 유사 질문에서 answer cache를 그대로 재사용하므로 빠르지만, right 질문의 세부 차이를 놓칠 수 있다.
+- B안은 context cache를 재사용하되 답변은 다시 생성하므로, 유사 질문 pair에서 현재 질문과의 관련성이 더 높게 나왔다.
+- Faithfulness는 A가 더 높게 측정됐으나, 이번 DP3 기능적합성의 핵심은 “유사 질문에서도 현재 질문에 맞는 답변을 만들 수 있는가”이므로 Answer Relevancy를 우선 지표로 둔다.
+
+### QA-3. 테스트적합성
+
+평가 기준: 유사 질문, 권한, 버전 변화에 대해 cache 동작과 답변 품질 차이를 관측할 수 있는 정도. 주 지표는 cache hit 이후 질문별 답변 재생성 가능 여부로 둔다.
+
+| 별점 | 기준 |
+|---:|---|
+| 3 | cache hit valid 비율이 80% 이상이고, cache hit 이후에도 질문별 답변 재생성이 가능 |
+| 2 | cache hit valid 비율은 80% 이상이나, answer 재사용 구조라 질문별 답변 차이 관측이 제한적 |
+| 1 | cache hit/validation이 불안정하여 테스트 케이스 구성 자체가 어려움 |
+
+PoC 적용:
+
+| 안 | 근거 수치 | 판정 |
+|---|---|---:|
+| A | TC4 A cache hit valid `10/10`, answer 재사용 구조, LLM answer calls `0/10` | 2 |
+| B | TC4 B cache hit valid `10/10`, right 질문 기준 LLM answer calls `10/10` | 3 |
+
+해석:
+
+- A안은 응답속도 검증에는 매우 적합하지만, answer cache hit 이후에는 동일 답변 재사용이 의도된 동작이므로 질문별 답변 품질 차이를 관찰하기 어렵다.
+- B안은 같은 cache hit 조건에서도 질문별 답변을 다시 생성하므로, RAGAS/Proxy RAGAS와 같은 품질 평가를 붙이기 쉽다.
+
+### QA 별점 요약
+
+| QA | A안 | B안 | 대표 근거 |
+|---|---:|---:|---|
+| 응답속도 | 3 | 2 | A는 RAG+LLM 생략, B는 RAG 생략 후 LLM 호출 |
+| 기능적합성 | 2 | 3 | TC4 Answer Relevancy A `0.822`, B `0.896` |
+| 테스트적합성 | 2 | 3 | A는 answer 재사용, B는 context 재사용 후 질문별 답변 재생성 |
+
+Open Question:
+
+- 위 별점 기준은 현재 PoC 내부 기준이다. 최종 문서에서는 외부 연구, 사내 성능 기준, 또는 추가 benchmark 결과를 통해 threshold의 근거를 보강해야 한다.
+- Faithfulness와 Context Precision 개선을 위해서는 TC4의 context 구성, reranking, prompt grounding을 추가 튜닝해야 한다.

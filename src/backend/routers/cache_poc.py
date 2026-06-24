@@ -2159,16 +2159,27 @@ def _summarize_official_ragas(records: list[dict]) -> dict:
     by_mode: dict[str, dict] = {}
     for row in records:
         mode = str(row.get("mode") or "unknown")
-        item = by_mode.setdefault(mode, {"count": 0, **{name: 0.0 for name in metric_names}})
+        item = by_mode.setdefault(
+            mode,
+            {
+                "count": 0,
+                "valid_counts": {name: 0 for name in metric_names},
+                "nan_counts": {name: 0 for name in metric_names},
+                **{name: 0.0 for name in metric_names},
+            },
+        )
         item["count"] += 1
         for name in metric_names:
             value = row.get(name)
             if isinstance(value, (int, float)) and value == value:
                 item[name] += float(value)
+                item["valid_counts"][name] += 1
+            else:
+                item["nan_counts"][name] += 1
     for item in by_mode.values():
-        count = max(1, item["count"])
         for name in metric_names:
-            item[name] = round(item[name] / count, 4)
+            valid_count = item["valid_counts"][name]
+            item[name] = round(item[name] / valid_count, 4) if valid_count else None
     return by_mode
 
 
