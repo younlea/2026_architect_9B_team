@@ -357,6 +357,7 @@
           <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
           <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
         </select>
+        <div class="hint">Mock Est. Total+LLM = total_ms + llm_call_count * 700ms (GROQ llama-3.1-8b-instant, about 5.6K tokens).</div>
         <div class="hint">TC1은 Cache 검증용이라 항상 Mock으로 실행합니다. TC2/TC3은 선택한 LLM을 사용합니다.</div>
       </div>
 
@@ -464,6 +465,26 @@
       $("routeText").textContent = threshold("routeThreshold").toFixed(2);
       $("cacheText").textContent = threshold("cacheThreshold").toFixed(2);
       $("caseHint").textContent = caseHints[$("testCase").value] || "";
+      updatePoolEstimate();
+    }
+
+    function selectedDatasetRows() {
+      const option = $("dataset").selectedOptions[0];
+      const match = option?.textContent?.match(/\((\d+)\)/);
+      return match ? Number(match[1]) : null;
+    }
+
+    function updatePoolEstimate() {
+      const rows = selectedDatasetRows();
+      if (!rows) {
+        $("poolInfo").textContent = "pool: -";
+        return;
+      }
+      const estimated = Math.min(
+        rows,
+        Math.max(Number($("minPerDataset").value || 1), Math.round(rows * threshold("sampleRate")))
+      );
+      $("poolInfo").textContent = `pool: ${estimated}`;
     }
 
     function applyCaseDefaults() {
@@ -544,6 +565,9 @@
         max_scale: Number($("maxScale").value),
         route_threshold: threshold("routeThreshold"),
         cache_threshold: threshold("cacheThreshold"),
+        sample_rate: threshold("sampleRate"),
+        min_per_dataset: Number($("minPerDataset").value),
+        pool_seed: Number($("poolSeed").value),
         ...llmPayload(),
         use_reranker: $("useReranker").checked,
         rerank_candidates: Number($("rerankCandidates").value),
@@ -583,7 +607,7 @@
 
     async function refreshStats() {
       const stats = await api("/api/dp3/question-pool/stats");
-      $("poolInfo").textContent = `pool: ${stats.total}`;
+      updatePoolEstimate(`pool: ${stats.total}`);
       return stats;
     }
 
@@ -670,6 +694,7 @@
           : `${result.query_count}개 질문, dataset=${payload.dataset_name}`;
         updateProgress({ ...job, progress_percent: 100, completed: job.total });
         renderSuiteResult(result);
+        await refreshStats();
       } catch (err) {
         showError(err);
       } finally {
@@ -727,6 +752,12 @@
       return `${fmt(s.avg)} / ${fmt(s.min)} / ${fmt(s.max)} ms`;
     }
 
+    function estimatedTotalMetric(summary) {
+      const s = summary?.estimated_total_with_llm_ms;
+      if (!s) return "";
+      return metric("Est. Total+LLM", `${fmt(s.avg)}ms`, `min ${fmt(s.min)} / max ${fmt(s.max)}`);
+    }
+
     function metric(label, value, extra = "") {
       return `<div class="metric"><span>${label}</span><b>${value}${extra ? ` <small>${extra}</small>` : ""}</b></div>`;
     }
@@ -769,6 +800,7 @@
             ${metric("Validator 통과", s.validation_passed, pct(s.validation_pass_ratio))}
             ${metric("RAG fallback", s.fallbacks, pct(s.fallback_ratio))}
             ${metric("LLM calls", s.llm_calls)}
+            ${estimatedTotalMetric(s)}
           </div>
         `;
       }
@@ -779,6 +811,7 @@
             ${metric("Total", s.total)}
             ${metric("Full RAG", s.full_retrievals)}
             ${metric("LLM calls", s.llm_calls)}
+            ${estimatedTotalMetric(s)}
           </div>
         `;
       }
@@ -792,6 +825,7 @@
           ${metric("Full RAG", s.full_retrievals, pct(s.full_retrieval_ratio))}
           ${metric("Delta RAG", s.delta_retrievals, pct(s.delta_retrieval_ratio))}
           ${metric("LLM calls", s.llm_calls)}
+          ${estimatedTotalMetric(s)}
         </div>
       `;
     }
@@ -808,7 +842,8 @@
         ["RAG score sort", "rag_score_sort_ms"],
         ["RAG reranking", "rag_rerank_ms"],
         ["LLM", "llm_ms"],
-        ["Total", "total_ms"]
+        ["Total", "total_ms"],
+        ["Est. Total+LLM", "estimated_total_with_llm_ms"]
       ];
       const rowsB = [
         ["Embedding", "embedding_ms"],
@@ -826,7 +861,8 @@
         ["Delta reranking", "delta_retrieval_rerank_ms"],
         ["Delta filter", "delta_retrieval_filter_ms"],
         ["LLM", "llm_ms"],
-        ["Total", "total_ms"]
+        ["Total", "total_ms"],
+        ["Est. Total+LLM", "estimated_total_with_llm_ms"]
       ];
       const rowsNoCache = [
         ["Embedding", "embedding_ms"],
@@ -836,11 +872,14 @@
         ["FULL score sort", "full_retrieval_score_sort_ms"],
         ["FULL reranking", "full_retrieval_rerank_ms"],
         ["LLM", "llm_ms"],
-        ["Total", "total_ms"]
+        ["Total", "total_ms"],
+        ["Est. Total+LLM", "estimated_total_with_llm_ms"]
       ];
       const rows = pass.mode === "A" ? rowsA : pass.mode === "B" ? rowsB : rowsNoCache;
       return rows.map(([label, key]) => {
-        const s = pass.summary.timing_stats_ms?.[key];
+        const s = key === "estimated_total_with_llm_ms"
+          ? pass.summary.estimated_total_with_llm_ms
+          : pass.summary.timing_stats_ms?.[key];
         return `
           <tr>
             <td>${label}</td>
@@ -887,6 +926,14 @@
       `;
     }
 
+    function routePoolHint(result) {
+      const pool = result?.prepared?.route_pool;
+      if (!pool) return "";
+      const pctValue = Number(pool.sample_rate || 0) * 100;
+      const excluded = Number(pool.excluded_questions || 0);
+      return `<div class="hint">route pool=${pool.seeded_questions ?? "-"} / ${pool.total_questions ?? "-"} (${fmt(pctValue)}%, seed=${pool.seed ?? "-"}${excluded ? `, excluded=${excluded}` : ""})</div>`;
+    }
+
     function renderSuiteResult(result) {
       $("resultRoot").className = "";
       if (result.test_case === "scalability") {
@@ -901,6 +948,7 @@
       const parts = [
         `<h2>${titleByCase[result.test_case] || result.test_case}</h2>`,
         `<div class="hint">source=${result.source_id}, queries=${result.query_count}, llm=${result.llm_provider}${result.llm_model ? `/${result.llm_model}` : ""}</div>`,
+        routePoolHint(result),
         summaryCards(result)
       ];
       if (result.no_cache) {
@@ -1021,7 +1069,7 @@
       $("resultRoot").innerHTML = `<div class="log">${String(err.stack || err.message || err)}</div>`;
     }
 
-    ["sampleRate", "routeThreshold", "cacheThreshold", "testCase"].forEach((id) => {
+    ["sampleRate", "minPerDataset", "routeThreshold", "cacheThreshold", "testCase"].forEach((id) => {
       $(id).addEventListener("input", updateLabels);
       $(id).addEventListener("change", updateLabels);
     });
@@ -1038,6 +1086,7 @@
         }
       });
     });
+    $("dataset").addEventListener("change", updateLabels);
     $("queryCount").addEventListener("input", () => {
       $("queryCount").dataset.userEdited = "true";
     });

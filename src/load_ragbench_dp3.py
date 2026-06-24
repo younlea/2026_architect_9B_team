@@ -13,6 +13,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import random
 import sys
 from pathlib import Path
 
@@ -132,15 +133,52 @@ def iter_ragbench_queries(subset: str, split: str = "test"):
 
 
 def seed_ragbench_question_pool(subset: str, split: str, reset: bool = False, sample_limit: int | None = None) -> dict:
+    return seed_ragbench_question_pool_sampled(
+        subset=subset,
+        split=split,
+        reset=reset,
+        sample_limit=sample_limit,
+    )
+
+
+def seed_ragbench_question_pool_sampled(
+    subset: str,
+    split: str,
+    reset: bool = False,
+    sample_rate: float = 1.0,
+    min_count: int = 1,
+    seed: int = 42,
+    sample_limit: int | None = None,
+    exclude_indexes: set[int] | None = None,
+) -> dict:
     init_db()
     init_dp3_cache_schema()
+    exclude_indexes = exclude_indexes or set()
+    items = [
+        item
+        for item in iter_ragbench_queries(subset, split)
+        if int(item["index"]) not in exclude_indexes
+    ]
+    total_questions = len(items)
+    if sample_limit is not None:
+        sample_count = min(sample_limit, total_questions)
+    elif sample_rate >= 1.0:
+        sample_count = total_questions
+    else:
+        sample_count = max(min_count, int(round(total_questions * sample_rate)))
+        sample_count = min(sample_count, total_questions)
+
+    rng = random.Random(seed)
+    if sample_count < total_questions:
+        sampled = sorted(rng.sample(items, sample_count), key=lambda item: int(item["index"]))
+    else:
+        sampled = items
+
     inserted = 0
     with get_conn() as conn:
         if reset:
             conn.execute("DELETE FROM dp3_answerable_question_pool")
-        for item in iter_ragbench_queries(subset, split):
-            if sample_limit is not None and inserted >= sample_limit:
-                break
+        for item in sampled:
             conn.execute(
                 """INSERT OR REPLACE INTO dp3_answerable_question_pool
                    (route_id, question_text, route_type, embedding_json)
@@ -153,7 +191,23 @@ def seed_ragbench_question_pool(subset: str, split: str, reset: bool = False, sa
                 ),
             )
             inserted += 1
-    return {"subset": subset, "split": split, "seeded_questions": inserted}
+    try:
+        from backend.cache.answer_cache import _clear_runtime_caches
+
+        _clear_runtime_caches()
+    except Exception:
+        pass
+    return {
+        "subset": subset,
+        "split": split,
+        "sample_rate": sample_rate,
+        "min_count": min_count,
+        "seed": seed,
+        "total_questions": total_questions,
+        "excluded_questions": len(exclude_indexes),
+        "seeded_questions": inserted,
+        "seeded_indexes": [int(item["index"]) for item in sampled],
+    }
 
 
 def list_local_ragbench_datasets() -> dict:
@@ -182,6 +236,7 @@ def prepare_dp3_ragbench(
     auto_download: bool = True,
     reset: bool = False,
     reset_metadata: bool = False,
+    seed_route_pool: bool = True,
 ) -> dict:
     subset = subset.strip().lower()
     split = split.strip().lower()
@@ -191,8 +246,10 @@ def prepare_dp3_ragbench(
 
     init_db()
     init_dp3_cache_schema()
-    seed_answerable_question_pool(reset=False)
-    seed_result = seed_ragbench_question_pool(subset, split, reset=False)
+    seed_result = {"seeded_questions": 0, "skipped": True}
+    if seed_route_pool:
+        seed_answerable_question_pool(reset=False)
+        seed_result = seed_ragbench_question_pool(subset, split, reset=False)
 
     source_id = f"dp3_ragbench_{subset}_{split}_{len(examples)}"
     if reset:

@@ -34,7 +34,7 @@ from load_ragbench_dp3 import (
     iter_ragbench_queries,
     list_local_ragbench_datasets,
     prepare_dp3_ragbench,
-    seed_ragbench_question_pool,
+    seed_ragbench_question_pool_sampled,
 )
 from run_dp3_answer_cache_longbench_batch import _run_pass, _sample_queries
 from seed_dp3_question_pool import DATA_DIR, seed_question_pool
@@ -137,6 +137,9 @@ class TestSuiteRunRequest(BaseModel):
     user_scope: str = "A"
     route_threshold: float = 0.70
     cache_threshold: float = 0.86
+    sample_rate: float = 0.10
+    min_per_dataset: int = 5
+    pool_seed: int = 42
     llm_provider: Optional[str] = None
     model: Optional[str] = None
     use_reranker: bool = False
@@ -246,10 +249,13 @@ def question_pool_stats():
 @router.post("/question-pool/seed")
 def seed_pool(body: QuestionPoolSeedRequest):
     if body.dataset_family.strip().lower() == "ragbench":
-        return seed_ragbench_question_pool(
+        return seed_ragbench_question_pool_sampled(
             subset=body.dataset or "techqa",
             split=body.dataset_split,
             reset=body.reset,
+            sample_rate=body.sample_rate,
+            min_count=body.min_per_dataset,
+            seed=body.seed,
         )
     return seed_question_pool(
         dataset=body.dataset,
@@ -573,6 +579,8 @@ NO_CACHE_TIMING_KEYS = [
     "total_ms",
 ]
 
+MOCK_LLM_ESTIMATE_MS = 700.0
+
 
 def _update_suite_job(job_id: str | None, **fields) -> None:
     if not job_id:
@@ -638,6 +646,28 @@ def _timing_stats(results: list[dict], keys: list[str]) -> dict:
     return stats
 
 
+def _estimated_total_with_llm_stats(results: list[dict]) -> dict:
+    values = []
+    for row in results:
+        total = (row.get("timings_ms") or {}).get("total_ms")
+        if total is None:
+            total = row.get("total_ms")
+        if total is None:
+            continue
+        llm_calls = int(row.get("llm_call_count", 0))
+        values.append(float(total) + llm_calls * MOCK_LLM_ESTIMATE_MS)
+    if not values:
+        return {}
+    return {
+        "avg": round(sum(values) / len(values), 3),
+        "min": round(min(values), 3),
+        "max": round(max(values), 3),
+        "count": len(values),
+        "mock_llm_estimate_ms": MOCK_LLM_ESTIMATE_MS,
+        "basis": "total_ms + llm_call_count * 700ms",
+    }
+
+
 def _query_dataset_counts(queries: list[dict]) -> dict:
     return dict(Counter(item["dataset"] for item in queries))
 
@@ -668,6 +698,7 @@ def _summarize_a_detailed(results: list[dict]) -> dict:
         "llm_calls": sum(int(row.get("llm_call_count", 0)) for row in results),
         "decision_reasons": dict(Counter(row.get("decision_reason", "unknown") for row in results)),
         "timing_stats_ms": _timing_stats(results, A_TIMING_KEYS),
+        "estimated_total_with_llm_ms": _estimated_total_with_llm_stats(results),
     }
 
 
@@ -697,6 +728,7 @@ def _summarize_b_detailed(results: list[dict]) -> dict:
         "llm_calls": sum(int(row.get("llm_call_count", 0)) for row in results),
         "decision_reasons": dict(Counter(row.get("decision_reason", "unknown") for row in results)),
         "timing_stats_ms": _timing_stats(results, B_TIMING_KEYS),
+        "estimated_total_with_llm_ms": _estimated_total_with_llm_stats(results),
     }
 
 
@@ -708,6 +740,7 @@ def _summarize_no_cache(results: list[dict]) -> dict:
         "llm_calls": sum(int(row.get("llm_call_count", 0)) for row in results),
         "decision_reasons": dict(Counter(row.get("decision_reason", "unknown") for row in results)),
         "timing_stats_ms": _timing_stats(results, NO_CACHE_TIMING_KEYS),
+        "estimated_total_with_llm_ms": _estimated_total_with_llm_stats(results),
     }
 
 
@@ -720,6 +753,7 @@ def _prepare_suite_source(body: TestSuiteRunRequest, num_examples: int | None = 
             auto_download=True,
             reset=False,
             reset_metadata=body.reset_metadata,
+            seed_route_pool=False,
         )
     return prepare_dp3_longbench(
         dataset_name=body.dataset_name,
@@ -730,8 +764,42 @@ def _prepare_suite_source(body: TestSuiteRunRequest, num_examples: int | None = 
     )
 
 
-def _sample_ragbench_queries(dataset_name: str, split: str, count: int, seed: int) -> list[dict]:
-    queries = list(iter_ragbench_queries(dataset_name, split))
+def _seed_suite_route_pool(body: TestSuiteRunRequest, exclude_indexes: set[int] | None = None) -> dict:
+    sample_rate = max(0.0, min(1.0, body.sample_rate))
+    min_count = max(1, body.min_per_dataset)
+    if _dataset_family(body) == "ragbench":
+        return seed_ragbench_question_pool_sampled(
+            subset=body.dataset_name,
+            split=body.dataset_split,
+            reset=True,
+            sample_rate=sample_rate,
+            min_count=min_count,
+            seed=body.pool_seed,
+            exclude_indexes=exclude_indexes,
+        )
+    return seed_question_pool(
+        dataset=body.dataset_name,
+        sample_rate=sample_rate,
+        min_per_dataset=min_count,
+        seed=body.pool_seed,
+        reset=True,
+        include_smoke=body.include_smoke,
+    )
+
+
+def _sample_ragbench_queries(
+    dataset_name: str,
+    split: str,
+    count: int,
+    seed: int,
+    exclude_indexes: set[int] | None = None,
+) -> list[dict]:
+    exclude_indexes = exclude_indexes or set()
+    queries = [
+        item
+        for item in iter_ragbench_queries(dataset_name, split)
+        if int(item["index"]) not in exclude_indexes
+    ]
     rng = random.Random(seed)
     if count >= len(queries):
         return queries
@@ -797,13 +865,18 @@ def _tc4_asset_pairs(body: TestSuiteRunRequest) -> list[dict]:
     return rows[: max(1, min(max_pairs, len(rows)))]
 
 
-def _suite_queries(body: TestSuiteRunRequest, count: int | None = None) -> list[dict]:
+def _suite_queries(
+    body: TestSuiteRunRequest,
+    count: int | None = None,
+    route_pool_indexes: set[int] | None = None,
+) -> list[dict]:
     if _dataset_family(body) == "ragbench":
         queries = _sample_ragbench_queries(
             body.dataset_name,
             body.dataset_split,
             count or body.query_count,
             body.seed,
+            exclude_indexes=route_pool_indexes,
         )
         if not queries:
             raise RuntimeError("RAGBench 질문을 찾지 못했습니다. dataset 준비 상태를 확인하세요.")
@@ -1090,7 +1163,9 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
     if progress:
         progress.advance("Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
-    queries = _suite_queries(body)
+    route_pool = _seed_suite_route_pool(body)
+    prepared["route_pool"] = route_pool
+    queries = _suite_queries(body, route_pool_indexes=set(route_pool.get("seeded_indexes", [])))
     llm_provider = "mock"
     model = None
 
@@ -1210,6 +1285,9 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
     if progress:
         progress.advance("Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
+    query_indexes = {int(q["index"]) for q in base_queries if "index" in q}
+    route_pool = _seed_suite_route_pool(body, exclude_indexes=None if use_tc2_assets else query_indexes)
+    prepared["route_pool"] = route_pool
     queries = _mixed_queries(base_queries, body.seed + 101)
 
     _warm_up_suite(source_id, queries, body, progress=progress)
@@ -1276,7 +1354,9 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
         if progress:
             progress.advance(f"Scale {scale}x LongBench/EU 준비 완료")
         source_id = prepared["source_id"]
-        queries = _suite_queries(body)
+        route_pool = _seed_suite_route_pool(body)
+        prepared["route_pool"] = route_pool
+        queries = _suite_queries(body, route_pool_indexes=set(route_pool.get("seeded_indexes", [])))
         _warm_up_suite(
             source_id,
             queries,
