@@ -779,7 +779,7 @@
       const officialBtn = $("runOfficialRagasBtn");
       const target = $("ragasResultRoot");
       const maxRows = Number($("ragasResultMaxRows")?.value || 2);
-      const selectedModel = $("llmOption").value === "mock" ? null : $("llmOption").value;
+      const evaluatorModel = $("ragasEvaluatorModel")?.value || null;
       if (proxyBtn) proxyBtn.disabled = true;
       if (officialBtn) officialBtn.disabled = true;
       if (target) {
@@ -792,7 +792,7 @@
             input_path: latestRagasInputPath,
             run_official: runOfficial,
             max_rows: maxRows,
-            model: selectedModel
+            model: evaluatorModel
           })
         });
         if (target) {
@@ -1154,6 +1154,15 @@
               <input id="ragasResultMaxRows" type="number" min="1" max="100" value="2">
             </div>
             <div>
+              <label for="ragasEvaluatorModel">Official RAGAS evaluator</label>
+              <select id="ragasEvaluatorModel">
+                <option value="meta-llama/llama-4-scout-17b-16e-instruct" selected>Llama 4 Scout - meta-llama/llama-4-scout-17b-16e-instruct</option>
+                <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
+                <option value="qwen/qwen3-32b">Qwen 32B - qwen/qwen3-32b</option>
+                <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
+              </select>
+            </div>
+            <div>
               <label>Input</label>
               <div class="hint">${escapeHtml(inputPath)}</div>
             </div>
@@ -1190,7 +1199,7 @@
       return `
         <div class="result-block">
           <h3>TC4 Official RAGAS</h3>
-          <div class="hint">evaluator=${escapeHtml(ragas.evaluator_provider || "-")}/${escapeHtml(ragas.evaluator_model || "-")}, rows=${ragas.row_count}, elapsed=${fmt(ragas.elapsed_ms)}ms, ${ragasUsageText(ragas.evaluator_usage)}, scores=${escapeHtml(ragas.score_path || "-")}</div>
+          <div class="hint">evaluator=${escapeHtml(ragas.evaluator_provider || "-")}/${escapeHtml(ragas.evaluator_model || "-")}, rows=${ragas.row_count}, elapsed=${fmt(ragas.elapsed_ms)}ms, ${ragasUsageText(ragas.evaluator_usage)}, ${ragasAttemptText(ragas.evaluator_attempts)}, scores=${escapeHtml(ragas.score_path || "-")}</div>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Mode</th><th>Faithfulness</th><th>Answer Relevancy</th><th>Context Precision</th><th>Context Recall</th><th>N</th></tr></thead>
@@ -1208,6 +1217,11 @@
       const prompt = usage.reported_prompt_tokens || 0;
       const completion = usage.reported_completion_tokens || 0;
       return `evaluator calls=${usage.llm_calls ?? "-"}, reported total=${reported || "-"}, reported prompt=${prompt || "-"}, reported completion=${completion || "-"}, estimated prompt=${estimated || "-"}`;
+    }
+
+    function ragasAttemptText(attempts) {
+      if (!attempts || !attempts.length) return "fallback=none";
+      return `fallback attempts=${attempts.map((a) => `${a.model}:${a.fallback_reason || "failed"}`).join(", ")}`;
     }
 
     function ragasProxyTable(proxy) {

@@ -549,7 +549,10 @@ def run_context_cache_query(
 
     if validation["valid"]:
         prompt_start = _timer()
-        prompt = f"{candidate['context_pack_text']}\n\n[Question]\n{query}\n\n[Answer]"
+        prompt = (
+            "Answer in English only. Use the provided context. Keep the answer concise and factual.\n\n"
+            f"[Context]\n{candidate['context_pack_text']}\n\n[Question]\n{query}\n\n[Answer]"
+        )
         _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
         llm_start = _timer()
         llm_result = get_dp3_answer_with_metadata(

@@ -645,7 +645,7 @@ def _retrieve_context_units(
 
 def _build_prompt(query: str, sources: list[dict]) -> str:
     context = "\n\n".join(f"[{s['logical_eu_id']}]\n{s['text']}" for s in sources)
-    return f"""아래 Context를 참고하여 질문에 답변해 주세요.
+    return f"""Answer in English only. Use the provided context. Keep the answer concise and factual.
 
 [Context]
 {context}

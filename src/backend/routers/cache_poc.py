@@ -1729,6 +1729,30 @@ def _contexts_for_result(source_id: str, result: dict) -> list[str]:
     context_cache_id = result.get("context_cache_id") or result.get("context_cache_candidate_id")
     if context_cache_id:
         with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT s.versioned_eu_id, v.text
+                   FROM dp3_context_cache_sources s
+                   JOIN dp3_versioned_evidence_units v
+                     ON v.versioned_eu_id = s.versioned_eu_id
+                    AND v.source_id = ?
+                   WHERE s.context_cache_id=?
+                   ORDER BY s.source_order""",
+                (source_id, context_cache_id),
+            ).fetchall()
+            if rows:
+                contexts = []
+                seen = set()
+                for row in rows:
+                    text = row["text"]
+                    if not text:
+                        continue
+                    key = row["versioned_eu_id"] or text
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    contexts.append(text)
+                if contexts:
+                    return contexts
             row = conn.execute(
                 """SELECT context_pack_text
                    FROM dp3_context_cache_entries
@@ -1868,6 +1892,43 @@ def _import_ragas_metrics():
     return [faithfulness, answer_relevancy, context_precision, context_recall]
 
 
+def _official_ragas_metrics():
+    metrics = _import_ragas_metrics()
+    for metric in metrics:
+        if getattr(metric, "name", "") == "answer_relevancy" and hasattr(metric, "strictness"):
+            metric.strictness = 1
+    return metrics
+
+
+RAGAS_GROQ_MODEL_FALLBACKS = (
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "llama-3.3-70b-versatile",
+    "qwen/qwen3-32b",
+    "qwen/qwen3.6-27b",
+)
+
+
+def _ragas_model_candidates(model: str | None) -> list[str]:
+    if model:
+        return [model]
+    return list(RAGAS_GROQ_MODEL_FALLBACKS)
+
+
+def _is_token_per_day_limit(exc: Exception) -> bool:
+    text = str(exc).lower()
+    daily_markers = [
+        "tokens per day",
+        "token per day",
+        "tpd",
+        "daily token",
+        "tokens per day (tpd)",
+    ]
+    return (
+        ("rate limit" in text or "rate_limit" in text or "429" in text)
+        and any(marker in text for marker in daily_markers)
+    )
+
+
 def _estimate_text_tokens_for_ragas(text: str) -> int:
     words = re.findall(r"\S+", str(text))
     by_words = int(len(words) * 1.35) if words else 0
@@ -1984,35 +2045,16 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
             "row_count": len(rows),
         }
 
-    try:
-        if GROQ_API_KEY:
-            evaluator_model = model or GROQ_MODEL
-            llm = ChatOpenAI(
-                model=evaluator_model,
-                api_key=GROQ_API_KEY,
-                base_url=GROQ_BASE_URL,
-                temperature=0,
-                max_tokens=1024,
-            )
-            evaluator_provider = "groq"
-        elif OPENAI_API_KEY:
-            evaluator_model = OPENAI_MODEL
-            llm = ChatOpenAI(
-                model=evaluator_model,
-                api_key=OPENAI_API_KEY,
-                temperature=0,
-                max_tokens=1024,
-            )
-            evaluator_provider = "openai"
-        else:
-            return {
-                "type": "official_ragas",
-                "status": "unavailable",
-                "reason": "GROQ_API_KEY or OPENAI_API_KEY is required for the evaluator LLM.",
-                "input_path": path,
-                "row_count": len(rows),
-            }
+    if not GROQ_API_KEY and not OPENAI_API_KEY:
+        return {
+            "type": "official_ragas",
+            "status": "unavailable",
+            "reason": "GROQ_API_KEY or OPENAI_API_KEY is required for the evaluator LLM.",
+            "input_path": path,
+            "row_count": len(rows),
+        }
 
+    try:
         embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
         dataset = Dataset.from_list([
             {
@@ -2025,34 +2067,81 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
             }
             for row in rows
         ])
-        usage_callback = _RagasUsageCallback()
-        result = evaluate(
-            dataset,
-            metrics=_import_ragas_metrics(),
-            llm=LangchainLLMWrapper(llm),
-            embeddings=LangchainEmbeddingsWrapper(embeddings),
-            callbacks=[usage_callback],
-            raise_exceptions=False,
-            show_progress=False,
-        )
-        records = result.to_pandas().to_dict(orient="records")
-        for index, record in enumerate(records):
-            if index < len(rows):
-                record["pair_id"] = rows[index].get("pair_id")
-                record["mode"] = rows[index].get("mode")
-        score_path = str(Path(path).with_suffix(".official_ragas_scores.json"))
-        Path(score_path).write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+
+        attempts = []
+        if GROQ_API_KEY:
+            provider = "groq"
+            model_candidates = _ragas_model_candidates(model)
+        else:
+            provider = "openai"
+            model_candidates = [model or OPENAI_MODEL]
+
+        for evaluator_model in model_candidates:
+            usage_callback = _RagasUsageCallback()
+            try:
+                if provider == "groq":
+                    llm = ChatOpenAI(
+                        model=evaluator_model,
+                        api_key=GROQ_API_KEY,
+                        base_url=GROQ_BASE_URL,
+                        temperature=0,
+                        max_tokens=1024,
+                    )
+                else:
+                    llm = ChatOpenAI(
+                        model=evaluator_model,
+                        api_key=OPENAI_API_KEY,
+                        temperature=0,
+                        max_tokens=1024,
+                    )
+                result = evaluate(
+                    dataset,
+                    metrics=_official_ragas_metrics(),
+                    llm=LangchainLLMWrapper(llm),
+                    embeddings=LangchainEmbeddingsWrapper(embeddings),
+                    callbacks=[usage_callback],
+                    raise_exceptions=False,
+                    show_progress=False,
+                )
+                records = result.to_pandas().to_dict(orient="records")
+                for index, record in enumerate(records):
+                    if index < len(rows):
+                        record["pair_id"] = rows[index].get("pair_id")
+                        record["mode"] = rows[index].get("mode")
+                score_path = str(Path(path).with_suffix(".official_ragas_scores.json"))
+                Path(score_path).write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
+                return {
+                    "type": "official_ragas",
+                    "status": "completed",
+                    "input_path": path,
+                    "score_path": score_path,
+                    "row_count": len(records),
+                    "evaluator_provider": provider,
+                    "evaluator_model": evaluator_model,
+                    "evaluator_attempts": attempts,
+                    "evaluator_usage": usage_callback.summary(),
+                    "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
+                    "by_mode": _summarize_official_ragas(records),
+                }
+            except Exception as model_exc:
+                attempts.append({
+                    "model": evaluator_model,
+                    "error": f"{type(model_exc).__name__}: {model_exc}",
+                    "fallback_reason": "tokens_per_day" if _is_token_per_day_limit(model_exc) else "none",
+                    "usage": usage_callback.summary(),
+                })
+                if provider == "groq" and _is_token_per_day_limit(model_exc):
+                    continue
+                raise
+
         return {
             "type": "official_ragas",
-            "status": "completed",
+            "status": "failed",
+            "reason": "All RAGAS evaluator model candidates failed.",
             "input_path": path,
-            "score_path": score_path,
-            "row_count": len(records),
-            "evaluator_provider": evaluator_provider,
-            "evaluator_model": evaluator_model,
-            "evaluator_usage": usage_callback.summary(),
+            "row_count": len(rows),
+            "evaluator_attempts": attempts,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
-            "by_mode": _summarize_official_ragas(records),
         }
     except Exception as exc:
         return {
