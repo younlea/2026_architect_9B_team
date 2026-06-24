@@ -215,6 +215,47 @@
     .metric span { color: var(--muted); }
     .metric b { font-variant-numeric: tabular-nums; text-align: right; }
     .result-block { margin-bottom: 18px; }
+    .pair-details {
+      display: grid;
+      gap: 12px;
+      margin-top: 12px;
+    }
+    .pair-detail {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      padding: 12px;
+    }
+    .pair-detail h4 {
+      margin: 0 0 8px;
+      font-size: 14px;
+    }
+    .qa-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .qa-box {
+      border: 1px solid #edf0f4;
+      border-radius: 8px;
+      padding: 10px;
+      background: #fafbfc;
+      min-width: 0;
+    }
+    .qa-box strong {
+      display: block;
+      margin-bottom: 6px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .answer-preview {
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.45;
+      max-height: 220px;
+      overflow: auto;
+    }
     .table-wrap {
       border: 1px solid var(--line);
       border-radius: 8px;
@@ -264,6 +305,7 @@
       main { grid-template-columns: 1fr; }
       .settings, .results { max-height: none; }
       .cards { grid-template-columns: 1fr; }
+      .qa-grid { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -379,6 +421,13 @@
 
         <label for="routeThreshold">Route Threshold <span id="routeText" class="pill">0.70</span></label>
         <input id="routeThreshold" type="range" min="0" max="100" value="70">
+
+        <label for="routePoolMode">Route Pool Mode</label>
+        <select id="routePoolMode">
+          <option value="sampled">TC1/TC2와 동일한 샘플링</option>
+          <option value="include_similar">샘플링 + 유사질문 포함</option>
+          <option value="similar_only">유사질문 set/pair만 사용</option>
+        </select>
       </div>
 
       <div class="section">
@@ -439,7 +488,7 @@
     const controls = [
       "testCase", "datasetFamily", "dataset", "datasetSplit", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
       "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
-      "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "prepareBtn", "seedBtn",
+      "routePoolMode", "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "prepareBtn", "seedBtn",
       "runSuiteBtn", "refreshBtn"
     ];
 
@@ -508,6 +557,7 @@
         $("queryCount").value = 50;
         $("routeThreshold").value = 70;
         $("cacheThreshold").value = 86;
+        $("routePoolMode").value = "sampled";
         $("llmOption").value = "mock";
       } else if (tc === "scalability") {
         $("datasetFamily").value = "ragbench";
@@ -517,6 +567,7 @@
         $("maxScale").value = 3;
         $("routeThreshold").value = 70;
         $("cacheThreshold").value = 86;
+        $("routePoolMode").value = "sampled";
         $("llmOption").value = "mock";
       } else if (tc === "mixed_timing") {
         $("datasetFamily").value = "ragbench";
@@ -524,7 +575,8 @@
         $("numExamples").value = 132;
         $("queryCount").value = 32;
         $("routeThreshold").value = 70;
-        $("cacheThreshold").value = 78;
+        $("cacheThreshold").value = 86;
+        $("routePoolMode").value = "sampled";
         $("llmOption").value = "mock";
       } else if (tc === "similar_pair_quality") {
         $("datasetFamily").value = "ragbench";
@@ -532,7 +584,8 @@
         $("numExamples").value = 132;
         $("queryCount").value = 18;
         $("routeThreshold").value = 70;
-        $("cacheThreshold").value = 78;
+        $("cacheThreshold").value = 86;
+        $("routePoolMode").value = "similar_only";
       }
     }
 
@@ -577,6 +630,7 @@
         max_scale: Number($("maxScale").value),
         route_threshold: threshold("routeThreshold"),
         cache_threshold: threshold("cacheThreshold"),
+        route_pool_mode: $("routePoolMode").value,
         sample_rate: threshold("sampleRate"),
         min_per_dataset: Number($("minPerDataset").value),
         pool_seed: Number($("poolSeed").value),
@@ -755,6 +809,25 @@
       return Number(value).toFixed(digits);
     }
 
+    function escapeHtml(value) {
+      return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#39;");
+    }
+
+    function tokenUsageText(usage) {
+      if (!usage) return "-";
+      const total = usage.total_tokens ?? usage.estimated_tokens ?? "-";
+      const prompt = usage.prompt_tokens ?? "-";
+      const completion = usage.completion_tokens ?? "-";
+      const calls = usage.llm_calls ?? "-";
+      const trimmed = usage.prompt_trimmed ? ", trimmed" : "";
+      return `calls ${calls}, total ${total}, prompt ${prompt}, completion ${completion}${trimmed}`;
+    }
+
     function stat(summary, key, part = "avg") {
       return summary?.timing_stats_ms?.[key]?.[part];
     }
@@ -786,6 +859,7 @@
         v1_repeat: "V1 반복",
         v1: "V1 실행",
         mixed: "혼합 실행",
+        mixed_repeat: "Mixed repeat",
         left_seed: "Left seed",
         right_probe: "Right probe",
         scale: "Scale 실행",
@@ -847,6 +921,8 @@
           ${metric("Cache hit", s.context_cache_hits, pct(s.cache_hit_ratio))}
           ${metric("Validator 전체 통과", s.validation_full_passed, pct(s.validation_full_pass_ratio))}
           ${metric("Validator 파셜 통과", s.validation_partial_passed, pct(s.validation_partial_pass_ratio))}
+          ${metric("Validator 통과 실패", s.validation_failed, pct(s.validation_failed_ratio))}
+          ${metric("Context 재사용", s.context_cache_reused, pct(s.context_cache_reuse_ratio))}
           ${metric("Full RAG", s.full_retrievals, pct(s.full_retrieval_ratio))}
           ${metric("Avg Full RAG", avgMs(s, "full_retrieval_total_ms"))}
           ${metric("Delta RAG", s.delta_retrievals, pct(s.delta_retrieval_ratio))}
@@ -958,7 +1034,7 @@
       if (!pool) return "";
       const pctValue = Number(pool.sample_rate || 0) * 100;
       const excluded = Number(pool.excluded_questions || 0);
-      return `<div class="hint">route pool=${pool.seeded_questions ?? "-"} / ${pool.total_questions ?? "-"} (${fmt(pctValue)}%, seed=${pool.seed ?? "-"}${excluded ? `, excluded=${excluded}` : ""})</div>`;
+      return `<div class="hint">route pool=${pool.seeded_questions ?? "-"} / ${pool.total_questions ?? "-"} (${fmt(pctValue)}%, seed=${pool.seed ?? "-"}${excluded ? `, excluded=${excluded}` : ""}, mode=${pool.route_pool_mode || "sampled"})</div>`;
     }
 
     function renderSuiteResult(result) {
@@ -997,9 +1073,39 @@
         });
       }
       if (result.pairs) {
+        if (result.ragas_input_path) {
+          parts.push(`<div class="hint">RAGAS input: ${result.ragas_input_path}</div>`);
+        }
+        if (result.ragas_proxy) {
+          parts.push(ragasProxyTable(result.ragas_proxy));
+        }
         parts.push(pairTable(result.pairs));
       }
       $("resultRoot").innerHTML = parts.join("");
+    }
+
+    function ragasProxyTable(proxy) {
+      const rows = Object.entries(proxy.by_mode || {}).map(([mode, item]) => `
+        <tr>
+          <td>${mode}</td>
+          <td>${fmt(item.answer_ground_truth_jaccard_avg, 3)}</td>
+          <td>${fmt(item.answer_context_jaccard_avg, 3)}</td>
+          <td>${fmt(item.question_context_jaccard_avg, 3)}</td>
+          <td>${item.count}</td>
+        </tr>
+      `).join("");
+      return `
+        <div class="result-block">
+          <h3>TC4 RAGAS Proxy</h3>
+          <div class="hint">실제 RAGAS 패키지 실행 전, 저장된 RAGAS input으로 계산한 lightweight proxy입니다.</div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Mode</th><th>Answer/Ground Truth</th><th>Answer/Context</th><th>Question/Context</th><th>N</th></tr></thead>
+              <tbody>${rows}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
     }
 
     function pairTable(pairs) {
@@ -1011,18 +1117,40 @@
           <td>${p.b_right_cache_hit ? "Y" : "N"}</td>
           <td>${p.a_answers_equal ? "Y" : "N"}</td>
           <td>${p.b_answers_equal ? "Y" : "N"}</td>
-          <td>${p.left_query}<br><b>→</b> ${p.right_query}</td>
+          <td>${escapeHtml(p.left_query)}<br><b>Right</b> ${escapeHtml(p.right_query)}</td>
         </tr>
+      `).join("");
+      const details = pairs.map((p) => `
+        <div class="pair-detail">
+          <h4>${p.pair_id} <span class="pill">sim ${fmt(p.similarity, 3)}</span></h4>
+          <div class="hint">
+            Left: ${escapeHtml(p.left_query)}<br>
+            Right: ${escapeHtml(p.right_query)}
+          </div>
+          <div class="qa-grid">
+            <div class="qa-box">
+              <strong>A answer ${p.a_answers_equal ? "(same as left)" : ""}</strong>
+              <div class="hint">left ${tokenUsageText(p.a_left_usage)}<br>right ${tokenUsageText(p.a_right_usage)}</div>
+              <div class="answer-preview">${escapeHtml(p.a_right_answer || "-")}</div>
+            </div>
+            <div class="qa-box">
+              <strong>B answer ${p.b_answers_equal ? "(same as left)" : ""}</strong>
+              <div class="hint">left ${tokenUsageText(p.b_left_usage)}<br>right ${tokenUsageText(p.b_right_usage)}</div>
+              <div class="answer-preview">${escapeHtml(p.b_right_answer || "-")}</div>
+            </div>
+          </div>
+        </div>
       `).join("");
       return `
         <div class="result-block">
-          <h3>TC4 Pair 결과</h3>
+          <h3>TC4 Pair Result</h3>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Pair</th><th>Sim</th><th>A hit</th><th>B hit</th><th>A same answer</th><th>B same answer</th><th>Queries</th></tr></thead>
               <tbody>${rows}</tbody>
             </table>
           </div>
+          <div class="pair-details">${details}</div>
         </div>
       `;
     }

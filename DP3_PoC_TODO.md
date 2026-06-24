@@ -320,3 +320,15 @@ cache 전략은 속도만 개선하면 안 되고, answer quality 또는 grounde
 
 - 같은 조건을 반복 실행했을 때 결과를 비교할 수 있어야 한다.
 - threshold 또는 rerank 후보 수 변경에 따른 cache hit/latency 변화를 추적할 수 있어야 한다.
+
+## 8. Open Question - Cache Reuse vs New Cache
+
+version 또는 scope 조건 때문에 기존 cache가 현재 요청에서 invalid로 판정될 때, 해당 cache가 실제로 잘못된 cache인지 아니면 현재 요청 조건과만 맞지 않는 cache인지 구분할 필요가 있다.
+
+### TODO
+
+- partial invalid 또는 version mismatch 발생 시 기존 cache를 수정할지, 새 cache item을 생성할지 정책을 검토한다.
+- 새 cache 생성 방식은 이력 추적과 실험 해석이 쉽지만 cache 중복이 늘 수 있다.
+- 기존 cache 수정 방식은 저장 공간을 줄일 수 있지만, 어떤 query/version/scope 조합에서 만들어진 cache였는지 추적이 흐려질 수 있다.
+- 권한 검증 구조를 별도로 조정한 뒤 version mismatch cache 처리 정책을 다시 결정한다.
+

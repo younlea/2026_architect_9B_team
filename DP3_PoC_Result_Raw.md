@@ -319,3 +319,117 @@ B안은 context cache hit 이후에도 LLM 호출은 유지된다. 그래서 `Es
 - B안은 반복 실행에서 50개 모두 context cache hit이 되어 Full RAG가 0회가 되었다. 이 경우 scale이 커져도 평균 total은 `50-58 ms` 수준으로 유지되었다.
 - B안은 context pack을 재사용한 뒤 LLM은 다시 호출하는 구조이므로, 실제 LLM을 붙이면 반복 실행의 예상 총 시간은 약 `750 ms/query` 수준이다.
 - 이 결과는 cache가 RAG 비용을 줄이는 효과를 보여준다. 다만 mock LLM 기준에서는 LLM 절감 효과가 보이지 않으므로, 최종 해석에서는 `Est. Total+LLM`을 함께 보는 편이 적절하다.
+
+## 4. TC3 Mixed Workload - eManual Similar Query Set, Reranking On
+
+TC3는 eManual 기반 유사질문 set을 사용해 NoCache, A first, A repeat, B first, B repeat를 같은 질문 순서로 실행한 결과다. 이번 실행에서는 cross-encoder reranking을 켰다.
+
+### 테스트 설정
+
+| 항목 | 값 |
+|---|---|
+| Test Case | TC3 Mixed Workload Performance |
+| Dataset | RAGBench `emanual` |
+| Split | `test` |
+| Source ID | `dp3_ragbench_emanual_test_132` |
+| Test query 수 | 32 |
+| Requested version | V1 |
+| User scope | A |
+| LLM | Mock |
+| Reranker | On |
+| Reranker model | `cross-encoder/ms-marco-MiniLM-L-6-v2` |
+| Rerank candidates | 30 |
+| Cache hit threshold | 0.86 |
+| 로그 ID 범위 | 5001 - 5160 |
+| 로그 생성 시각 | 2026-06-24 06:50:46 - 06:52:49 |
+
+### 전체 요약
+
+| Mode | Total | Route/Cache hit | Validator full | Validator partial | Validator failed | RAG fallback / Full RAG | Delta RAG | LLM calls | Total avg |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| NoCache | 32 | - | - | - | - | 32 | 0 | 32 | 1,039.2 ms |
+| A first | 32 | 5 hit / 13 routed | 5 | - | - | 27 | 0 | 27 | 934.7 ms |
+| A repeat | 32 | 13 hit / 13 routed | 13 | - | - | 19 | 0 | 19 | 664.4 ms |
+| B first | 32 | 21 | 5 | 6 | 10 | 21 | 6 | 32 | 845.9 ms |
+| B repeat | 32 | 32 | 21 | 6 | 5 | 5 | 6 | 32 | 312.7 ms |
+
+주의: B안의 `Cache hit`은 vector similarity 기준으로 cache candidate가 발견된 수이며, 이후 validator 결과에 따라 전체 통과, 파셜 통과, 통과 실패로 나뉜다. `Validator failed`는 invalid가 절반 이상이라 Full RAG로 fallback한 케이스다.
+
+### LLM 700 ms 가정 예상 총 시간
+
+mock LLM은 실제 LLM latency를 거의 반영하지 않으므로, Groq `llama-3.1-8b-instant`, 약 5.6K tokens 기준 평균 `700 ms/call`을 더한 예상값을 함께 계산했다.
+
+| Mode | Mock total avg | LLM calls/query | Est. Total+LLM avg | NoCache 대비 |
+|---|---:|---:|---:|---:|
+| NoCache | 1,039.2 ms | 1.00 | 1,739.2 ms | baseline |
+| A first | 934.7 ms | 0.84 | 1,525.3 ms | -213.9 ms |
+| A repeat | 664.4 ms | 0.59 | 1,080.0 ms | -659.2 ms |
+| B first | 845.9 ms | 1.00 | 1,545.9 ms | -193.3 ms |
+| B repeat | 312.7 ms | 1.00 | 1,012.7 ms | -726.5 ms |
+
+### NoCache Timing
+
+| Metric | Min | Max | Avg | N |
+|---|---:|---:|---:|---:|
+| Total | 923.2 ms | 1,261.6 ms | 1,039.2 ms | 32 |
+| Embedding | 6.6 ms | 19.0 ms | 9.9 ms | 32 |
+| Full RAG total | 910.0 ms | 1,247.8 ms | 1,026.0 ms | 32 |
+| Full RAG DB | 45.0 ms | 82.8 ms | 56.2 ms | 32 |
+| Full RAG scoring | 19.8 ms | 48.2 ms | 32.1 ms | 32 |
+| Full RAG score sort | 0.0 ms | 0.1 ms | 0.0 ms | 32 |
+| Full RAG rerank | 828.5 ms | 1,172.0 ms | 937.7 ms | 32 |
+
+### A안 Timing
+
+| Pass | Total avg | Route avg | Cache lookup avg | Validation avg | RAG avg | RAG rerank avg | LLM calls |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A first | 934.7 ms | 3.8 ms | 5.2 ms | 29.3 ms | 1,052.2 ms | 967.8 ms | 27 |
+| A repeat | 664.4 ms | 3.7 ms | 7.1 ms | 28.4 ms | 1,049.9 ms | 965.7 ms | 19 |
+
+#### A안 decision reasons
+
+| Pass | Reason | Count |
+|---|---|---:|
+| A first | `embedding_score_below_threshold` | 19 |
+| A first | `cache_candidates_invalid_fallback_to_roi_rag` | 5 |
+| A first | `answer_cache_hit_valid` | 5 |
+| A first | `cache_candidate_not_found_fallback_to_roi_rag` | 3 |
+| A repeat | `embedding_score_below_threshold` | 19 |
+| A repeat | `answer_cache_hit_valid` | 13 |
+
+### B안 Timing
+
+| Pass | Total avg | Cache lookup avg | Validation avg | Full RAG avg | Full rerank avg | Delta RAG avg | Delta rerank avg | LLM calls |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| B first | 845.9 ms | 14.8 ms | 19.6 ms | 1,064.5 ms | 979.9 ms | 432.3 ms | 345.6 ms | 32 |
+| B repeat | 312.7 ms | 17.6 ms | 20.9 ms | 1,057.1 ms | 971.9 ms | 435.2 ms | 348.8 ms | 32 |
+
+#### B안 decision reasons
+
+| Pass | Reason | Count |
+|---|---|---:|
+| B first | `context_cache_similarity_below_threshold` | 10 |
+| B first | `context_cache_invalid_ratio_full_fallback` | 10 |
+| B first | `context_cache_partial_invalid_delta_rebuilt` | 6 |
+| B first | `context_cache_hit_all_valid` | 5 |
+| B first | `context_cache_candidate_not_found_full_fallback` | 1 |
+| B repeat | `context_cache_hit_all_valid` | 21 |
+| B repeat | `context_cache_partial_invalid_delta_rebuilt` | 6 |
+| B repeat | `context_cache_invalid_ratio_full_fallback` | 5 |
+
+### Delta RAG 확인
+
+| Pass | Delta count | Delta candidate count | Delta reranker candidate count | Delta RAG avg | Delta rerank avg |
+|---|---:|---|---|---:|---:|
+| B first | 6 | 6 또는 12 | 6 또는 12 | 432.3 ms | 345.6 ms |
+| B repeat | 6 | 6 또는 12 | 6 또는 12 | 435.2 ms | 348.8 ms |
+
+이전 로그에서는 Delta retrieval의 candidate count는 6/12로 계산됐지만 reranker에는 30개가 들어가는 문제가 있었다. 이번 실행에서는 `delta_retrieval_reranker_candidate_count`가 6/12로 기록되어 수정이 반영된 상태다.
+
+### 중간 해석
+
+- Reranking을 켠 상태에서는 RAG 비용 대부분이 cross-encoder reranking에서 발생했다. NoCache 기준 Full RAG 평균 `1,026.0 ms` 중 rerank 평균이 `937.7 ms`였다.
+- A안은 answer cache hit 시 LLM까지 생략할 수 있으므로 반복 실행에서 `LLM calls/query`가 `0.59`까지 줄었다. 다만 route를 통과하지 못한 19개 질문은 계속 Full RAG를 탄다.
+- B안은 context cache hit 이후에도 LLM을 호출하지만, Full RAG를 줄이는 효과가 크다. B repeat에서는 Full RAG가 5회로 줄고 Delta RAG가 6회 발생해 mock total 평균이 `312.7 ms`까지 낮아졌다.
+- Delta RAG는 reranker 후보 수가 6/12로 제한되면서 Full RAG보다 짧아졌다. B first 기준 Full RAG avg `1,064.5 ms`, Delta RAG avg `432.3 ms`로 측정됐다.
+- 절반 이상 invalid인 경우는 partial이 아니라 validator failed로 분류되며, Full RAG fallback으로 처리된다.

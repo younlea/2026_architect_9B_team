@@ -1,5 +1,5 @@
 """
-Build DP3 TC2/TC4 query assets from RAGBench eManual.
+Build DP3 TC3/TC4 query assets from RAGBench eManual.
 
 Outputs are local generated artifacts under src/data/ragbench/emanual/ and are
 git-ignored. The scripts are committed so the workload can be regenerated.
@@ -47,7 +47,7 @@ def build_query_assets(
 
     embeddings = [_embed(item["query"]) for item in items]
     pair_scores = _pair_scores(items, embeddings)
-    tc2_rows = _build_tc2_rows(
+    tc3_rows = _build_tc3_rows(
         items,
         pair_scores,
         rng,
@@ -64,10 +64,12 @@ def build_query_assets(
 
     out_dir = RAGBENCH_DATA_DIR / subset
     out_dir.mkdir(parents=True, exist_ok=True)
-    tc2_path = out_dir / f"{split}_tc2_query_sets.jsonl"
+    tc3_path = out_dir / f"{split}_tc3_query_sets.jsonl"
+    legacy_tc2_path = out_dir / f"{split}_tc2_query_sets.jsonl"
     tc4_path = out_dir / f"{split}_tc4_query_pairs.jsonl"
     meta_path = out_dir / f"{split}_query_assets_meta.json"
-    _write_jsonl(tc2_path, tc2_rows)
+    _write_jsonl(tc3_path, tc3_rows)
+    _write_jsonl(legacy_tc2_path, tc3_rows)
     _write_jsonl(tc4_path, tc4_rows)
 
     result = {
@@ -79,10 +81,11 @@ def build_query_assets(
         "tc4_min_similarity": tc4_min_similarity,
         "max_sets": max_sets,
         "max_pairs": max_pairs,
-        "tc2_path": str(tc2_path),
-        "tc2_rows": len(tc2_rows),
-        "tc2_groups": len({row["group_id"] for row in tc2_rows}),
-        "tc2_by_role": _count_by(tc2_rows, "role"),
+        "tc3_path": str(tc3_path),
+        "tc2_path": str(legacy_tc2_path),
+        "tc3_rows": len(tc3_rows),
+        "tc3_groups": len({row["group_id"] for row in tc3_rows}),
+        "tc3_by_role": _count_by(tc3_rows, "role"),
         "tc4_path": str(tc4_path),
         "tc4_pairs": len(tc4_rows),
         "tc4_similarity_min": round(min((row["similarity"] for row in tc4_rows), default=0.0), 4),
@@ -106,7 +109,8 @@ def ensure_query_assets(
 ) -> dict:
     tc4_min_similarity = cache_threshold if tc4_min_similarity is None else tc4_min_similarity
     out_dir = RAGBENCH_DATA_DIR / subset
-    tc2_path = out_dir / f"{split}_tc2_query_sets.jsonl"
+    tc3_path = out_dir / f"{split}_tc3_query_sets.jsonl"
+    legacy_tc2_path = out_dir / f"{split}_tc2_query_sets.jsonl"
     tc4_path = out_dir / f"{split}_tc4_query_pairs.jsonl"
     meta_path = out_dir / f"{split}_query_assets_meta.json"
     expected = {
@@ -119,12 +123,17 @@ def ensure_query_assets(
         "max_sets": max_sets,
         "max_pairs": max_pairs,
     }
-    if not force and tc2_path.exists() and tc4_path.exists() and meta_path.exists():
+    query_set_path = tc3_path if tc3_path.exists() else legacy_tc2_path
+    if not force and query_set_path.exists() and tc4_path.exists() and meta_path.exists():
         try:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
         except json.JSONDecodeError:
             meta = {}
         if all(meta.get(key) == value for key, value in expected.items()):
+            meta.setdefault("tc3_path", str(query_set_path))
+            meta.setdefault("tc3_rows", meta.get("tc2_rows", 0))
+            meta.setdefault("tc3_groups", meta.get("tc2_groups", 0))
+            meta.setdefault("tc3_by_role", meta.get("tc2_by_role", {}))
             meta["reused"] = True
             return meta
 
@@ -161,7 +170,7 @@ def _pair_scores(items: list[dict], embeddings: list[list[float]]) -> list[dict]
     return rows
 
 
-def _build_tc2_rows(
+def _build_tc3_rows(
     items: list[dict],
     pair_scores: list[dict],
     rng: random.Random,
@@ -202,18 +211,18 @@ def _build_tc2_rows(
         if similar is None or near_miss is None:
             continue
 
-        group_id = f"tc2:{used_groups + 1:03d}:{items[seed_idx]['source_row_id']}"
-        rows.append(_tc2_row(group_id, "same", items[seed_idx], seed_idx, 1.0))
-        rows.append(_tc2_row(group_id, "similar", items[similar["j"]], similar["j"], similar["similarity"]))
-        rows.append(_tc2_row(group_id, "near_miss", items[near_miss["j"]], near_miss["j"], near_miss["similarity"]))
-        rows.append(_tc2_row(group_id, "random", items[random_idx], random_idx, None))
+        group_id = f"tc3:{used_groups + 1:03d}:{items[seed_idx]['source_row_id']}"
+        rows.append(_tc3_row(group_id, "same", items[seed_idx], seed_idx, 1.0))
+        rows.append(_tc3_row(group_id, "similar", items[similar["j"]], similar["j"], similar["similarity"]))
+        rows.append(_tc3_row(group_id, "near_miss", items[near_miss["j"]], near_miss["j"], near_miss["similarity"]))
+        rows.append(_tc3_row(group_id, "random", items[random_idx], random_idx, None))
         used_groups += 1
         if used_groups >= max_sets:
             break
     return rows
 
 
-def _tc2_row(group_id: str, role: str, item: dict, index: int, similarity: float | None) -> dict:
+def _tc3_row(group_id: str, role: str, item: dict, index: int, similarity: float | None) -> dict:
     return {
         "query_id": f"{group_id}:{role}:{index}",
         "group_id": group_id,

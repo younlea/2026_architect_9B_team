@@ -1,4 +1,5 @@
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -53,14 +54,34 @@ def get_dp3_llm_provider(provider: str | None = None) -> str:
 
 
 def get_dp3_answer(prompt: str, model: str = None, provider: str | None = None) -> str:
+    return get_dp3_answer_with_metadata(prompt, model, provider)["answer"]
+
+
+def get_dp3_answer_with_metadata(prompt: str, model: str = None, provider: str | None = None) -> dict:
     selected = _selected_provider(provider)
     if selected == "mock":
         preview = " ".join(prompt.split())[:160]
-        return f"[MOCK ANSWER] DP3 Answer Cache PoC 임시 답변입니다. prompt_preview={preview}"
+        return {
+            "answer": f"[MOCK ANSWER] DP3 Answer Cache PoC ?? ?????. prompt_preview={preview}",
+            "provider": "mock",
+            "model": model,
+            "usage": {
+                "estimated_prompt_tokens": _estimate_prompt_tokens(prompt),
+                "estimated_total_tokens": _estimate_groq_tokens(prompt),
+            },
+        }
     if selected == "groq":
         return _groq(prompt, model or GROQ_MODEL)
     from backend.rag.llm_client import get_llm_answer
-    return get_llm_answer(prompt, model, deterministic=True)
+    return {
+        "answer": get_llm_answer(prompt, model, deterministic=True),
+        "provider": selected,
+        "model": model,
+        "usage": {
+            "estimated_prompt_tokens": _estimate_prompt_tokens(prompt),
+            "estimated_total_tokens": _estimate_groq_tokens(prompt),
+        },
+    }
 
 
 def _groq(prompt: str, model: str) -> str:
@@ -68,6 +89,7 @@ def _groq(prompt: str, model: str) -> str:
         raise RuntimeError("GROQ_API_KEY is not set. Add it to src/.env or environment variables.")
     import requests
 
+    prompt, prompt_fit = _fit_prompt_to_groq_limit(prompt, model)
     url = f"{GROQ_BASE_URL.rstrip('/')}/chat/completions"
     payload = {
         "model": model,
@@ -88,7 +110,15 @@ def _groq(prompt: str, model: str) -> str:
         if resp.status_code != 429:
             resp.raise_for_status()
             data = resp.json()
-            return (data["choices"][0]["message"]["content"] or "").strip()
+            return {
+                "answer": (data["choices"][0]["message"]["content"] or "").strip(),
+                "provider": "groq",
+                "model": model,
+                "usage": data.get("usage") or {},
+                "estimated_tokens": estimated_tokens,
+                "prompt_fit": prompt_fit,
+                "rate_headers": _groq_rate_headers(resp),
+            }
 
         last_error = resp
         if attempt >= GROQ_MAX_RETRIES:
@@ -103,7 +133,7 @@ def _groq(prompt: str, model: str) -> str:
     raise RuntimeError(
         "Groq rate limit exceeded after retries. "
         "Use Mock for large batches, reduce query count, or lower prompt/output tokens. "
-        f"limit_hint={_groq_limit_hint(model, estimated_tokens)} "
+        f"limit_hint={_groq_limit_hint(model, estimated_tokens, prompt_fit)} "
         f"last_response={detail} headers={_groq_rate_headers(last_error)}"
     )
 
@@ -137,8 +167,52 @@ def _groq_retry_wait_seconds(resp, attempt: int) -> float:
 
 def _estimate_groq_tokens(prompt: str) -> int:
     # Conservative approximation for English/Korean mixed RAG prompts.
-    prompt_tokens = max(1, int(len(prompt) / 3.5))
+    prompt_tokens = _estimate_prompt_tokens(prompt)
     return prompt_tokens + max(0, GROQ_MAX_OUTPUT_TOKENS)
+
+
+def _estimate_prompt_tokens(prompt: str) -> int:
+    words = re.findall(r"\S+", prompt)
+    by_words = int(len(words) * 1.35) if words else 0
+    by_chars = int(len(prompt) / 6.0)
+    return max(1, by_words, by_chars)
+
+
+def _fit_prompt_to_groq_limit(prompt: str, model: str) -> tuple[str, dict]:
+    """Trim a single prompt so it can fit inside the model TPM budget.
+
+    Groq exposes rate-limit windows but not a local tokenizer. This estimate is
+    deliberately approximate and slightly conservative; the retry path still
+    respects server-provided retry-after headers if Groq counts differently.
+    """
+    raw_tpm = _groq_limits(model)["tpm"]
+    output_budget = max(0, int(GROQ_MAX_OUTPUT_TOKENS))
+    prompt_budget = max(256, raw_tpm - output_budget - 64)
+    prompt_tokens = _estimate_prompt_tokens(prompt)
+    if prompt_tokens <= prompt_budget:
+        return prompt, {
+            "trimmed": False,
+            "estimated_prompt_tokens": prompt_tokens,
+            "prompt_budget": prompt_budget,
+        }
+
+    char_budget = max(512, int(prompt_budget * 6.0))
+    marker = "\n\n[... prompt truncated to fit Groq TPM budget ...]\n\n"
+    while True:
+        head_budget = max(256, int((char_budget - len(marker)) * 0.72))
+        tail_budget = max(256, char_budget - len(marker) - head_budget)
+        fitted = prompt[:head_budget].rstrip() + marker + prompt[-tail_budget:].lstrip()
+        if _estimate_prompt_tokens(fitted) <= prompt_budget or char_budget <= 1024:
+            break
+        char_budget = int(char_budget * 0.94)
+    return fitted, {
+        "trimmed": True,
+        "estimated_prompt_tokens": prompt_tokens,
+        "estimated_fitted_prompt_tokens": _estimate_prompt_tokens(fitted),
+        "prompt_budget": prompt_budget,
+        "original_chars": len(prompt),
+        "fitted_chars": len(fitted),
+    }
 
 
 def _groq_limits(model: str) -> dict:
@@ -160,6 +234,10 @@ def _groq_window_wait_seconds(model: str, estimated_tokens: int, now: float) -> 
     rpm, tpm = _groq_effective_limits(model)
     current_requests = len(_GROQ_CALL_WINDOW)
     current_tokens = sum(item[1] for item in _GROQ_CALL_WINDOW)
+    # If one raw-safe request is larger than the conservative effective TPM,
+    # send it only when the local window is empty, then let the next request wait.
+    if estimated_tokens > tpm:
+        return 0.0 if current_requests == 0 and current_tokens == 0 else 60.0
     if current_requests < rpm and current_tokens + estimated_tokens <= tpm:
         return 0.0
 
@@ -178,11 +256,12 @@ def _groq_window_wait_seconds(model: str, estimated_tokens: int, now: float) -> 
     return max(0.0, min(waits) if waits else 0.0)
 
 
-def _groq_limit_hint(model: str, estimated_tokens: int) -> str:
+def _groq_limit_hint(model: str, estimated_tokens: int, prompt_fit: dict | None = None) -> str:
     rpm, tpm = _groq_effective_limits(model)
     raw = _groq_limits(model)
     return (
         f"model={model}, estimated_tokens_per_request={estimated_tokens}, "
+        f"prompt_fit={prompt_fit or {}}, "
         f"effective_rpm={rpm}/{raw['rpm']}, effective_tpm={tpm}/{raw['tpm']}, "
         f"max_output_tokens={GROQ_MAX_OUTPUT_TOKENS}"
     )

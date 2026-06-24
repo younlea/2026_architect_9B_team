@@ -1,5 +1,6 @@
 import json
 import random
+import re
 import threading
 import time
 import uuid
@@ -15,6 +16,7 @@ from backend.cache.answer_cache import (
     _build_prompt,
     _embed,
     _elapsed_ms,
+    _embedding_to_json,
     _retrieve_context_units,
     _set_timing,
     _set_total_ms,
@@ -24,7 +26,7 @@ from backend.cache.answer_cache import (
     run_answer_cache_query,
     setup_answer_cache_poc,
 )
-from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
+from backend.cache.cache_llm import get_dp3_answer_with_metadata, get_dp3_llm_provider, is_mock_llm
 from backend.cache.context_cache import clear_context_cache_for_source, run_context_cache_query
 from backend.db.database import init_db
 from build_dp3_ragbench_query_assets import ensure_query_assets
@@ -139,6 +141,7 @@ class TestSuiteRunRequest(BaseModel):
     user_scope: str = "A"
     route_threshold: float = 0.70
     cache_threshold: float = 0.86
+    route_pool_mode: str = "sampled"
     sample_rate: float = 0.10
     min_per_dataset: int = 5
     pool_seed: int = 42
@@ -707,23 +710,40 @@ def _summarize_a_detailed(results: list[dict]) -> dict:
 
 def _summarize_b_detailed(results: list[dict]) -> dict:
     total = len(results)
-    cache_hits = sum(1 for row in results if row.get("cache_hit"))
-    full_valid = sum(1 for row in results if row.get("validation_passed"))
+    full_valid = sum(
+        1
+        for row in results
+        if row.get("decision_reason") == "context_cache_hit_all_valid"
+    )
     partial_valid = sum(
         1
         for row in results
         if row.get("decision_reason") == "context_cache_partial_invalid_delta_rebuilt"
     )
+    validation_failed = sum(
+        1
+        for row in results
+        if row.get("decision_reason") in {
+            "context_cache_invalid_ratio_full_fallback",
+            "context_cache_delta_insufficient_full_fallback",
+        }
+    )
+    cache_hits = full_valid + partial_valid + validation_failed
+    context_reused = full_valid + partial_valid
     full_retrievals = sum(1 for row in results if row.get("full_retrieval"))
     delta_retrievals = sum(1 for row in results if int(row.get("delta_retrieval_count", 0)) > 0)
     return {
         "total": total,
         "context_cache_hits": cache_hits,
         "cache_hit_ratio": _ratio(cache_hits, total),
+        "context_cache_reused": context_reused,
+        "context_cache_reuse_ratio": _ratio(context_reused, total),
         "validation_full_passed": full_valid,
         "validation_full_pass_ratio": _ratio(full_valid, total),
         "validation_partial_passed": partial_valid,
         "validation_partial_pass_ratio": _ratio(partial_valid, total),
+        "validation_failed": validation_failed,
+        "validation_failed_ratio": _ratio(validation_failed, total),
         "full_retrievals": full_retrievals,
         "full_retrieval_ratio": _ratio(full_retrievals, total),
         "delta_retrievals": delta_retrievals,
@@ -795,6 +815,67 @@ def _seed_suite_route_pool(
     )
 
 
+def _route_pool_mode(body: TestSuiteRunRequest, default: str = "sampled") -> str:
+    value = (body.route_pool_mode or default).strip().lower()
+    aliases = {
+        "same": "sampled",
+        "normal": "sampled",
+        "default": "sampled",
+        "include": "include_similar",
+        "include_set": "include_similar",
+        "similar": "similar_only",
+        "set_only": "similar_only",
+        "pair_only": "similar_only",
+    }
+    return aliases.get(value, value)
+
+
+def _seed_route_pool_from_queries(
+    queries: list[dict],
+    reset: bool,
+    route_type: str,
+) -> dict:
+    from backend.cache.answer_cache import _clear_runtime_caches, init_dp3_cache_schema
+    from backend.db.database import get_conn
+
+    init_db()
+    init_dp3_cache_schema()
+    inserted = 0
+    indexes = []
+    seen = set()
+    with get_conn() as conn:
+        if reset:
+            conn.execute("DELETE FROM dp3_answerable_question_pool")
+        for item in queries:
+            query = item.get("query")
+            if not query:
+                continue
+            route_id = item.get("query_id") or f"{route_type}:{inserted}"
+            if route_id in seen:
+                continue
+            seen.add(route_id)
+            conn.execute(
+                """INSERT OR REPLACE INTO dp3_answerable_question_pool
+                   (route_id, question_text, route_type, embedding_json)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    route_id,
+                    query,
+                    route_type,
+                    _embedding_to_json(_embed(query)),
+                ),
+            )
+            inserted += 1
+            if "index" in item:
+                indexes.append(int(item["index"]))
+    _clear_runtime_caches()
+    return {
+        "route_pool_mode": route_type,
+        "seeded_questions": inserted,
+        "seeded_indexes": indexes,
+    }
+
+
 def _sample_ragbench_queries(
     dataset_name: str,
     split: str,
@@ -832,6 +913,26 @@ def _ensure_emanual_assets(body: TestSuiteRunRequest) -> dict:
     )
 
 
+def _seed_tc3_route_pool(
+    body: TestSuiteRunRequest,
+    base_queries: list[dict],
+) -> dict:
+    mode = _route_pool_mode(body, default="sampled")
+    query_indexes = {int(q["index"]) for q in base_queries if "index" in q}
+    if mode == "sampled":
+        result = _seed_suite_route_pool(body, exclude_indexes=query_indexes)
+    elif mode == "include_similar":
+        result = _seed_suite_route_pool(body, exclude_indexes=None)
+        extra = _seed_route_pool_from_queries(base_queries, reset=False, route_type="tc3_similar_set")
+        result = {**result, "tc3_seeded_questions": extra["seeded_questions"]}
+    elif mode == "similar_only":
+        result = _seed_route_pool_from_queries(base_queries, reset=True, route_type="tc3_similar_set")
+    else:
+        raise ValueError(f"Unknown route_pool_mode for TC3: {body.route_pool_mode}")
+    result["route_pool_mode"] = mode
+    return result
+
+
 def _read_jsonl(path) -> list[dict]:
     rows = []
     with open(path, encoding="utf-8") as f:
@@ -841,9 +942,9 @@ def _read_jsonl(path) -> list[dict]:
     return rows
 
 
-def _tc2_asset_queries(body: TestSuiteRunRequest) -> list[dict]:
+def _tc3_asset_queries(body: TestSuiteRunRequest) -> list[dict]:
     assets = _ensure_emanual_assets(body)
-    rows = _read_jsonl(assets["tc2_path"])
+    rows = _read_jsonl(assets.get("tc3_path") or assets["tc2_path"])
     rng = random.Random(body.seed)
     role_order = {"same": 0, "similar": 1, "paraphrase": 1, "near_miss": 2, "random": 3}
     grouped = {}
@@ -858,6 +959,32 @@ def _tc2_asset_queries(body: TestSuiteRunRequest) -> list[dict]:
     ]
     count = min(body.query_count, len(flattened)) if body.query_count > 0 else len(flattened)
     return flattened[:count]
+
+
+def _tc4_route_queries(pairs: list[dict]) -> list[dict]:
+    queries = []
+    for pair in pairs:
+        left = _tc4_pair_query(pair, "left")
+        left["query_id"] = f"tc4-route:{pair['pair_id']}"
+        queries.append(left)
+    return queries
+
+
+def _seed_tc4_route_pool(body: TestSuiteRunRequest, pairs: list[dict]) -> dict:
+    mode = _route_pool_mode(body, default="similar_only")
+    pair_routes = _tc4_route_queries(pairs)
+    if mode == "sampled":
+        result = _seed_suite_route_pool(body)
+    elif mode == "include_similar":
+        result = _seed_suite_route_pool(body)
+        extra = _seed_route_pool_from_queries(pair_routes, reset=False, route_type="tc4_pair")
+        result = {**result, "tc4_seeded_questions": extra["seeded_questions"]}
+    elif mode == "similar_only":
+        result = _seed_route_pool_from_queries(pair_routes, reset=True, route_type="tc4_pair")
+    else:
+        raise ValueError(f"Unknown route_pool_mode for TC4: {body.route_pool_mode}")
+    result["route_pool_mode"] = mode
+    return result
 
 
 def _tc4_asset_pairs(body: TestSuiteRunRequest) -> list[dict]:
@@ -1046,7 +1173,11 @@ def _run_no_cache_query(
     _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
 
     llm_start = _timer()
-    log["answer"] = get_dp3_answer(prompt, model, llm_provider)
+    llm_result = get_dp3_answer_with_metadata(prompt, model, llm_provider)
+    log["answer"] = llm_result["answer"]
+    log["llm_usage"] = llm_result.get("usage", {})
+    log["llm_prompt_fit"] = llm_result.get("prompt_fit", {})
+    log["llm_estimated_tokens"] = llm_result.get("estimated_tokens")
     _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
     log["llm_call_count"] = 1
     log["fallback_source_count"] = len(sources)
@@ -1281,9 +1412,9 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
 
 
 def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
-    use_tc2_assets = _dataset_family(body) == "ragbench" and body.dataset_name.strip().lower() == "emanual"
-    if use_tc2_assets:
-        base_queries = _tc2_asset_queries(body)
+    use_tc3_assets = _dataset_family(body) == "ragbench" and body.dataset_name.strip().lower() == "emanual"
+    if use_tc3_assets:
+        base_queries = _tc3_asset_queries(body)
         prepare_count = max(body.num_examples, max((int(q["index"]) for q in base_queries), default=0) + 1)
     else:
         base_queries = _suite_queries(body)
@@ -1291,19 +1422,39 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
 
     if progress:
         warm_count = min(body.warmup_count, len(base_queries))
-        progress.reset(len(base_queries) * 2 + warm_count * 2 + 1, "Dataset/EU 준비")
-        progress.step("Dataset/EU 준비")
+        progress.reset(len(base_queries) * 5 + warm_count * 2 + 1, "Dataset/EU prepare")
+        progress.step("Dataset/EU prepare")
     prepared = _prepare_suite_source(body, prepare_count)
     if progress:
-        progress.advance("Dataset/EU 준비 완료")
+        progress.advance("Dataset/EU prepared")
     source_id = prepared["source_id"]
-    query_indexes = {int(q["index"]) for q in base_queries if "index" in q}
-    route_pool = _seed_suite_route_pool(body, exclude_indexes=None if use_tc2_assets else query_indexes)
+    route_pool = (
+        _seed_tc3_route_pool(body, base_queries)
+        if use_tc3_assets
+        else _seed_suite_route_pool(
+            body,
+            exclude_indexes={int(q["index"]) for q in base_queries if "index" in q},
+        )
+    )
     prepared["route_pool"] = route_pool
     queries = _mixed_queries(base_queries, body.seed + 101)
+    answer_cache_module._READY_SOURCE_IDS.add(source_id)
 
     _warm_up_suite(source_id, queries, body, progress=progress)
-    clear_answer_cache_for_source(source_id)
+    no_cache = _run_no_cache_items(
+        source_id,
+        queries,
+        body.user_scope,
+        "V1",
+        body.llm_provider,
+        body.model,
+        body.use_reranker,
+        body.rerank_candidates,
+        body.rerank_model,
+        progress,
+        "No-cache mixed run",
+    )
+    clear_answer_cache_for_source(source_id, clear_logs=False)
     a_results = _run_answer_items(
         source_id,
         queries,
@@ -1317,7 +1468,22 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
         body.rerank_candidates,
         body.rerank_model,
         progress,
-        "A안 혼합 실행",
+        "A mixed first run",
+    )
+    a_repeat = _run_answer_items(
+        source_id,
+        queries,
+        body.user_scope,
+        "V1",
+        body.route_threshold,
+        body.cache_threshold,
+        body.llm_provider,
+        body.model,
+        body.use_reranker,
+        body.rerank_candidates,
+        body.rerank_model,
+        progress,
+        "A mixed repeat run",
     )
 
     clear_context_cache_for_source(source_id)
@@ -1333,7 +1499,21 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
         body.rerank_candidates,
         body.rerank_model,
         progress,
-        "B안 혼합 실행",
+        "B mixed first run",
+    )
+    b_repeat = _run_context_items(
+        source_id,
+        queries,
+        body.user_scope,
+        "V1",
+        body.cache_threshold,
+        body.llm_provider,
+        body.model,
+        body.use_reranker,
+        body.rerank_candidates,
+        body.rerank_model,
+        progress,
+        "B mixed repeat run",
     )
 
     return {
@@ -1342,13 +1522,23 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
         "source_id": source_id,
         "query_count": len(queries),
         "sampled_datasets": _query_dataset_counts(queries),
-        "query_asset": "tc2_query_sets" if use_tc2_assets else "random",
+        "query_asset": "tc3_query_sets" if use_tc3_assets else "random",
         "llm_provider": get_dp3_llm_provider(body.llm_provider),
         "llm_model": body.model,
-        "a": {"passes": [_pass_result("mixed", "A", a_results)]},
-        "b": {"passes": [_pass_result("mixed", "B", b_results)]},
+        "no_cache": {"passes": [_pass_result("mixed", "no_cache", no_cache)]},
+        "a": {
+            "passes": [
+                _pass_result("mixed", "A", a_results),
+                _pass_result("mixed_repeat", "A", a_repeat),
+            ]
+        },
+        "b": {
+            "passes": [
+                _pass_result("mixed", "B", b_results),
+                _pass_result("mixed_repeat", "B", b_repeat),
+            ]
+        },
     }
-
 
 def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
     scale_results = []
@@ -1505,6 +1695,138 @@ def _answers_equal(left: dict, right: dict) -> bool:
     return " ".join(str(left.get("answer", "")).split()) == " ".join(str(right.get("answer", "")).split())
 
 
+def _llm_usage_summary(result: dict) -> dict:
+    usage = result.get("llm_usage") or {}
+    prompt_fit = result.get("llm_prompt_fit") or {}
+    return {
+        "llm_calls": int(result.get("llm_call_count", 0)),
+        "prompt_tokens": usage.get("prompt_tokens") or usage.get("estimated_prompt_tokens"),
+        "completion_tokens": usage.get("completion_tokens"),
+        "total_tokens": usage.get("total_tokens") or usage.get("estimated_total_tokens") or result.get("llm_estimated_tokens"),
+        "estimated_tokens": result.get("llm_estimated_tokens"),
+        "prompt_trimmed": bool(prompt_fit.get("trimmed", False)),
+        "prompt_fit": prompt_fit,
+    }
+
+
+def _contexts_for_result(source_id: str, result: dict) -> list[str]:
+    from backend.db.database import get_conn
+
+    context_cache_id = result.get("context_cache_id") or result.get("context_cache_candidate_id")
+    if context_cache_id:
+        with get_conn() as conn:
+            row = conn.execute(
+                """SELECT context_pack_text
+                   FROM dp3_context_cache_entries
+                   WHERE context_cache_id=?""",
+                (context_cache_id,),
+            ).fetchone()
+        if row and row["context_pack_text"]:
+            return [row["context_pack_text"]]
+
+    versioned_ids = []
+    cache_id = result.get("cache_candidate_id") or result.get("cache_id")
+    if cache_id:
+        with get_conn() as conn:
+            rows = conn.execute(
+                """SELECT versioned_eu_id
+                   FROM dp3_answer_cache_sources
+                   WHERE cache_id=?
+                   ORDER BY source_order""",
+                (cache_id,),
+            ).fetchall()
+        versioned_ids.extend([row["versioned_eu_id"] for row in rows if row["versioned_eu_id"]])
+
+    for source in result.get("fallback_sources", []) or []:
+        if source.get("versioned_eu_id"):
+            versioned_ids.append(source["versioned_eu_id"])
+
+    if not versioned_ids:
+        return []
+    placeholders = ",".join("?" for _ in versioned_ids)
+    with get_conn() as conn:
+        rows = conn.execute(
+            f"""SELECT versioned_eu_id, text
+                FROM dp3_versioned_evidence_units
+                WHERE source_id=? AND versioned_eu_id IN ({placeholders})""",
+            [source_id, *versioned_ids],
+        ).fetchall()
+    by_id = {row["versioned_eu_id"]: row["text"] for row in rows}
+    return [by_id[vid] for vid in versioned_ids if vid in by_id]
+
+
+def _write_tc4_ragas_input(
+    dataset_name: str,
+    split: str,
+    source_id: str,
+    pair_results: list[dict],
+) -> str:
+    out_dir = RAGBENCH_DATA_DIR / dataset_name.strip().lower()
+    out_dir.mkdir(parents=True, exist_ok=True)
+    path = out_dir / f"{split.strip().lower()}_tc4_ragas_input.jsonl"
+    with path.open("w", encoding="utf-8") as f:
+        for pair in pair_results:
+            for mode in ("A", "B"):
+                result = pair[f"{mode.lower()}_right_result"]
+                row = {
+                    "pair_id": pair["pair_id"],
+                    "mode": mode,
+                    "question": pair["right_query"],
+                    "answer": result.get("answer", ""),
+                    "contexts": pair.get(f"{mode.lower()}_right_contexts")
+                    or _contexts_for_result(source_id, result),
+                    "ground_truth": pair.get("right_reference_answer", ""),
+                    "cache_hit": bool(result.get("cache_hit")),
+                    "similarity": pair.get("similarity"),
+                    "answer_jaccard": pair.get("answer_jaccard"),
+                    "decision_reason": result.get("decision_reason"),
+                    "llm_usage": pair.get(f"{mode.lower()}_right_usage"),
+                }
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+    return str(path)
+
+
+def _token_set(value: str) -> set[str]:
+    return set(re.findall(r"[A-Za-z0-9가-힣]+", str(value).lower()))
+
+
+def _jaccard_text(left: str, right: str) -> float:
+    a = _token_set(left)
+    b = _token_set(right)
+    if not a or not b:
+        return 0.0
+    return round(len(a & b) / max(1, len(a | b)), 4)
+
+
+def _ragas_proxy_from_input(path: str) -> dict:
+    rows = _read_jsonl(path)
+    by_mode = {}
+    for row in rows:
+        mode = row.get("mode", "unknown")
+        contexts = "\n\n".join(row.get("contexts") or [])
+        item = by_mode.setdefault(mode, {
+            "count": 0,
+            "answer_ground_truth_jaccard_sum": 0.0,
+            "answer_context_jaccard_sum": 0.0,
+            "question_context_jaccard_sum": 0.0,
+        })
+        item["count"] += 1
+        item["answer_ground_truth_jaccard_sum"] += _jaccard_text(row.get("answer", ""), row.get("ground_truth", ""))
+        item["answer_context_jaccard_sum"] += _jaccard_text(row.get("answer", ""), contexts)
+        item["question_context_jaccard_sum"] += _jaccard_text(row.get("question", ""), contexts)
+
+    for item in by_mode.values():
+        count = max(1, item["count"])
+        item["answer_ground_truth_jaccard_avg"] = round(item.pop("answer_ground_truth_jaccard_sum") / count, 4)
+        item["answer_context_jaccard_avg"] = round(item.pop("answer_context_jaccard_sum") / count, 4)
+        item["question_context_jaccard_avg"] = round(item.pop("question_context_jaccard_sum") / count, 4)
+    return {
+        "type": "lightweight_ragas_proxy",
+        "input_path": path,
+        "by_mode": by_mode,
+    }
+
+
 def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
     if _dataset_family(body) != "ragbench" or body.dataset_name.strip().lower() != "emanual":
         raise ValueError("TC4 requires dataset_family=ragbench and dataset_name=emanual.")
@@ -1521,6 +1843,9 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
     if progress:
         progress.advance("TC4 Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
+    route_pool = _seed_tc4_route_pool(body, pairs)
+    prepared["route_pool"] = route_pool
+    route_mode = route_pool["route_pool_mode"]
     answer_cache_module._READY_SOURCE_IDS.add(source_id)
 
     a_left_results = []
@@ -1534,45 +1859,47 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
 
         clear_answer_cache_for_source(source_id)
         previous_route_cache = answer_cache_module._ROUTE_CACHE
-        answer_cache_module._ROUTE_CACHE = [{
-            "route_id": f"tc4_shared:{pair['pair_id']}",
-            "route_type": "tc4_shared_pair",
-            "route_question": left["query"],
-            "embedding": _embed(left["query"]),
-        }]
+        if route_mode == "similar_only":
+            answer_cache_module._ROUTE_CACHE = [{
+                "route_id": f"tc4_shared:{pair['pair_id']}",
+                "route_type": "tc4_shared_pair",
+                "route_question": left["query"],
+                "embedding": _embed(left["query"]),
+            }]
         try:
             a_left = _run_answer_items(
-                source_id,
-                [left],
-                body.user_scope,
-                "V1",
-                body.route_threshold,
-                body.cache_threshold,
-                body.llm_provider,
-                body.model,
-                body.use_reranker,
-                body.rerank_candidates,
-                body.rerank_model,
-                progress,
-                "TC4 A left",
-            )[0]
+                    source_id,
+                    [left],
+                    body.user_scope,
+                    "V1",
+                    body.route_threshold,
+                    body.cache_threshold,
+                    body.llm_provider,
+                    body.model,
+                    body.use_reranker,
+                    body.rerank_candidates,
+                    body.rerank_model,
+                    progress,
+                    "TC4 A left",
+                )[0]
             a_right = _run_answer_items(
-                source_id,
-                [right],
-                body.user_scope,
-                "V1",
-                body.route_threshold,
-                body.cache_threshold,
-                body.llm_provider,
-                body.model,
-                body.use_reranker,
-                body.rerank_candidates,
-                body.rerank_model,
-                progress,
-                "TC4 A right",
-            )[0]
+                    source_id,
+                    [right],
+                    body.user_scope,
+                    "V1",
+                    body.route_threshold,
+                    body.cache_threshold,
+                    body.llm_provider,
+                    body.model,
+                    body.use_reranker,
+                    body.rerank_candidates,
+                    body.rerank_model,
+                    progress,
+                    "TC4 A right",
+                )[0]
         finally:
-            answer_cache_module._ROUTE_CACHE = previous_route_cache
+            if route_mode == "similar_only":
+                answer_cache_module._ROUTE_CACHE = previous_route_cache
 
         clear_context_cache_for_source(source_id)
         b_left = _run_context_items(
@@ -1608,6 +1935,8 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
         a_right_results.append(a_right)
         b_left_results.append(b_left)
         b_right_results.append(b_right)
+        a_right_contexts = _contexts_for_result(source_id, a_right)
+        b_right_contexts = _contexts_for_result(source_id, b_right)
         pair_results.append({
             "pair_id": pair["pair_id"],
             "similarity": pair["similarity"],
@@ -1626,15 +1955,37 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
             "a_right_answer": a_right.get("answer", ""),
             "b_left_answer": b_left.get("answer", ""),
             "b_right_answer": b_right.get("answer", ""),
+            "a_left_usage": _llm_usage_summary(a_left),
+            "a_right_usage": _llm_usage_summary(a_right),
+            "b_left_usage": _llm_usage_summary(b_left),
+            "b_right_usage": _llm_usage_summary(b_right),
+            "a_right_contexts": a_right_contexts,
+            "b_right_contexts": b_right_contexts,
+            "a_right_result": a_right,
+            "b_right_result": b_right,
         })
 
+    ragas_input_path = _write_tc4_ragas_input(
+        body.dataset_name,
+        body.dataset_split,
+        source_id,
+        pair_results,
+    )
+    ragas_proxy = _ragas_proxy_from_input(ragas_input_path)
+    public_pair_results = [
+        {k: v for k, v in pair.items() if k not in {"a_right_result", "b_right_result"}}
+        for pair in pair_results
+    ]
     return {
         "test_case": "similar_pair_quality",
         "prepared": prepared,
         "source_id": source_id,
         "query_asset": "tc4_query_pairs",
+        "route_pool_mode": route_mode,
         "pair_count": len(pairs),
         "query_count": len(pairs) * 2,
+        "ragas_input_path": ragas_input_path,
+        "ragas_proxy": ragas_proxy,
         "sampled_datasets": _query_dataset_counts([_tc4_pair_query(p, "left") for p in pairs]),
         "llm_provider": get_dp3_llm_provider(body.llm_provider),
         "llm_model": body.model,
@@ -1650,7 +2001,7 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
                 _pass_result("right_probe", "B", b_right_results),
             ]
         },
-        "pairs": pair_results,
+        "pairs": public_pair_results,
     }
 
 

@@ -5,7 +5,7 @@ import time
 import uuid
 from typing import Optional
 
-from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
+from backend.cache.cache_llm import get_dp3_answer_with_metadata, get_dp3_llm_provider, is_mock_llm
 from backend.db.database import get_conn, get_thread_text
 
 DEFAULT_ROUTES = [
@@ -916,7 +916,8 @@ def _fallback_and_store(
     _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
 
     llm_start = _timer()
-    answer = get_dp3_answer(prompt, model, llm_provider)
+    llm_result = get_dp3_answer_with_metadata(prompt, model, llm_provider)
+    answer = llm_result["answer"]
     _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
 
     store_start = _timer()
@@ -936,6 +937,9 @@ def _fallback_and_store(
         "decision_reason": log.get("decision_reason", "fallback_to_roi_rag"),
         "cache_id": cache_id,
         "answer": answer,
+        "llm_usage": llm_result.get("usage", {}),
+        "llm_prompt_fit": llm_result.get("prompt_fit", {}),
+        "llm_estimated_tokens": llm_result.get("estimated_tokens"),
         "fallback_source_count": len(sources),
         "fallback_sources": [
             {

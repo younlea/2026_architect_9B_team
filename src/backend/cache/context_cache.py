@@ -1,4 +1,5 @@
 import json
+import math
 import time
 import uuid
 
@@ -20,7 +21,7 @@ from backend.cache.answer_cache import (
     init_dp3_cache_schema,
     validate_eu,
 )
-from backend.cache.cache_llm import get_dp3_answer, get_dp3_llm_provider, is_mock_llm
+from backend.cache.cache_llm import get_dp3_answer_with_metadata, get_dp3_llm_provider, is_mock_llm
 from backend.db.database import get_conn
 
 
@@ -251,7 +252,13 @@ def _delta_retrieve(
     rerank_model: str,
 ) -> dict:
     needed = len(invalid_sources)
-    candidate_count = max(needed * 2, needed)
+    top_k = TOP_K_SOURCES
+    candidate_count = max(
+        needed * 4,
+        math.ceil(max(rerank_candidates, top_k) * needed / max(1, top_k)),
+        top_k,
+    )
+    delta_rerank_candidates = candidate_count
     valid_logical_ids = {s["logical_eu_id"] for s in valid_sources}
     invalid_logical_ids = {s["logical_eu_id"] for s in invalid_sources}
     excluded = valid_logical_ids | invalid_logical_ids
@@ -266,7 +273,7 @@ def _delta_retrieve(
         top_k=candidate_count,
         timing=retrieval_timing,
         use_reranker=use_reranker,
-        rerank_candidates=max(candidate_count * 2, rerank_candidates),
+        rerank_candidates=delta_rerank_candidates,
         rerank_model=rerank_model,
     )
     filter_start = _timer()
@@ -285,6 +292,12 @@ def _delta_retrieve(
     return {
         "needed": needed,
         "candidate_count": candidate_count,
+        "candidate_policy": {
+            "top_k": top_k,
+            "rerank_candidates": rerank_candidates,
+            "delta_rerank_candidates": delta_rerank_candidates,
+            "formula": "max(invalid*4, ceil(rerank_candidates*invalid/top_k), top_k)",
+        },
         "replacement_count": len(replacements),
         "replacements": replacements,
         "timing": {
@@ -345,7 +358,8 @@ def _generate_and_store(
     _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
 
     llm_start = _timer()
-    answer = get_dp3_answer(prompt, model, llm_provider)
+    llm_result = get_dp3_answer_with_metadata(prompt, model, llm_provider)
+    answer = llm_result["answer"]
     _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
 
     store_start = _timer()
@@ -362,6 +376,9 @@ def _generate_and_store(
         "context_cache_id": context_cache_id,
         "context_source_count": len(sources),
         "answer": answer,
+        "llm_usage": llm_result.get("usage", {}),
+        "llm_prompt_fit": llm_result.get("prompt_fit", {}),
+        "llm_estimated_tokens": llm_result.get("estimated_tokens"),
         "llm_call_count": 1,
     })
     _set_total_ms(log, start)
@@ -535,17 +552,21 @@ def run_context_cache_query(
         prompt = f"{candidate['context_pack_text']}\n\n[Question]\n{query}\n\n[Answer]"
         _set_timing(log, "prompt_build_ms", _elapsed_ms(prompt_start))
         llm_start = _timer()
-        answer = get_dp3_answer(
+        llm_result = get_dp3_answer_with_metadata(
             prompt,
             model,
             llm_provider,
         )
+        answer = llm_result["answer"]
         _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
         log.update({
             "cache_hit": True,
             "validation_passed": True,
             "decision_reason": "context_cache_hit_all_valid",
             "answer": answer,
+            "llm_usage": llm_result.get("usage", {}),
+            "llm_prompt_fit": llm_result.get("prompt_fit", {}),
+            "llm_estimated_tokens": llm_result.get("estimated_tokens"),
             "llm_call_count": 1,
         })
         _set_total_ms(log, start)
