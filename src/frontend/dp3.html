@@ -424,9 +424,7 @@
 
         <label for="routePoolMode">Route Pool Mode</label>
         <select id="routePoolMode">
-          <option value="sampled">TC1/TC2와 동일한 샘플링</option>
-          <option value="include_similar">샘플링 + 유사질문 포함</option>
-          <option value="similar_only">유사질문 set/pair만 사용</option>
+          <option value="sampled">랜덤 샘플링</option>
         </select>
       </div>
 
@@ -445,6 +443,14 @@
             <label for="rerankModel">Reranker</label>
             <select id="rerankModel">
               <option value="cross-encoder/ms-marco-MiniLM-L-6-v2">ms-marco-MiniLM-L-6-v2</option>
+            </select>
+          </div>
+          <div>
+            <label for="rerankDevice">Reranker Device</label>
+            <select id="rerankDevice">
+              <option value="auto">Auto</option>
+              <option value="cpu">CPU</option>
+              <option value="cuda">GPU / CUDA</option>
             </select>
           </div>
         </div>
@@ -489,7 +495,7 @@
     const controls = [
       "testCase", "datasetFamily", "dataset", "datasetSplit", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
       "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
-      "routePoolMode", "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "prepareBtn", "seedBtn",
+      "routePoolMode", "cacheThreshold", "useReranker", "rerankCandidates", "rerankModel", "rerankDevice", "prepareBtn", "seedBtn",
       "runSuiteBtn", "refreshBtn"
     ];
 
@@ -586,7 +592,7 @@
         $("queryCount").value = 20;
         $("routeThreshold").value = 70;
         $("cacheThreshold").value = 86;
-        $("routePoolMode").value = "similar_only";
+        $("routePoolMode").value = "sampled";
       }
     }
 
@@ -638,7 +644,7 @@
         ...llmPayload(),
         use_reranker: $("useReranker").checked,
         rerank_candidates: Number($("rerankCandidates").value),
-        rerank_model: $("rerankModel").value,
+        rerank_model: `${$("rerankModel").value}||device=${$("rerankDevice").value}`,
         reset_metadata: $("resetMetadata").checked,
         include_smoke: false
       };

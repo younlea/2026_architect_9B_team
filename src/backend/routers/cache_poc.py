@@ -53,6 +53,7 @@ router = APIRouter(prefix="/api/dp3", tags=["dp3-cache-poc"])
 
 _SUITE_JOBS: dict[str, dict] = {}
 _SUITE_JOB_LOCK = threading.Lock()
+DP3_RUN_LOG_DIR = Path(__file__).resolve().parents[2] / "data" / "dp3_run_logs"
 
 
 class SetupRequest(BaseModel):
@@ -167,6 +168,37 @@ class RagasRunRequest(BaseModel):
     run_official: bool = False
     max_rows: int = 2
     model: Optional[str] = None
+
+
+def _safe_filename_part(value: object, fallback: str = "run") -> str:
+    text = str(value or fallback).strip().lower()
+    text = re.sub(r"[^a-z0-9_.-]+", "-", text)
+    return text.strip("-") or fallback
+
+
+def _save_test_suite_run(body: TestSuiteRunRequest, result: dict, job_id: str | None = None) -> dict:
+    DP3_RUN_LOG_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = time.strftime("%Y%m%d_%H%M%S", time.localtime())
+    test_case = _safe_filename_part(result.get("test_case") or body.test_case)
+    dataset = _safe_filename_part(result.get("dataset") or body.dataset_name)
+    reranker = "rerank-on" if body.use_reranker else "rerank-off"
+    device = "na"
+    if body.use_reranker:
+        marker = "||device="
+        device = body.rerank_model.split(marker, 1)[1] if marker in body.rerank_model else "auto"
+        device = _safe_filename_part(device, "auto")
+    name_parts = [timestamp, test_case, dataset, reranker, device]
+    if job_id:
+        name_parts.append(job_id[:8])
+    path = DP3_RUN_LOG_DIR / ("_".join(name_parts) + ".json")
+    payload = {
+        "saved_at": timestamp,
+        "job_id": job_id,
+        "request": body.model_dump(),
+        "result": result,
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"path": str(path), "file": path.name}
 
 
 @router.post("/answer-cache/setup")
@@ -666,8 +698,26 @@ def _timing_stats(results: list[dict], keys: list[str]) -> dict:
     return stats
 
 
+def _reranker_device_stats(results: list[dict]) -> dict:
+    enabled = [row for row in results if row.get("reranker_enabled")]
+    requested = Counter(
+        row.get("reranker_requested_device") or row.get("reranker_device") or "unknown"
+        for row in enabled
+    )
+    resolved = Counter(row.get("reranker_resolved_device") or "unknown" for row in enabled)
+    models = Counter(row.get("reranker_model") or "unknown" for row in enabled)
+    return {
+        "enabled_count": len(enabled),
+        "requested_devices": dict(requested),
+        "resolved_devices": dict(resolved),
+        "models": dict(models),
+    }
+
+
 def _estimated_total_with_llm_stats(results: list[dict]) -> dict:
     values = []
+    mock_rows = 0
+    actual_rows = 0
     for row in results:
         total = (row.get("timings_ms") or {}).get("total_ms")
         if total is None:
@@ -675,7 +725,12 @@ def _estimated_total_with_llm_stats(results: list[dict]) -> dict:
         if total is None:
             continue
         llm_calls = int(row.get("llm_call_count", 0))
-        values.append(float(total) + llm_calls * MOCK_LLM_ESTIMATE_MS)
+        if row.get("llm_mocked"):
+            mock_rows += 1
+            values.append(float(total) + llm_calls * MOCK_LLM_ESTIMATE_MS)
+        else:
+            actual_rows += 1
+            values.append(float(total))
     if not values:
         return {}
     return {
@@ -684,7 +739,9 @@ def _estimated_total_with_llm_stats(results: list[dict]) -> dict:
         "max": round(max(values), 3),
         "count": len(values),
         "mock_llm_estimate_ms": MOCK_LLM_ESTIMATE_MS,
-        "basis": "total_ms + llm_call_count * 700ms",
+        "mock_rows": mock_rows,
+        "actual_llm_rows": actual_rows,
+        "basis": "mock rows: total_ms + llm_call_count * 700ms; actual LLM rows: total_ms",
     }
 
 
@@ -717,6 +774,7 @@ def _summarize_a_detailed(results: list[dict]) -> dict:
         "fallback_ratio": _ratio(fallbacks, total),
         "llm_calls": sum(int(row.get("llm_call_count", 0)) for row in results),
         "decision_reasons": dict(Counter(row.get("decision_reason", "unknown") for row in results)),
+        "reranker_devices": _reranker_device_stats(results),
         "timing_stats_ms": _timing_stats(results, A_TIMING_KEYS),
         "estimated_total_with_llm_ms": _estimated_total_with_llm_stats(results),
     }
@@ -764,6 +822,7 @@ def _summarize_b_detailed(results: list[dict]) -> dict:
         "delta_retrieval_ratio": _ratio(delta_retrievals, total),
         "llm_calls": sum(int(row.get("llm_call_count", 0)) for row in results),
         "decision_reasons": dict(Counter(row.get("decision_reason", "unknown") for row in results)),
+        "reranker_devices": _reranker_device_stats(results),
         "timing_stats_ms": _timing_stats(results, B_TIMING_KEYS),
         "estimated_total_with_llm_ms": _estimated_total_with_llm_stats(results),
     }
@@ -776,6 +835,7 @@ def _summarize_no_cache(results: list[dict]) -> dict:
         "full_retrievals": sum(1 for row in results if row.get("full_retrieval")),
         "llm_calls": sum(int(row.get("llm_call_count", 0)) for row in results),
         "decision_reasons": dict(Counter(row.get("decision_reason", "unknown") for row in results)),
+        "reranker_devices": _reranker_device_stats(results),
         "timing_stats_ms": _timing_stats(results, NO_CACHE_TIMING_KEYS),
         "estimated_total_with_llm_ms": _estimated_total_with_llm_stats(results),
     }
@@ -931,19 +991,9 @@ def _seed_tc3_route_pool(
     body: TestSuiteRunRequest,
     base_queries: list[dict],
 ) -> dict:
-    mode = _route_pool_mode(body, default="sampled")
-    query_indexes = {int(q["index"]) for q in base_queries if "index" in q}
-    if mode == "sampled":
-        result = _seed_suite_route_pool(body, exclude_indexes=query_indexes)
-    elif mode == "include_similar":
-        result = _seed_suite_route_pool(body, exclude_indexes=None)
-        extra = _seed_route_pool_from_queries(base_queries, reset=False, route_type="tc3_similar_set")
-        result = {**result, "tc3_seeded_questions": extra["seeded_questions"]}
-    elif mode == "similar_only":
-        result = _seed_route_pool_from_queries(base_queries, reset=True, route_type="tc3_similar_set")
-    else:
-        raise ValueError(f"Unknown route_pool_mode for TC3: {body.route_pool_mode}")
-    result["route_pool_mode"] = mode
+    row_limit = max(body.num_examples, max((int(q["index"]) for q in base_queries), default=-1) + 1)
+    result = _seed_suite_route_pool(body, row_limit=row_limit)
+    result["route_pool_mode"] = "sampled"
     return result
 
 
@@ -985,19 +1035,15 @@ def _tc4_route_queries(pairs: list[dict]) -> list[dict]:
 
 
 def _seed_tc4_route_pool(body: TestSuiteRunRequest, pairs: list[dict]) -> dict:
-    mode = _route_pool_mode(body, default="similar_only")
-    pair_routes = _tc4_route_queries(pairs)
-    if mode == "sampled":
-        result = _seed_suite_route_pool(body)
-    elif mode == "include_similar":
-        result = _seed_suite_route_pool(body)
-        extra = _seed_route_pool_from_queries(pair_routes, reset=False, route_type="tc4_pair")
-        result = {**result, "tc4_seeded_questions": extra["seeded_questions"]}
-    elif mode == "similar_only":
-        result = _seed_route_pool_from_queries(pair_routes, reset=True, route_type="tc4_pair")
-    else:
-        raise ValueError(f"Unknown route_pool_mode for TC4: {body.route_pool_mode}")
-    result["route_pool_mode"] = mode
+    query_indexes = [
+        int(item["index"])
+        for pair in pairs
+        for item in (pair["left"], pair["right"])
+        if "index" in item
+    ]
+    row_limit = max(body.num_examples, max(query_indexes, default=-1) + 1)
+    result = _seed_suite_route_pool(body, row_limit=row_limit)
+    result["route_pool_mode"] = "sampled"
     return result
 
 
@@ -1013,25 +1059,24 @@ def _tc4_asset_pairs(body: TestSuiteRunRequest) -> list[dict]:
 def _suite_queries(
     body: TestSuiteRunRequest,
     count: int | None = None,
-    route_pool_indexes: set[int] | None = None,
     row_limit: int | None = None,
 ) -> list[dict]:
+    query_count = count or body.query_count
     if _dataset_family(body) == "ragbench":
         queries = _sample_ragbench_queries(
             body.dataset_name,
             body.dataset_split,
-            count or body.query_count,
+            query_count,
             body.seed,
-            exclude_indexes=route_pool_indexes,
             row_limit=row_limit,
         )
         if not queries:
             raise RuntimeError("RAGBench 질문을 찾지 못했습니다. dataset 준비 상태를 확인하세요.")
-        return queries
+        return queries[:query_count]
 
     queries = _sample_queries(
         body.dataset_name,
-        count or body.query_count,
+        query_count,
         body.seed,
         body.include_smoke,
     )
@@ -1181,6 +1226,12 @@ def _run_no_cache_query(
     for key, value in retrieval_timing.items():
         if key.endswith("_ms"):
             _set_timing(log, f"full_retrieval_{key}", value)
+    if retrieval_timing.get("reranker_enabled"):
+        log["reranker_model"] = retrieval_timing.get("reranker_model")
+        log["reranker_requested_device"] = retrieval_timing.get("reranker_requested_device")
+        log["reranker_resolved_device"] = retrieval_timing.get("reranker_resolved_device")
+        log["full_retrieval_reranker_requested_device"] = retrieval_timing.get("reranker_requested_device")
+        log["full_retrieval_reranker_resolved_device"] = retrieval_timing.get("reranker_resolved_device")
 
     prompt_start = _timer()
     prompt = _build_prompt(query, sources)
@@ -1320,7 +1371,6 @@ def _run_cache_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None =
     prepared["route_pool"] = route_pool
     queries = _suite_queries(
         body,
-        route_pool_indexes=set(route_pool.get("seeded_indexes", [])),
         row_limit=row_limit,
     )
     llm_provider = "mock"
@@ -1445,10 +1495,7 @@ def _run_mixed_timing_test(body: TestSuiteRunRequest, progress: _SuiteProgress |
     route_pool = (
         _seed_tc3_route_pool(body, base_queries)
         if use_tc3_assets
-        else _seed_suite_route_pool(
-            body,
-            exclude_indexes={int(q["index"]) for q in base_queries if "index" in q},
-        )
+        else _seed_suite_route_pool(body)
     )
     prepared["route_pool"] = route_pool
     queries = _mixed_queries(base_queries, body.seed + 101)
@@ -1574,7 +1621,6 @@ def _run_scalability_test(body: TestSuiteRunRequest, progress: _SuiteProgress | 
         prepared["route_pool"] = route_pool
         queries = _suite_queries(
             body,
-            route_pool_indexes=set(route_pool.get("seeded_indexes", [])),
             row_limit=row_count,
         )
         _warm_up_suite(
@@ -2378,7 +2424,9 @@ def _run_test_suite_internal(body: TestSuiteRunRequest, progress: _SuiteProgress
 
 @router.post("/test-suite/run")
 def run_test_suite(body: TestSuiteRunRequest):
-    return _run_test_suite_internal(body)
+    result = _run_test_suite_internal(body)
+    result["saved_run_log"] = _save_test_suite_run(body, result)
+    return result
 
 
 @router.post("/ragas/run")
@@ -2402,6 +2450,7 @@ def _run_suite_job(job_id: str, body: TestSuiteRunRequest) -> None:
     _update_suite_job(job_id, status="running", current_step="테스트 시작", started_at=time.time())
     try:
         result = _run_test_suite_internal(body, _SuiteProgress(job_id))
+        result["saved_run_log"] = _save_test_suite_run(body, result, job_id=job_id)
         _update_suite_job(
             job_id,
             status="completed",

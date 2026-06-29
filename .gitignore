@@ -22,6 +22,7 @@ src/data/*.zip
 # 로그
 *.log
 /tmp/
+src/data/dp3_run_logs/
 
 # OS
 .DS_Store

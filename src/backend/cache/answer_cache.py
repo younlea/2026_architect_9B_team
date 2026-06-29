@@ -21,9 +21,10 @@ DEFAULT_CACHE_THRESHOLD = 0.86
 TOP_K_SOURCES = 5
 DEFAULT_RERANK_CANDIDATES = 30
 DEFAULT_RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
+DEFAULT_RERANK_DEVICE = "auto"
 _ROUTE_CACHE: list[dict] | None = None
 _READY_SOURCE_IDS: set[str] = set()
-_RERANKERS: dict[str, object] = {}
+_RERANKERS: dict[tuple[str, str], object] = {}
 
 
 DP3_SCHEMA = """
@@ -156,7 +157,10 @@ def _elapsed_ms(start: float) -> float:
 def _set_timing(log: dict, key: str, value: float | int | None) -> None:
     if value is None:
         return
-    log.setdefault("timings_ms", {})[key] = round(float(value), 3)
+    try:
+        log.setdefault("timings_ms", {})[key] = round(float(value), 3)
+    except (TypeError, ValueError):
+        return
 
 
 def _set_total_ms(log: dict, start: float) -> None:
@@ -170,13 +174,51 @@ def _clear_runtime_caches() -> None:
     _ROUTE_CACHE = None
 
 
-def _get_reranker(model_name: str = DEFAULT_RERANK_MODEL):
+def _parse_reranker_spec(model_name: str = DEFAULT_RERANK_MODEL) -> tuple[str, str]:
     model_name = model_name or DEFAULT_RERANK_MODEL
-    if model_name not in _RERANKERS:
+    device = DEFAULT_RERANK_DEVICE
+    marker = "||device="
+    if marker in model_name:
+        model_name, device = model_name.split(marker, 1)
+    device = (device or DEFAULT_RERANK_DEVICE).strip().lower()
+    if device in {"gpu", "cuda:0"}:
+        device = "cuda"
+    if device not in {"auto", "cpu", "cuda"}:
+        device = DEFAULT_RERANK_DEVICE
+    return model_name.strip() or DEFAULT_RERANK_MODEL, device
+
+
+def _get_reranker(model_name: str = DEFAULT_RERANK_MODEL):
+    model_name, device = _parse_reranker_spec(model_name)
+    key = (model_name, device)
+    if key not in _RERANKERS:
         from sentence_transformers import CrossEncoder
 
-        _RERANKERS[model_name] = CrossEncoder(model_name)
-    return _RERANKERS[model_name]
+        kwargs = {}
+        if device == "cuda":
+            try:
+                import torch
+
+                if not torch.cuda.is_available():
+                    raise RuntimeError("reranker device=cuda requested, but torch.cuda is not available")
+            except ImportError as exc:
+                raise RuntimeError("reranker device=cuda requested, but torch is not installed") from exc
+            kwargs["device"] = "cuda"
+        elif device == "cpu":
+            kwargs["device"] = "cpu"
+
+        _RERANKERS[key] = CrossEncoder(model_name, **kwargs)
+    return _RERANKERS[key]
+
+
+def _reranker_resolved_device(reranker) -> str:
+    target_device = getattr(reranker, "_target_device", None)
+    if target_device is not None:
+        return str(target_device)
+    try:
+        return str(next(reranker.model.parameters()).device)
+    except Exception:
+        return "unknown"
 
 
 def ensure_answer_cache_ready(thread_id: str) -> dict:
@@ -618,10 +660,16 @@ def _retrieve_context_units(
         timing["vector_top_n"] = len(vector_candidates)
 
     reranker_ms = 0.0
+    reranker_model_name = None
+    reranker_requested_device = None
+    reranker_actual_device = None
     if use_reranker and vector_candidates:
         reranker_start = _timer()
         pairs = [(query, item["text"]) for item in vector_candidates]
-        rerank_scores = _get_reranker(rerank_model).predict(pairs)
+        reranker_model_name, reranker_requested_device = _parse_reranker_spec(rerank_model)
+        reranker = _get_reranker(rerank_model)
+        reranker_actual_device = _reranker_resolved_device(reranker)
+        rerank_scores = reranker.predict(pairs)
         for item, rerank_score in zip(vector_candidates, rerank_scores):
             item["rerank_score"] = float(rerank_score)
         vector_candidates.sort(key=lambda item: item["rerank_score"], reverse=True)
@@ -640,6 +688,13 @@ def _retrieve_context_units(
         timing["top_k"] = len(result)
         timing["reranker_enabled"] = bool(use_reranker)
         timing["reranker_candidate_count"] = len(vector_candidates) if use_reranker else 0
+        if use_reranker:
+            if reranker_model_name is None or reranker_requested_device is None:
+                reranker_model_name, reranker_requested_device = _parse_reranker_spec(rerank_model)
+            timing["reranker_model"] = reranker_model_name
+            timing["reranker_device"] = reranker_requested_device
+            timing["reranker_requested_device"] = reranker_requested_device
+            timing["reranker_resolved_device"] = reranker_actual_device or "not_loaded"
     return result
 
 
@@ -908,6 +963,12 @@ def _fallback_and_store(
     for key, value in rag_timing.items():
         if key.endswith("_ms"):
             _set_timing(log, f"rag_{key}", value)
+    if rag_timing.get("reranker_enabled"):
+        log["reranker_model"] = rag_timing.get("reranker_model")
+        log["reranker_requested_device"] = rag_timing.get("reranker_requested_device")
+        log["reranker_resolved_device"] = rag_timing.get("reranker_resolved_device")
+        log["rag_reranker_requested_device"] = rag_timing.get("reranker_requested_device")
+        log["rag_reranker_resolved_device"] = rag_timing.get("reranker_resolved_device")
     log["rag_candidate_count"] = rag_timing.get("candidate_count", 0)
     log["rag_top_k"] = rag_timing.get("top_k", len(sources))
 

@@ -314,6 +314,9 @@ def _delta_retrieve(
             "total_ms": round(retrieval_timing.get("total_ms", 0.0) + filter_ms, 3),
             "reranker_enabled": retrieval_timing.get("reranker_enabled", False),
             "reranker_candidate_count": retrieval_timing.get("reranker_candidate_count", 0),
+            "reranker_model": retrieval_timing.get("reranker_model"),
+            "reranker_requested_device": retrieval_timing.get("reranker_requested_device"),
+            "reranker_resolved_device": retrieval_timing.get("reranker_resolved_device"),
         },
     }
 
@@ -421,6 +424,12 @@ def _full_retrieval_and_store(
     for key, value in retrieval_timing.items():
         if key.endswith("_ms"):
             _set_timing(log, f"full_retrieval_{key}", value)
+    if retrieval_timing.get("reranker_enabled"):
+        log["reranker_model"] = retrieval_timing.get("reranker_model")
+        log["reranker_requested_device"] = retrieval_timing.get("reranker_requested_device")
+        log["reranker_resolved_device"] = retrieval_timing.get("reranker_resolved_device")
+        log["full_retrieval_reranker_requested_device"] = retrieval_timing.get("reranker_requested_device")
+        log["full_retrieval_reranker_resolved_device"] = retrieval_timing.get("reranker_resolved_device")
     log["full_retrieval_candidate_count"] = retrieval_timing.get("candidate_count", 0)
     log["full_retrieval_top_k"] = retrieval_timing.get("top_k", len(sources))
     log.update({
@@ -625,8 +634,16 @@ def run_context_cache_query(
         "candidate_count": delta["candidate_count"],
         "replacement_count": delta["replacement_count"],
     }
-    for key, value in delta.get("timing", {}).items():
-        _set_timing(log, f"delta_retrieval_{key}", value)
+    delta_timing = delta.get("timing", {})
+    for key, value in delta_timing.items():
+        if key.endswith("_ms"):
+            _set_timing(log, f"delta_retrieval_{key}", value)
+    if delta_timing.get("reranker_enabled"):
+        log["reranker_model"] = delta_timing.get("reranker_model")
+        log["reranker_requested_device"] = delta_timing.get("reranker_requested_device")
+        log["reranker_resolved_device"] = delta_timing.get("reranker_resolved_device")
+        log["delta_retrieval_reranker_requested_device"] = delta_timing.get("reranker_requested_device")
+        log["delta_retrieval_reranker_resolved_device"] = delta_timing.get("reranker_resolved_device")
 
     if len(valid_current) != len(validation["valid_sources"]) or delta["replacement_count"] < delta["needed"]:
         log["decision_reason"] = "context_cache_delta_insufficient_full_fallback"
