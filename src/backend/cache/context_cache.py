@@ -15,6 +15,7 @@ from backend.cache.answer_cache import (
     _embedding_to_json,
     _elapsed_ms,
     _retrieve_context_units,
+    _set_llm_timings,
     _set_timing,
     _set_total_ms,
     _timer,
@@ -368,7 +369,7 @@ def _generate_and_store(
     llm_start = _timer()
     llm_result = get_dp3_answer_with_metadata(prompt, model, llm_provider)
     answer = llm_result["answer"]
-    _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
+    _set_llm_timings(log, llm_result, _elapsed_ms(llm_start))
 
     store_start = _timer()
     context_cache_id = _store_context_cache(
@@ -576,7 +577,7 @@ def run_context_cache_query(
             llm_provider,
         )
         answer = llm_result["answer"]
-        _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
+        _set_llm_timings(log, llm_result, _elapsed_ms(llm_start))
         log.update({
             "cache_hit": True,
             "validation_passed": True,

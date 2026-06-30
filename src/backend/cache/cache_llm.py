@@ -104,26 +104,39 @@ def _groq(prompt: str, model: str) -> str:
 
     last_error = None
     estimated_tokens = _estimate_groq_tokens(prompt)
+    retry_wait_seconds = 0.0
     for attempt in range(GROQ_MAX_RETRIES + 1):
-        _throttle_groq(model, estimated_tokens)
+        throttle_wait_seconds = _throttle_groq(model, estimated_tokens)
+        request_start = time.perf_counter()
         resp = requests.post(url, headers=headers, json=payload, timeout=120)
+        request_ms = round((time.perf_counter() - request_start) * 1000, 3)
         if resp.status_code != 429:
             resp.raise_for_status()
             data = resp.json()
+            usage = data.get("usage") or {}
             return {
                 "answer": (data["choices"][0]["message"]["content"] or "").strip(),
                 "provider": "groq",
                 "model": model,
-                "usage": data.get("usage") or {},
+                "usage": usage,
                 "estimated_tokens": estimated_tokens,
                 "prompt_fit": prompt_fit,
                 "rate_headers": _groq_rate_headers(resp),
+                "timing": _groq_timing_metadata(
+                    usage,
+                    request_ms=request_ms,
+                    throttle_wait_ms=round(throttle_wait_seconds * 1000, 3),
+                    retry_wait_ms=round(retry_wait_seconds * 1000, 3),
+                    attempt_count=attempt + 1,
+                ),
             }
 
         last_error = resp
         if attempt >= GROQ_MAX_RETRIES:
             break
-        time.sleep(_groq_retry_wait_seconds(resp, attempt))
+        retry_wait = _groq_retry_wait_seconds(resp, attempt)
+        retry_wait_seconds += retry_wait
+        time.sleep(retry_wait)
 
     detail = ""
     try:
@@ -138,9 +151,10 @@ def _groq(prompt: str, model: str) -> str:
     )
 
 
-def _throttle_groq(model: str, estimated_tokens: int) -> None:
+def _throttle_groq(model: str, estimated_tokens: int) -> float:
     global _GROQ_LAST_CALL_AT
     min_interval = max(0.0, float(GROQ_MIN_INTERVAL_SECONDS))
+    waited = 0.0
     with _GROQ_LOCK:
         while True:
             now = time.monotonic()
@@ -151,8 +165,34 @@ def _throttle_groq(model: str, estimated_tokens: int) -> None:
             if wait <= 0:
                 _GROQ_LAST_CALL_AT = time.monotonic()
                 _GROQ_CALL_WINDOW.append((_GROQ_LAST_CALL_AT, estimated_tokens, model))
-                return
+                return waited
+            waited += wait
             time.sleep(wait)
+
+
+def _groq_timing_metadata(
+    usage: dict,
+    request_ms: float,
+    throttle_wait_ms: float,
+    retry_wait_ms: float,
+    attempt_count: int,
+) -> dict:
+    timing = {
+        "request_ms": request_ms,
+        "throttle_wait_ms": throttle_wait_ms,
+        "retry_wait_ms": retry_wait_ms,
+        "attempt_count": attempt_count,
+    }
+    for source_key, target_key in [
+        ("queue_time", "api_reported_queue_ms"),
+        ("prompt_time", "api_reported_prompt_ms"),
+        ("completion_time", "api_reported_completion_ms"),
+        ("total_time", "api_reported_total_ms"),
+    ]:
+        value = usage.get(source_key)
+        if value is not None:
+            timing[target_key] = round(float(value) * 1000, 3)
+    return timing
 
 
 def _groq_retry_wait_seconds(resp, attempt: int) -> float:

@@ -327,8 +327,7 @@
         <select id="testCase">
           <option value="cache">TC1. Cache 동작 확인</option>
           <option value="scalability">TC2. 데이터셋 확장성</option>
-          <option value="mixed_timing">TC3. 유사질문 혼합 수행시간</option>
-          <option value="similar_pair_quality">TC4. 유사질문 Pair 품질</option>
+          <option value="similar_pair_quality">TC3. 유사질문 Pair 품질</option>
         </select>
         <div id="caseHint" class="hint"></div>
       </div>
@@ -400,7 +399,7 @@
           <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
         </select>
         <div class="hint">Mock Est. Total+LLM = total_ms + llm_call_count * 700ms (GROQ llama-3.1-8b-instant, about 5.6K tokens).</div>
-        <div class="hint">TC1은 항상 Mock으로 실행합니다. TC2는 기본 Mock, TC3/TC4는 선택한 LLM을 사용할 수 있습니다.</div>
+        <div class="hint">TC1은 항상 Mock으로 실행합니다. TC2는 기본 Mock, TC3는 선택한 LLM을 사용할 수 있습니다.</div>
       </div>
 
       <div class="section">
@@ -502,7 +501,7 @@
     const caseHints = {
       cache: "선택한 techqa row scale 안에서 질문을 뽑아 No-cache와 A/B 반복 실행의 cache 절감 효과를 비교합니다.",
       scalability: "techqa row 100, 200, 300을 고정 비교하며 No-cache RAG 비용 증가를 확인합니다.",
-      mixed_timing: "emanual 전체 row와 유사질문 set을 사용해 A/B route/cache/RAG/LLM 시간을 비교합니다.",
+      mixed_timing: "TC_Add. emanual 유사질문 set을 사용한 보조 수행시간 테스트입니다.",
       similar_pair_quality: "techqa의 의미 차이가 있는 유사질문 pair에서 A안과 B안의 답변 재사용 방식을 비교합니다."
     };
 
@@ -780,7 +779,7 @@
 
     async function runRagasForLatest(runOfficial) {
       if (!latestRagasInputPath) {
-        showError(new Error("먼저 TC4를 실행해서 RAGAS input을 생성해 주세요."));
+        showError(new Error("먼저 TC3를 실행해서 RAGAS input을 생성해 주세요."));
         return;
       }
       const proxyBtn = $("runProxyRagasBtn");
@@ -1106,8 +1105,8 @@
       }
       const titleByCase = {
         cache: "TC1. Cache Benefit",
-        mixed_timing: "TC3. Mixed Workload Performance",
-        similar_pair_quality: "TC4. Similar Query Pair Quality"
+        mixed_timing: "TC_Add. Similar Query Stress Timing",
+        similar_pair_quality: "TC3. Similar Query Pair Quality"
       };
       const parts = [
         `<h2>${titleByCase[result.test_case] || result.test_case}</h2>`,
@@ -1154,8 +1153,8 @@
     function ragasActionPanel(inputPath) {
       return `
         <div class="result-block">
-          <h3>TC4 RAGAS 실행</h3>
-          <div class="hint">TC4를 다시 실행하지 않고, 저장된 최신 RAGAS input으로만 평가합니다. Proxy는 API를 쓰지 않는 단어 겹침 기반 참고값이고, Official RAGAS는 evaluator LLM API를 호출합니다.</div>
+          <h3>TC3 RAGAS 실행</h3>
+          <div class="hint">TC3를 다시 실행하지 않고, 저장된 최신 RAGAS input으로만 평가합니다. Proxy는 API를 쓰지 않는 단어 겹침 기반 참고값이고, Official RAGAS는 evaluator LLM API를 호출합니다.</div>
           <div class="row">
             <div>
               <label for="ragasResultMaxRows">Official RAGAS max rows</label>
@@ -1189,7 +1188,7 @@
       if (ragas.status !== "completed") {
         return `
           <div class="result-block">
-            <h3>TC4 Official RAGAS</h3>
+            <h3>TC3 Official RAGAS</h3>
             <div class="hint">status=${escapeHtml(ragas.status || "-")}, reason=${escapeHtml(ragas.reason || "-")}</div>
           </div>
         `;
@@ -1212,7 +1211,7 @@
       `).join("");
       return `
         <div class="result-block">
-          <h3>TC4 Official RAGAS</h3>
+          <h3>TC3 Official RAGAS</h3>
           <div class="hint">evaluator=${escapeHtml(ragas.evaluator_provider || "-")}/${escapeHtml(ragas.evaluator_model || "-")}, rows=${ragas.row_count}, elapsed=${fmt(ragas.elapsed_ms)}ms, ${ragasUsageText(ragas.evaluator_usage)}, ${ragasAttemptText(ragas.evaluator_attempts)}, scores=${escapeHtml(ragas.score_path || "-")}</div>
           <div class="hint">Metric averages exclude NaN values. N is the total evaluated rows per mode.</div>
           <div class="table-wrap">
@@ -1251,7 +1250,7 @@
       `).join("");
       return `
         <div class="result-block">
-          <h3>TC4 RAGAS Proxy</h3>
+          <h3>TC3 RAGAS Proxy</h3>
           <div class="hint">실제 RAGAS 패키지 실행 전, 저장된 RAGAS input으로 계산한 lightweight proxy입니다.</div>
           <div class="table-wrap">
             <table>
@@ -1298,7 +1297,7 @@
       `).join("");
       return `
         <div class="result-block">
-          <h3>TC4 Pair Result</h3>
+          <h3>TC3 Pair Result</h3>
           <div class="table-wrap">
             <table>
               <thead><tr><th>Pair</th><th>Sim</th><th>A hit</th><th>B hit</th><th>A same answer</th><th>B same answer</th><th>Queries</th></tr></thead>

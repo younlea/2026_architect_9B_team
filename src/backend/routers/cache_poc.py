@@ -25,6 +25,7 @@ from backend.cache.answer_cache import (
     _elapsed_ms,
     _embedding_to_json,
     _retrieve_context_units,
+    _set_llm_timings,
     _set_timing,
     _set_total_ms,
     _store_log,
@@ -419,6 +420,11 @@ def _summarize_context_results(results: list[dict]) -> dict:
             "full_retrieval_total_ms",
             "prompt_build_ms",
             "llm_ms",
+            "llm_wall_ms",
+            "llm_throttle_wait_ms",
+            "llm_retry_wait_ms",
+            "llm_api_reported_queue_ms",
+            "llm_api_reported_total_ms",
             "cache_store_ms",
             "total_ms",
         ]
@@ -591,6 +597,11 @@ A_TIMING_KEYS = [
     "rag_total_ms",
     "prompt_build_ms",
     "llm_ms",
+    "llm_wall_ms",
+    "llm_throttle_wait_ms",
+    "llm_retry_wait_ms",
+    "llm_api_reported_queue_ms",
+    "llm_api_reported_total_ms",
     "cache_store_ms",
     "total_ms",
 ]
@@ -615,6 +626,11 @@ B_TIMING_KEYS = [
     "delta_retrieval_total_ms",
     "prompt_build_ms",
     "llm_ms",
+    "llm_wall_ms",
+    "llm_throttle_wait_ms",
+    "llm_retry_wait_ms",
+    "llm_api_reported_queue_ms",
+    "llm_api_reported_total_ms",
     "cache_store_ms",
     "total_ms",
 ]
@@ -628,6 +644,11 @@ NO_CACHE_TIMING_KEYS = [
     "full_retrieval_total_ms",
     "prompt_build_ms",
     "llm_ms",
+    "llm_wall_ms",
+    "llm_throttle_wait_ms",
+    "llm_retry_wait_ms",
+    "llm_api_reported_queue_ms",
+    "llm_api_reported_total_ms",
     "total_ms",
 ]
 
@@ -1243,7 +1264,7 @@ def _run_no_cache_query(
     log["llm_usage"] = llm_result.get("usage", {})
     log["llm_prompt_fit"] = llm_result.get("prompt_fit", {})
     log["llm_estimated_tokens"] = llm_result.get("estimated_tokens")
-    _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
+    _set_llm_timings(log, llm_result, _elapsed_ms(llm_start))
     log["llm_call_count"] = 1
     log["fallback_source_count"] = len(sources)
     _set_total_ms(log, start)
@@ -1758,12 +1779,20 @@ def _answers_equal(left: dict, right: dict) -> bool:
 def _llm_usage_summary(result: dict) -> dict:
     usage = result.get("llm_usage") or {}
     prompt_fit = result.get("llm_prompt_fit") or {}
+    timings = result.get("timings_ms") or {}
     return {
         "llm_calls": int(result.get("llm_call_count", 0)),
         "prompt_tokens": usage.get("prompt_tokens") or usage.get("estimated_prompt_tokens"),
         "completion_tokens": usage.get("completion_tokens"),
         "total_tokens": usage.get("total_tokens") or usage.get("estimated_total_tokens") or result.get("llm_estimated_tokens"),
         "estimated_tokens": result.get("llm_estimated_tokens"),
+        "request_ms": timings.get("llm_ms"),
+        "wall_ms": timings.get("llm_wall_ms"),
+        "throttle_wait_ms": timings.get("llm_throttle_wait_ms"),
+        "api_reported_queue_ms": timings.get("llm_api_reported_queue_ms"),
+        "api_reported_total_ms": timings.get("llm_api_reported_total_ms"),
+        "reported_queue_time_s": usage.get("queue_time"),
+        "reported_total_time_s": usage.get("total_time"),
         "prompt_trimmed": bool(prompt_fit.get("trimmed", False)),
         "prompt_fit": prompt_fit,
     }
@@ -1952,6 +1981,11 @@ RAGAS_GROQ_MODEL_FALLBACKS = (
     "qwen/qwen3-32b",
     "qwen/qwen3.6-27b",
 )
+RAGAS_EVALUATOR_INTERVAL_SECONDS = 65
+RAGAS_EVALUATOR_TIMEOUT_SECONDS = 300
+RAGAS_EVALUATOR_MAX_WORKERS = 1
+RAGAS_EVALUATOR_BATCH_SIZE = 1
+RAGAS_EVALUATOR_MAX_RETRIES = 2
 
 
 def _ragas_model_candidates(model: str | None) -> list[str]:
@@ -2079,7 +2113,9 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
         from ragas import evaluate
         from ragas.embeddings import LangchainEmbeddingsWrapper
         from ragas.llms import LangchainLLMWrapper
+        from ragas.run_config import RunConfig
         from langchain_community.embeddings import HuggingFaceEmbeddings
+        from langchain_core.rate_limiters import InMemoryRateLimiter
         from langchain_openai import ChatOpenAI
         from backend.config import EMBEDDING_MODEL, GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL, OPENAI_API_KEY, OPENAI_MODEL
     except Exception as exc:
@@ -2124,6 +2160,17 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
 
         for evaluator_model in model_candidates:
             usage_callback = _RagasUsageCallback()
+            rate_limiter = InMemoryRateLimiter(
+                requests_per_second=1 / RAGAS_EVALUATOR_INTERVAL_SECONDS,
+                check_every_n_seconds=1,
+                max_bucket_size=1,
+            )
+            run_config = RunConfig(
+                timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
+                max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
+                max_wait=RAGAS_EVALUATOR_INTERVAL_SECONDS,
+                max_workers=RAGAS_EVALUATOR_MAX_WORKERS,
+            )
             try:
                 if provider == "groq":
                     llm = ChatOpenAI(
@@ -2132,6 +2179,9 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                         base_url=GROQ_BASE_URL,
                         temperature=0,
                         max_tokens=1024,
+                        timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
+                        max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
+                        rate_limiter=rate_limiter,
                     )
                 else:
                     llm = ChatOpenAI(
@@ -2139,6 +2189,9 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                         api_key=OPENAI_API_KEY,
                         temperature=0,
                         max_tokens=1024,
+                        timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
+                        max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
+                        rate_limiter=rate_limiter,
                     )
                 result = evaluate(
                     dataset,
@@ -2148,6 +2201,8 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                     callbacks=[usage_callback],
                     raise_exceptions=False,
                     show_progress=False,
+                    run_config=run_config,
+                    batch_size=RAGAS_EVALUATOR_BATCH_SIZE,
                 )
                 records = result.to_pandas().to_dict(orient="records")
                 for index, record in enumerate(records):
@@ -2165,6 +2220,13 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                     "evaluator_provider": provider,
                     "evaluator_model": evaluator_model,
                     "evaluator_attempts": attempts,
+                    "evaluator_rate_limit": {
+                        "interval_seconds": RAGAS_EVALUATOR_INTERVAL_SECONDS,
+                        "max_workers": RAGAS_EVALUATOR_MAX_WORKERS,
+                        "batch_size": RAGAS_EVALUATOR_BATCH_SIZE,
+                        "timeout_seconds": RAGAS_EVALUATOR_TIMEOUT_SECONDS,
+                        "max_retries": RAGAS_EVALUATOR_MAX_RETRIES,
+                    },
                     "evaluator_usage": usage_callback.summary(),
                     "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
                     "by_mode": _summarize_official_ragas(records),
@@ -2232,19 +2294,19 @@ def _summarize_official_ragas(records: list[dict]) -> dict:
 def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None) -> dict:
     dataset_name = body.dataset_name.strip().lower()
     if _dataset_family(body) != "ragbench" or dataset_name not in {"emanual", "techqa"}:
-        raise ValueError("TC4 requires dataset_family=ragbench and dataset_name=techqa or emanual.")
+        raise ValueError("TC3 requires dataset_family=ragbench and dataset_name=techqa or emanual.")
 
     pairs = _tc4_asset_pairs(body)
     if not pairs:
-        raise RuntimeError("TC4 pair asset is empty. Run the RAGBench query asset builder first.")
+        raise RuntimeError("TC3 pair asset is empty. Run the RAGBench query asset builder first.")
     prepare_count = max(body.num_examples, max(max(p["left"]["index"], p["right"]["index"]) for p in pairs) + 1)
 
     if progress:
-        progress.reset(len(pairs) * 4 + 1, "TC4 Dataset/EU 준비")
-        progress.step("TC4 Dataset/EU 준비")
+        progress.reset(len(pairs) * 4 + 1, "TC3 Dataset/EU 준비")
+        progress.step("TC3 Dataset/EU 준비")
     prepared = _prepare_suite_source(body, prepare_count)
     if progress:
-        progress.advance("TC4 Dataset/EU 준비 완료")
+        progress.advance("TC3 Dataset/EU 준비 완료")
     source_id = prepared["source_id"]
     route_pool = _seed_tc4_route_pool(body, pairs)
     prepared["route_pool"] = route_pool
@@ -2283,7 +2345,7 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
                     body.rerank_candidates,
                     body.rerank_model,
                     progress,
-                    "TC4 A left",
+                    "TC3 A left",
                 )[0]
             a_right = _run_answer_items(
                     source_id,
@@ -2298,7 +2360,7 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
                     body.rerank_candidates,
                     body.rerank_model,
                     progress,
-                    "TC4 A right",
+                    "TC3 A right",
                 )[0]
         finally:
             if route_mode == "similar_only":
@@ -2317,7 +2379,7 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
             body.rerank_candidates,
             body.rerank_model,
             progress,
-            "TC4 B left",
+            "TC3 B left",
         )[0]
         b_right = _run_context_items(
             source_id,
@@ -2331,7 +2393,7 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
             body.rerank_candidates,
             body.rerank_model,
             progress,
-            "TC4 B right",
+            "TC3 B right",
         )[0]
 
         a_left_results.append(a_left)
@@ -2413,11 +2475,11 @@ def _run_test_suite_internal(body: TestSuiteRunRequest, progress: _SuiteProgress
     normalized = body.test_case.strip().lower()
     if normalized == "cache":
         return _run_cache_test(body, progress)
-    if normalized in {"mixed", "mixed_timing", "timing"}:
+    if normalized in {"mixed", "mixed_timing", "timing", "tc_add"}:
         return _run_mixed_timing_test(body, progress)
     if normalized in {"scalability", "scale"}:
         return _run_scalability_test(body, progress)
-    if normalized in {"similar_pair_quality", "tc4", "pair_quality"}:
+    if normalized in {"similar_pair_quality", "tc3", "tc4", "pair_quality"}:
         return _run_similar_pair_quality_test(body, progress)
     raise ValueError(f"Unknown DP3 test_case: {body.test_case}")
 

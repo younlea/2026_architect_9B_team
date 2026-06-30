@@ -31,7 +31,12 @@ TIMING_LABELS = {
     "full_retrieval_rerank_ms": "Full retrieval rerank",
     "full_retrieval_total_ms": "Full retrieval total",
     "prompt_build_ms": "Prompt build",
-    "llm_ms": "LLM",
+    "llm_ms": "LLM request",
+    "llm_wall_ms": "LLM wall",
+    "llm_throttle_wait_ms": "LLM throttle wait",
+    "llm_retry_wait_ms": "LLM retry wait",
+    "llm_api_reported_queue_ms": "LLM API reported queue",
+    "llm_api_reported_total_ms": "LLM API reported total",
     "cache_store_ms": "Cache store",
     "total_ms": "Total",
     "cache_lookup_db_ms": "Cache lookup DB",
@@ -57,6 +62,11 @@ TIMING_ORDERS = {
         "full_retrieval_total_ms",
         "prompt_build_ms",
         "llm_ms",
+        "llm_wall_ms",
+        "llm_throttle_wait_ms",
+        "llm_retry_wait_ms",
+        "llm_api_reported_queue_ms",
+        "llm_api_reported_total_ms",
     ],
     "A first": [
         "total_ms",
@@ -72,6 +82,11 @@ TIMING_ORDERS = {
         "rag_total_ms",
         "prompt_build_ms",
         "llm_ms",
+        "llm_wall_ms",
+        "llm_throttle_wait_ms",
+        "llm_retry_wait_ms",
+        "llm_api_reported_queue_ms",
+        "llm_api_reported_total_ms",
         "cache_store_ms",
     ],
     "A repeat": [
@@ -88,6 +103,11 @@ TIMING_ORDERS = {
         "rag_total_ms",
         "prompt_build_ms",
         "llm_ms",
+        "llm_wall_ms",
+        "llm_throttle_wait_ms",
+        "llm_retry_wait_ms",
+        "llm_api_reported_queue_ms",
+        "llm_api_reported_total_ms",
         "cache_store_ms",
     ],
     "B first": [
@@ -105,6 +125,11 @@ TIMING_ORDERS = {
         "full_retrieval_total_ms",
         "prompt_build_ms",
         "llm_ms",
+        "llm_wall_ms",
+        "llm_throttle_wait_ms",
+        "llm_retry_wait_ms",
+        "llm_api_reported_queue_ms",
+        "llm_api_reported_total_ms",
         "cache_store_ms",
     ],
     "B repeat": [
@@ -117,6 +142,11 @@ TIMING_ORDERS = {
         "validation_ms",
         "prompt_build_ms",
         "llm_ms",
+        "llm_wall_ms",
+        "llm_throttle_wait_ms",
+        "llm_retry_wait_ms",
+        "llm_api_reported_queue_ms",
+        "llm_api_reported_total_ms",
     ],
 }
 
@@ -225,6 +255,29 @@ def scale_mode_rows(scale: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
     ]
 
 
+def similar_pair_mode_rows(pair_result: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
+    return [
+        ("A left_seed", pair_result["a"]["passes"][0]["summary"]),
+        ("A right_probe", pair_result["a"]["passes"][1]["summary"]),
+        ("B left_seed", pair_result["b"]["passes"][0]["summary"]),
+        ("B right_probe", pair_result["b"]["passes"][1]["summary"]),
+    ]
+
+
+def timing_order(mode: str) -> list[str]:
+    if mode in TIMING_ORDERS:
+        return TIMING_ORDERS[mode]
+    if mode == "A left_seed":
+        return TIMING_ORDERS["A first"]
+    if mode == "A right_probe":
+        return TIMING_ORDERS["A repeat"]
+    if mode == "B left_seed":
+        return TIMING_ORDERS["B first"]
+    if mode == "B right_probe":
+        return TIMING_ORDERS["B repeat"]
+    raise KeyError(mode)
+
+
 def metric_label(mode: str, key: str) -> str:
     if key == "cache_lookup_ms" and mode.startswith("B"):
         return "Cache lookup total"
@@ -243,7 +296,7 @@ def llm_latency_setting_rows(mock_llm: bool) -> list[tuple[str, str]]:
             ("LLM latency basis", f"Mock LLM: `{LLM_LATENCY_MS:.1f} ms/call` 가상 보정"),
         ]
     return [
-        ("LLM latency basis", "`timings_ms.llm_ms` 실제 측정값 포함"),
+        ("LLM latency basis", "`timings_ms.llm_ms` 실제 HTTP 요청 왕복시간 포함"),
     ]
 
 
@@ -313,7 +366,7 @@ def render_timing_table(
     for mode in modes:
         summary = row_map[mode]
         timings = summary["timing_stats_ms"]
-        for key in TIMING_ORDERS[mode]:
+        for key in timing_order(mode):
             if key == "TOTAL_LLM":
                 total = timings["total_ms"]
                 min_max = rag_llm_min_max(
@@ -665,10 +718,137 @@ def render_tc2(
     return "\n".join(out)
 
 
+def fmt_bool(value: Any) -> str:
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    return ""
+
+
+def fmt_ms(value: Any) -> str:
+    if value is None:
+        return "-"
+    return f"{float(value):.3f} ms"
+
+
+def render_pair_rows(pair_result: dict[str, Any]) -> list[str]:
+    out = [
+        "| Pair ID | Similarity | Answer Jaccard | A right hit | B right hit | A answers equal | B answers equal | A right decision | B right decision | A right LLM request | B right LLM request | B right throttle wait |",
+        "|---|---:|---:|---|---|---|---|---|---|---:|---:|---:|",
+    ]
+    for pair in pair_result.get("pairs", []):
+        a_usage = pair.get("a_right_usage") or {}
+        b_usage = pair.get("b_right_usage") or {}
+        out.append(
+            f"| `{pair.get('pair_id')}` | {float(pair.get('similarity', 0)):.4f} | "
+            f"{float(pair.get('answer_jaccard', 0)):.4f} | {fmt_bool(pair.get('a_right_cache_hit'))} | "
+            f"{fmt_bool(pair.get('b_right_cache_hit'))} | {fmt_bool(pair.get('a_answers_equal'))} | "
+            f"{fmt_bool(pair.get('b_answers_equal'))} | `{pair.get('a_right_decision')}` | "
+            f"`{pair.get('b_right_decision')}` | {fmt_ms(a_usage.get('request_ms'))} | "
+            f"{fmt_ms(b_usage.get('request_ms'))} | {fmt_ms(b_usage.get('throttle_wait_ms'))} |"
+        )
+    return out
+
+
+def render_tc3(gpu_path: Path | None) -> str | None:
+    data = load_log(gpu_path)
+    if data is None or gpu_path is None:
+        return None
+
+    pair_result = result(data)
+    prepared = pair_result["prepared"]
+    pool = route_pool(prepared)
+    mock_llm = is_mock_run(data)
+    use_reranker = bool(req(data, "use_reranker"))
+    posthoc = data.get("posthoc_reranker_device_check") or {}
+    requested_device = posthoc.get("requested_device") or device_from_model(req(data, "rerank_model"))
+    resolved_device = posthoc.get("resolved_device") or requested_device
+    correction = data.get("posthoc_total_wait_correction") or {}
+
+    out = [
+        "## 4. TC3 Similar Query Pair Quality",
+        "",
+        "TC3은 `techqa` 유사질문 pair에서 A안 Answer Cache 재사용과 B안 Context Cache 재사용의 응답/품질 비교용 raw data를 기록한다.",
+        "",
+        "### 공통 세팅",
+        "",
+        *render_setting_rows(
+            [
+                ("Test Case", "TC3 Similar Query Pair Quality"),
+                ("Dataset", "RAGBench `techqa`"),
+                ("Split", f"`{req(data, 'dataset_split')}`"),
+                ("Source ID", f"`{prepared.get('source_id')}`"),
+                ("RAG corpus row 수", str(prepared.get("num_examples"))),
+                ("Base EU rows", f"{prepared.get('base_eu_count'):,}"),
+                ("Versioned EU rows", f"{prepared.get('version_rows'):,}"),
+                ("Pair 수", str(pair_result.get("pair_count"))),
+                ("Query 수", str(pair_result.get("query_count"))),
+                ("Requested version", "V1"),
+                ("User scope", str(req(data, "user_scope"))),
+                ("LLM provider", llm_provider(data)),
+                ("LLM model", str(req(data, "model"))),
+                ("Route threshold", f"{float(req(data, 'route_threshold')):.2f}"),
+                ("Cache hit threshold", str(req(data, "cache_threshold"))),
+                *llm_latency_setting_rows(mock_llm),
+                ("Reranker", "On" if use_reranker else "Off"),
+                ("Reranker requested device", requested_device if use_reranker else "N/A"),
+                ("Reranker resolved device", resolved_device if use_reranker else "N/A"),
+                ("Rerank model", "`cross-encoder/ms-marco-MiniLM-L-6-v2`" if use_reranker else "N/A"),
+                ("Rerank candidates", str(req(data, "rerank_candidates")) if use_reranker else "N/A"),
+                ("Route pool mode", str(req(data, "route_pool_mode"))),
+                ("Route pool sample rate", f"{int(float(req(data, 'sample_rate')) * 100)}%"),
+                ("Route pool min per dataset", str(pool.get("min_count", req(data, "min_per_dataset")))),
+                ("Route pool seed", str(req(data, "pool_seed"))),
+                ("Query seed", str(req(data, "seed"))),
+                (
+                    "Route pool",
+                    f"`ragbench:techqa:test` {pool.get('seeded_questions')}개 / {pool.get('total_questions')}",
+                ),
+                ("Route pool indexes", "`" + ", ".join(map(str, pool.get("seeded_indexes", []))) + "`"),
+                ("RAGAS input", f"`{pair_result.get('ragas_input_path')}`"),
+                ("Run log file", f"`{gpu_path.name}`"),
+                ("Job ID", f"`{data.get('job_id')}`"),
+                ("Saved at", str(data.get("saved_at"))),
+                ("Post-hoc total wait correction", str(bool(correction.get("applied"))).lower()),
+            ]
+        ),
+        "",
+        llm_formula_line(mock_llm),
+    ]
+
+    rows_by_mode = similar_pair_mode_rows(pair_result)
+    out.extend(["", "### 전체 요약", "", *render_summary_table(rows_by_mode, mock_llm=mock_llm)])
+    out.extend(["", "### Decision reasons", "", *render_decision_reasons(rows_by_mode)])
+    out.extend(["", "### A안 timing", "", *render_timing_table(rows_by_mode, ["A left_seed", "A right_probe"], mock_llm=mock_llm)])
+    out.extend(["", "### B안 timing", "", *render_timing_table(rows_by_mode, ["B left_seed", "B right_probe"], mock_llm=mock_llm)])
+    out.extend(["", "### Pair별 raw", "", *render_pair_rows(pair_result)])
+    return "\n".join(out)
+
+
 def replace_between(text: str, start_heading: str, end_heading: str, replacement: str) -> str:
     start = text.index(start_heading)
     end = text.index(end_heading, start)
     return text[:start] + replacement.rstrip() + "\n\n" + text[end:]
+
+
+def replace_between_any(
+    text: str,
+    start_heading: str,
+    end_headings: list[str],
+    replacement: str,
+) -> str:
+    start = text.index(start_heading)
+    end_candidates = [text.index(heading, start) for heading in end_headings if heading in text[start:]]
+    if not end_candidates:
+        raise ValueError(f"Could not find any end heading after {start_heading!r}: {end_headings!r}")
+    end = min(end_candidates)
+    return text[:start] + replacement.rstrip() + "\n\n" + text[end:]
+
+
+def replace_from(text: str, start_heading: str, replacement: str) -> str:
+    start = text.index(start_heading)
+    return text[:start] + replacement.rstrip() + "\n"
 
 
 def resolve_paths(args: argparse.Namespace) -> dict[str, Path | None]:
@@ -684,6 +864,7 @@ def resolve_paths(args: argparse.Namespace) -> dict[str, Path | None]:
         "tc2_cpu": explicit(args.tc2_cpu),
         "tc2_gpu": explicit(args.tc2_gpu),
         "tc2_auto": explicit(args.tc2_auto),
+        "tc3_gpu": explicit(args.tc3_gpu),
     }
     if not args.latest:
         return paths
@@ -733,6 +914,12 @@ def resolve_paths(args: argparse.Namespace) -> dict[str, Path | None]:
         and bool(req(data, "use_reranker"))
         and device_from_model(req(data, "rerank_model")) == "auto",
     )
+    paths["tc3_gpu"] = paths["tc3_gpu"] or latest_log(
+        log_dir,
+        lambda data: req(data, "test_case") == "similar_pair_quality"
+        and bool(req(data, "use_reranker"))
+        and device_from_model(req(data, "rerank_model")) in {"cuda", "gpu", "cuda:0"},
+    )
     return paths
 
 
@@ -750,11 +937,13 @@ def main() -> None:
     parser.add_argument("--tc2-cpu")
     parser.add_argument("--tc2-gpu")
     parser.add_argument("--tc2-auto")
+    parser.add_argument("--tc3-gpu")
     args = parser.parse_args()
 
     paths = resolve_paths(args)
     tc1 = render_tc1(paths["tc1_off"], paths["tc1_cpu"], paths["tc1_gpu"], paths["tc1_auto"])
     tc2 = render_tc2(paths["tc2_off"], paths["tc2_cpu"], paths["tc2_gpu"], paths["tc2_auto"])
+    tc3 = render_tc3(paths["tc3_gpu"])
 
     if not args.write:
         if tc1:
@@ -762,6 +951,9 @@ def main() -> None:
             print()
         if tc2:
             print(tc2)
+            print()
+        if tc3:
+            print(tc3)
         return
 
     doc_path = Path(args.doc)
@@ -769,7 +961,19 @@ def main() -> None:
     if tc1:
         text = replace_between(text, "## 2. TC1 Cache Benefit", "## 3. TC2 Scale Cost", tc1)
     if tc2:
-        text = replace_between(text, "## 3. TC2 Scale Cost", "## 4. TC3 Mixed Workload Performance", tc2)
+        text = replace_between_any(
+            text,
+            "## 3. TC2 Scale Cost",
+            ["## 4. TC3 Mixed Workload Performance", "## 4. TC3 Similar Query Pair Quality"],
+            tc2,
+        )
+    if tc3:
+        start_heading = (
+            "## 4. TC3 Mixed Workload Performance"
+            if "## 4. TC3 Mixed Workload Performance" in text
+            else "## 4. TC3 Similar Query Pair Quality"
+        )
+        text = replace_from(text, start_heading, tc3)
     doc_path.write_text(text)
 
 

@@ -1,0 +1,26 @@
+{
+  "name": "dp3_tc3_ragas_techqa_20260630",
+  "purpose": "Portable official RAGAS evaluation package for DP3 TC3 Similar Query Pair Quality.",
+  "source_run_log": "src/data/dp3_run_logs/20260629_214358_similar_pair_quality_techqa_rerank-on_cuda_e791ca78.json",
+  "input_file": "dp3_tc3_ragas_input_techqa_20rows.jsonl",
+  "input_rows": 20,
+  "pair_count": 10,
+  "modes": ["A", "B"],
+  "dataset": {
+    "family": "RAGBench",
+    "name": "techqa",
+    "split": "test",
+    "source_id": "dp3_ragbench_techqa_test_314"
+  },
+  "checksums": {
+    "dp3_tc3_ragas_input_techqa_20rows.jsonl": "eebc7f3cdbc5690891916c4685b243adc8e67b99ce56ee7f1e247a96498252fa",
+    "previous_partial_official_ragas_scores_17rows.json": "1e8462f64cecd0e0c1f7fbd73f694bf76b3524b8dbcc1a9fda98ace69262559a"
+  },
+  "recommended_success_criteria": {
+    "rows_scored": 20,
+    "a_rows": 10,
+    "b_rows": 10,
+    "metric_valid_rows_per_mode": "same as mode row count",
+    "nan_policy": "exclude metrics with NaN from QA interpretation"
+  }
+}

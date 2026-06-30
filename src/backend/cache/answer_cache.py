@@ -169,6 +169,26 @@ def _set_total_ms(log: dict, start: float) -> None:
     log["total_ms"] = int(round(total))
 
 
+def _set_llm_timings(log: dict, llm_result: dict, wall_ms: float) -> None:
+    timing = llm_result.get("timing") or {}
+    request_ms = timing.get("request_ms")
+    _set_timing(log, "llm_ms", request_ms if request_ms is not None else wall_ms)
+    if timing:
+        _set_timing(log, "llm_wall_ms", wall_ms)
+    for key in [
+        "throttle_wait_ms",
+        "retry_wait_ms",
+        "api_reported_queue_ms",
+        "api_reported_prompt_ms",
+        "api_reported_completion_ms",
+        "api_reported_total_ms",
+    ]:
+        if key in timing:
+            _set_timing(log, f"llm_{key}", timing.get(key))
+    if "attempt_count" in timing:
+        log["llm_attempt_count"] = int(timing["attempt_count"])
+
+
 def _clear_runtime_caches() -> None:
     global _ROUTE_CACHE
     _ROUTE_CACHE = None
@@ -979,7 +999,7 @@ def _fallback_and_store(
     llm_start = _timer()
     llm_result = get_dp3_answer_with_metadata(prompt, model, llm_provider)
     answer = llm_result["answer"]
-    _set_timing(log, "llm_ms", _elapsed_ms(llm_start))
+    _set_llm_timings(log, llm_result, _elapsed_ms(llm_start))
 
     store_start = _timer()
     cache_id = _store_answer_cache(
