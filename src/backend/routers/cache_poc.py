@@ -55,6 +55,7 @@ router = APIRouter(prefix="/api/dp3", tags=["dp3-cache-poc"])
 _SUITE_JOBS: dict[str, dict] = {}
 _SUITE_JOB_LOCK = threading.Lock()
 DP3_RUN_LOG_DIR = Path(__file__).resolve().parents[2] / "data" / "dp3_run_logs"
+DP3_RAGAS_INPUT_DIR = Path(__file__).resolve().parents[2] / "data" / "dp3_ragas_inputs"
 
 
 class SetupRequest(BaseModel):
@@ -191,6 +192,7 @@ def _save_test_suite_run(body: TestSuiteRunRequest, result: dict, job_id: str | 
     name_parts = [timestamp, test_case, dataset, reranker, device]
     if job_id:
         name_parts.append(job_id[:8])
+    _persist_run_specific_ragas_input(result, name_parts)
     path = DP3_RUN_LOG_DIR / ("_".join(name_parts) + ".json")
     payload = {
         "saved_at": timestamp,
@@ -200,6 +202,29 @@ def _save_test_suite_run(body: TestSuiteRunRequest, result: dict, job_id: str | 
     }
     path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     return {"path": str(path), "file": path.name}
+
+
+def _persist_run_specific_ragas_input(result: dict, name_parts: list[str]) -> None:
+    source_value = result.get("ragas_input_path")
+    if not source_value:
+        return
+    source = Path(source_value)
+    if not source.exists():
+        return
+
+    DP3_RAGAS_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    destination = DP3_RAGAS_INPUT_DIR / ("_".join([*name_parts, "ragas-input"]) + ".jsonl")
+    content = source.read_text(encoding="utf-8")
+    destination.write_text(content, encoding="utf-8")
+    row_count = sum(1 for line in content.splitlines() if line.strip())
+    result["ragas_input_legacy_path"] = str(source)
+    result["ragas_input_path"] = str(destination)
+    result["ragas_input_export"] = {
+        "path": str(destination),
+        "file": destination.name,
+        "row_count": row_count,
+        "legacy_path": str(source),
+    }
 
 
 @router.post("/answer-cache/setup")
@@ -1893,6 +1918,12 @@ def _write_tc4_ragas_input(
                     "similarity": pair.get("similarity"),
                     "answer_jaccard": pair.get("answer_jaccard"),
                     "decision_reason": result.get("decision_reason"),
+                    "route_id": result.get("embedding_route_id"),
+                    "route_score": result.get("embedding_score"),
+                    "cache_lookup_strategy": result.get("cache_lookup_strategy"),
+                    "cache_candidate_id": result.get("cache_candidate_id"),
+                    "cache_candidate_route_id": result.get("cache_candidate_route_id"),
+                    "cache_similarity_score": result.get("cache_similarity_score"),
                     "llm_usage": pair.get(f"{mode.lower()}_right_usage"),
                 }
                 f.write(json.dumps(row, ensure_ascii=False) + "\n")
@@ -2414,6 +2445,12 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
             "b_answers_equal": _answers_equal(b_left, b_right),
             "a_right_decision": a_right.get("decision_reason"),
             "b_right_decision": b_right.get("decision_reason"),
+            "a_right_route_id": a_right.get("embedding_route_id"),
+            "a_right_route_score": a_right.get("embedding_score"),
+            "a_right_cache_lookup_strategy": a_right.get("cache_lookup_strategy"),
+            "a_right_cache_candidate_id": a_right.get("cache_candidate_id"),
+            "a_right_cache_candidate_route_id": a_right.get("cache_candidate_route_id"),
+            "a_right_cache_similarity_score": a_right.get("cache_similarity_score"),
             "left_reference_answer": left.get("reference_answer", ""),
             "right_reference_answer": right.get("reference_answer", ""),
             "a_left_answer": a_left.get("answer", ""),

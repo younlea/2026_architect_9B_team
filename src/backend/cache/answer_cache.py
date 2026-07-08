@@ -576,16 +576,18 @@ def _find_cache_candidates(
     init_dp3_cache_schema()
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT cache_id, query_text, query_embedding_json, answer_text, scope, cache_version
+            """SELECT cache_id, route_id AS candidate_route_id, query_text, query_embedding_json,
+                      answer_text, scope, cache_version
                FROM dp3_answer_cache_entries
-               WHERE route_id=? AND scope=?""",
-            (route_id, user_scope),
+               WHERE scope=?""",
+            (user_scope,),
         ).fetchall()
 
     candidates = []
     for row in rows:
         score = _cosine(query_embedding, _embedding_from_json(row["query_embedding_json"]))
         item = dict(row)
+        item["lookup_route_id"] = route_id
         item["cache_similarity_score"] = round(score, 4)
         item["version_match"] = item.get("cache_version") == requested_version
         candidates.append(item)
@@ -838,6 +840,7 @@ def run_answer_cache_query(
         "embedding_route_id": route["route_id"],
         "embedding_score": route["embedding_score"],
         "route_threshold": route_threshold,
+        "cache_lookup_strategy": "global_after_route_gate",
         "cache_threshold": cache_threshold,
         "cache_hit": False,
         "validation_passed": False,
@@ -899,6 +902,7 @@ def run_answer_cache_query(
         validation_total_ms += _elapsed_ms(validation_start)
         log.update({
             "cache_candidate_id": candidate["cache_id"],
+            "cache_candidate_route_id": candidate.get("candidate_route_id"),
             "cache_similarity_score": candidate["cache_similarity_score"],
             "source_validation": validation,
         })
@@ -915,6 +919,7 @@ def run_answer_cache_query(
             return log
         invalid_candidates.append({
             "cache_id": candidate["cache_id"],
+            "cache_candidate_route_id": candidate.get("candidate_route_id"),
             "cache_version": candidate.get("cache_version"),
             "cache_similarity_score": candidate["cache_similarity_score"],
             "validation": validation,
@@ -928,6 +933,9 @@ def run_answer_cache_query(
         _set_timing(log, "validation_ms", validation_total_ms)
         best_candidate = candidates[0] if candidates else None
         log["cache_candidate_id"] = best_candidate["cache_id"] if best_candidate else None
+        log["cache_candidate_route_id"] = (
+            best_candidate.get("candidate_route_id") if best_candidate else None
+        )
         log["cache_similarity_score"] = (
             best_candidate["cache_similarity_score"] if best_candidate else None
         )

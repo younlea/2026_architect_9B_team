@@ -23,6 +23,7 @@ src/data/*.zip
 *.log
 /tmp/
 src/data/dp3_run_logs/
+src/data/dp3_ragas_inputs/
 
 # OS
 .DS_Store
