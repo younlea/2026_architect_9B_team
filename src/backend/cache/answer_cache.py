@@ -568,6 +568,7 @@ def validate_eu(
 
 
 def _find_cache_candidates(
+    thread_id: str,
     route_id: str,
     user_scope: str,
     query_embedding: list[float],
@@ -576,11 +577,12 @@ def _find_cache_candidates(
     init_dp3_cache_schema()
     with get_conn() as conn:
         rows = conn.execute(
-            """SELECT cache_id, route_id AS candidate_route_id, query_text, query_embedding_json,
-                      answer_text, scope, cache_version
-               FROM dp3_answer_cache_entries
-               WHERE scope=?""",
-            (user_scope,),
+            """SELECT DISTINCT ace.cache_id, ace.route_id AS candidate_route_id, ace.query_text,
+                      ace.query_embedding_json, ace.answer_text, ace.scope, ace.cache_version
+               FROM dp3_answer_cache_entries ace
+               JOIN dp3_answer_cache_sources acs ON acs.cache_id = ace.cache_id
+               WHERE ace.scope=? AND acs.logical_eu_id LIKE ?""",
+            (user_scope, f"{thread_id}:%"),
         ).fetchall()
 
     candidates = []
@@ -840,7 +842,7 @@ def run_answer_cache_query(
         "embedding_route_id": route["route_id"],
         "embedding_score": route["embedding_score"],
         "route_threshold": route_threshold,
-        "cache_lookup_strategy": "global_after_route_gate",
+        "cache_lookup_strategy": "source_scoped_global_after_route_gate",
         "cache_threshold": cache_threshold,
         "cache_hit": False,
         "validation_passed": False,
@@ -879,6 +881,7 @@ def run_answer_cache_query(
 
     cache_lookup_start = _timer()
     candidates = _find_cache_candidates(
+        thread_id,
         route["route_id"],
         user_scope,
         query_embedding,
