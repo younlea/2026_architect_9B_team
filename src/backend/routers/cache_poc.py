@@ -8,7 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 try:
@@ -53,9 +53,32 @@ from seed_dp3_question_pool import DATA_DIR, seed_question_pool
 router = APIRouter(prefix="/api/dp3", tags=["dp3-cache-poc"])
 
 _SUITE_JOBS: dict[str, dict] = {}
-_SUITE_JOB_LOCK = threading.Lock()
+_RAGAS_JOBS: dict[str, dict] = {}
+_LATEST_SUITE_JOB_IDS: dict[str, str] = {}
+_LATEST_RAGAS_JOB_ID: str | None = None
+_SUITE_JOB_LOCK = threading.RLock()
 DP3_RUN_LOG_DIR = Path(__file__).resolve().parents[2] / "data" / "dp3_run_logs"
 DP3_RAGAS_INPUT_DIR = Path(__file__).resolve().parents[2] / "data" / "dp3_ragas_inputs"
+DP3_LATEST_JOB_STATE_PATH = Path(__file__).resolve().parents[2] / "data" / "dp3_latest_jobs.json"
+
+_ACTIVE_JOB_STATUSES = {"queued", "running", "cancel_requested"}
+_TEST_CASE_ALIASES = {
+    "cache": "cache",
+    "mixed": "mixed_timing",
+    "mixed_timing": "mixed_timing",
+    "timing": "mixed_timing",
+    "tc_add": "mixed_timing",
+    "scalability": "scalability",
+    "scale": "scalability",
+    "similar_pair_quality": "similar_pair_quality",
+    "tc3": "similar_pair_quality",
+    "tc4": "similar_pair_quality",
+    "pair_quality": "similar_pair_quality",
+}
+
+
+class _JobCancelled(RuntimeError):
+    pass
 
 
 class SetupRequest(BaseModel):
@@ -171,6 +194,116 @@ class RagasRunRequest(BaseModel):
     max_rows: int = 2
     provider: Optional[str] = None
     model: Optional[str] = None
+
+
+def _normalize_test_case(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    result = _TEST_CASE_ALIASES.get(normalized)
+    if not result:
+        raise ValueError(f"Unknown DP3 test_case: {value}")
+    return result
+
+
+def _find_job_locked(job_id: str) -> dict | None:
+    return _SUITE_JOBS.get(job_id) or _RAGAS_JOBS.get(job_id)
+
+
+def _active_job_locked() -> dict | None:
+    for job in [*_SUITE_JOBS.values(), *_RAGAS_JOBS.values()]:
+        if job.get("status") in _ACTIVE_JOB_STATUSES:
+            return job
+    return None
+
+
+def _job_copy(job: dict | None) -> dict | None:
+    return dict(job) if job else None
+
+
+def _job_summary(job: dict | None) -> dict | None:
+    if not job:
+        return None
+    return {
+        "job_id": job.get("job_id"),
+        "kind": job.get("kind"),
+        "test_case": job.get("test_case"),
+        "status": job.get("status"),
+        "current_step": job.get("current_step"),
+        "created_at": job.get("created_at"),
+        "started_at": job.get("started_at"),
+    }
+
+
+def _persist_latest_jobs_locked() -> None:
+    suite_latest = {}
+    for test_case, job_id in _LATEST_SUITE_JOB_IDS.items():
+        job = _SUITE_JOBS.get(job_id)
+        if job:
+            suite_latest[test_case] = job
+    ragas_latest = _RAGAS_JOBS.get(_LATEST_RAGAS_JOB_ID) if _LATEST_RAGAS_JOB_ID else None
+    payload = {
+        "version": 1,
+        "updated_at": time.time(),
+        "suite_latest": suite_latest,
+        "ragas_latest": ragas_latest,
+    }
+    DP3_LATEST_JOB_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = DP3_LATEST_JOB_STATE_PATH.with_name(DP3_LATEST_JOB_STATE_PATH.name + ".tmp")
+    temporary.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    temporary.replace(DP3_LATEST_JOB_STATE_PATH)
+
+
+def _restore_latest_jobs() -> None:
+    global _LATEST_RAGAS_JOB_ID
+    if not DP3_LATEST_JOB_STATE_PATH.exists():
+        return
+    try:
+        payload = json.loads(DP3_LATEST_JOB_STATE_PATH.read_text(encoding="utf-8"))
+    except Exception:
+        return
+
+    interrupted = False
+    now = time.time()
+    with _SUITE_JOB_LOCK:
+        for test_case, raw_job in (payload.get("suite_latest") or {}).items():
+            if not isinstance(raw_job, dict) or not raw_job.get("job_id"):
+                continue
+            job = dict(raw_job)
+            if job.get("status") in _ACTIVE_JOB_STATUSES:
+                job.update({
+                    "status": "interrupted",
+                    "current_step": "서버 재시작으로 중단됨",
+                    "cancel_requested": False,
+                    "error": "Backend restarted before the job completed.",
+                    "finished_at": now,
+                })
+                interrupted = True
+            try:
+                normalized = _normalize_test_case(test_case)
+            except ValueError:
+                continue
+            _SUITE_JOBS[job["job_id"]] = job
+            _LATEST_SUITE_JOB_IDS[normalized] = job["job_id"]
+
+        raw_ragas = payload.get("ragas_latest")
+        if isinstance(raw_ragas, dict) and raw_ragas.get("job_id"):
+            job = dict(raw_ragas)
+            if job.get("status") in _ACTIVE_JOB_STATUSES:
+                job.update({
+                    "status": "interrupted",
+                    "current_step": "서버 재시작으로 중단됨",
+                    "cancel_requested": False,
+                    "error": "Backend restarted before the RAGAS job completed.",
+                    "finished_at": now,
+                })
+                interrupted = True
+            _RAGAS_JOBS[job["job_id"]] = job
+            _LATEST_RAGAS_JOB_ID = job["job_id"]
+
+        if interrupted:
+            _persist_latest_jobs_locked()
+
+
+_restore_latest_jobs()
 
 
 def _safe_filename_part(value: object, fallback: str = "run") -> str:
@@ -685,19 +818,29 @@ def _update_suite_job(job_id: str | None, **fields) -> None:
     if not job_id:
         return
     with _SUITE_JOB_LOCK:
-        job = _SUITE_JOBS.get(job_id)
+        job = _find_job_locked(job_id)
         if not job:
             return
         job.update(fields)
         if job.get("total"):
             job["progress_percent"] = round((job.get("completed", 0) / job["total"]) * 100, 1)
+        _persist_latest_jobs_locked()
 
 
 class _SuiteProgress:
     def __init__(self, job_id: str | None):
         self.job_id = job_id
 
+    def check_cancelled(self) -> None:
+        if not self.job_id:
+            return
+        with _SUITE_JOB_LOCK:
+            job = _find_job_locked(self.job_id)
+            if job and (job.get("cancel_requested") or job.get("status") == "cancel_requested"):
+                raise _JobCancelled("사용자가 실행을 중단했습니다.")
+
     def reset(self, total: int, step: str) -> None:
+        self.check_cancelled()
         _update_suite_job(
             self.job_id,
             current_step=step,
@@ -707,18 +850,21 @@ class _SuiteProgress:
         )
 
     def step(self, step: str) -> None:
+        self.check_cancelled()
         _update_suite_job(self.job_id, current_step=step)
 
     def advance(self, step: str, count: int = 1) -> None:
         if not self.job_id:
             return
+        self.check_cancelled()
         with _SUITE_JOB_LOCK:
-            job = _SUITE_JOBS.get(self.job_id)
+            job = _find_job_locked(self.job_id)
             if not job:
                 return
             job["current_step"] = step
             job["completed"] = min(job.get("total", 1), job.get("completed", 0) + count)
             job["progress_percent"] = round((job["completed"] / max(1, job.get("total", 1))) * 100, 1)
+            _persist_latest_jobs_locked()
 
 
 def _ratio(count: int, total: int) -> float:
@@ -2127,6 +2273,7 @@ def _official_ragas_from_input(
     max_rows: int = 18,
     model: str | None = None,
     provider: str | None = None,
+    progress: _SuiteProgress | None = None,
 ) -> dict:
     started = time.perf_counter()
     rows = _read_jsonl(path)
@@ -2144,6 +2291,8 @@ def _official_ragas_from_input(
             "input_path": path,
             "row_count": 0,
         }
+    if progress:
+        progress.reset(len(rows), "Official RAGAS 준비")
 
     try:
         from datasets import Dataset
@@ -2163,6 +2312,8 @@ def _official_ragas_from_input(
             OLLAMA_BASE_URL,
             OLLAMA_MODEL,
         )
+    except _JobCancelled:
+        raise
     except Exception as exc:
         return {
             "type": "official_ragas",
@@ -2191,8 +2342,10 @@ def _official_ragas_from_input(
         }
 
     try:
+        if progress:
+            progress.step("RAGAS embedding 모델 준비")
         embeddings = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        dataset = Dataset.from_list([
+        dataset_rows = [
             {
                 "user_input": row["question"],
                 "response": row["answer"],
@@ -2202,7 +2355,7 @@ def _official_ragas_from_input(
                 "mode": row.get("mode"),
             }
             for row in rows
-        ])
+        ]
 
         attempts = []
         evaluator_provider = requested_provider
@@ -2267,22 +2420,33 @@ def _official_ragas_from_input(
                         timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
                         max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
                     )
-                result = evaluate(
-                    dataset,
-                    metrics=_official_ragas_metrics(),
-                    llm=LangchainLLMWrapper(llm),
-                    embeddings=LangchainEmbeddingsWrapper(embeddings),
-                    callbacks=[usage_callback],
-                    raise_exceptions=False,
-                    show_progress=False,
-                    run_config=run_config,
-                    batch_size=RAGAS_EVALUATOR_BATCH_SIZE,
-                )
-                records = result.to_pandas().to_dict(orient="records")
-                for index, record in enumerate(records):
-                    if index < len(rows):
-                        record["pair_id"] = rows[index].get("pair_id")
-                        record["mode"] = rows[index].get("mode")
+                wrapped_llm = LangchainLLMWrapper(llm)
+                wrapped_embeddings = LangchainEmbeddingsWrapper(embeddings)
+                records = []
+                if progress:
+                    progress.reset(len(rows), f"Official RAGAS {evaluator_model}")
+                for index, dataset_row in enumerate(dataset_rows):
+                    if progress:
+                        progress.check_cancelled()
+                    dataset = Dataset.from_list([dataset_row])
+                    result = evaluate(
+                        dataset,
+                        metrics=_official_ragas_metrics(),
+                        llm=wrapped_llm,
+                        embeddings=wrapped_embeddings,
+                        callbacks=[usage_callback],
+                        raise_exceptions=False,
+                        show_progress=False,
+                        run_config=run_config,
+                        batch_size=RAGAS_EVALUATOR_BATCH_SIZE,
+                    )
+                    evaluated = result.to_pandas().to_dict(orient="records")
+                    record = evaluated[0] if evaluated else {}
+                    record["pair_id"] = rows[index].get("pair_id")
+                    record["mode"] = rows[index].get("mode")
+                    records.append(record)
+                    if progress:
+                        progress.advance(f"Official RAGAS {index + 1}/{len(rows)}")
                 score_path = str(Path(path).with_suffix(".official_ragas_scores.json"))
                 Path(score_path).write_text(json.dumps(records, ensure_ascii=False, indent=2), encoding="utf-8")
                 return {
@@ -2305,6 +2469,8 @@ def _official_ragas_from_input(
                     "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
                     "by_mode": _summarize_official_ragas(records),
                 }
+            except _JobCancelled:
+                raise
             except Exception as model_exc:
                 attempts.append({
                     "model": evaluator_model,
@@ -2325,6 +2491,8 @@ def _official_ragas_from_input(
             "evaluator_attempts": attempts,
             "elapsed_ms": round((time.perf_counter() - started) * 1000, 1),
         }
+    except _JobCancelled:
+        raise
     except Exception as exc:
         return {
             "type": "official_ragas",
@@ -2552,14 +2720,14 @@ def _run_similar_pair_quality_test(body: TestSuiteRunRequest, progress: _SuitePr
 
 def _run_test_suite_internal(body: TestSuiteRunRequest, progress: _SuiteProgress | None = None):
     init_db()
-    normalized = body.test_case.strip().lower()
+    normalized = _normalize_test_case(body.test_case)
     if normalized == "cache":
         return _run_cache_test(body, progress)
-    if normalized in {"mixed", "mixed_timing", "timing", "tc_add"}:
+    if normalized == "mixed_timing":
         return _run_mixed_timing_test(body, progress)
-    if normalized in {"scalability", "scale"}:
+    if normalized == "scalability":
         return _run_scalability_test(body, progress)
-    if normalized in {"similar_pair_quality", "tc3", "tc4", "pair_quality"}:
+    if normalized == "similar_pair_quality":
         return _run_similar_pair_quality_test(body, progress)
     raise ValueError(f"Unknown DP3 test_case: {body.test_case}")
 
@@ -2590,16 +2758,32 @@ def run_ragas(body: RagasRunRequest):
 
 
 def _run_suite_job(job_id: str, body: TestSuiteRunRequest) -> None:
+    progress = _SuiteProgress(job_id)
     _update_suite_job(job_id, status="running", current_step="테스트 시작", started_at=time.time())
     try:
-        result = _run_test_suite_internal(body, _SuiteProgress(job_id))
+        progress.check_cancelled()
+        result = _run_test_suite_internal(body, progress)
+        progress.check_cancelled()
         result["saved_run_log"] = _save_test_suite_run(body, result, job_id=job_id)
+        with _SUITE_JOB_LOCK:
+            total = int((_SUITE_JOBS.get(job_id) or {}).get("total", 1))
         _update_suite_job(
             job_id,
             status="completed",
             current_step="완료",
-            completed=_SUITE_JOBS.get(job_id, {}).get("total", 1),
+            completed=total,
+            cancel_requested=False,
             result=result,
+            finished_at=time.time(),
+        )
+    except _JobCancelled:
+        _update_suite_job(
+            job_id,
+            status="cancelled",
+            current_step="사용자 중단",
+            cancel_requested=False,
+            result=None,
+            error=None,
             finished_at=time.time(),
         )
     except Exception as exc:
@@ -2607,6 +2791,7 @@ def _run_suite_job(job_id: str, body: TestSuiteRunRequest) -> None:
             job_id,
             status="failed",
             current_step="오류",
+            cancel_requested=False,
             error=f"{type(exc).__name__}: {exc}",
             finished_at=time.time(),
         )
@@ -2614,20 +2799,51 @@ def _run_suite_job(job_id: str, body: TestSuiteRunRequest) -> None:
 
 @router.post("/test-suite/start")
 def start_test_suite(body: TestSuiteRunRequest):
+    test_case = _normalize_test_case(body.test_case)
+    body.test_case = test_case
     job_id = str(uuid.uuid4())
     with _SUITE_JOB_LOCK:
+        active = _active_job_locked()
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "다른 DP3 테스트 또는 RAGAS 작업이 실행 중입니다.",
+                    "active_job": _job_summary(active),
+                },
+            )
+        previous_id = _LATEST_SUITE_JOB_IDS.get(test_case)
+        if previous_id:
+            _SUITE_JOBS.pop(previous_id, None)
         _SUITE_JOBS[job_id] = {
             "job_id": job_id,
+            "kind": "suite",
+            "test_case": test_case,
             "status": "queued",
             "current_step": "대기 중",
             "completed": 0,
             "total": 1,
             "progress_percent": 0.0,
+            "cancel_requested": False,
+            "request": body.model_dump(),
             "created_at": time.time(),
         }
+        _LATEST_SUITE_JOB_IDS[test_case] = job_id
+        _persist_latest_jobs_locked()
+        response = _job_copy(_SUITE_JOBS[job_id])
     thread = threading.Thread(target=_run_suite_job, args=(job_id, body), daemon=True)
-    thread.start()
-    return _SUITE_JOBS[job_id]
+    try:
+        thread.start()
+    except Exception as exc:
+        _update_suite_job(
+            job_id,
+            status="failed",
+            current_step="작업 시작 실패",
+            error=f"{type(exc).__name__}: {exc}",
+            finished_at=time.time(),
+        )
+        raise HTTPException(status_code=500, detail="DP3 test worker could not be started.") from exc
+    return response
 
 
 @router.get("/test-suite/jobs/{job_id}")
@@ -2635,5 +2851,179 @@ def get_test_suite_job(job_id: str):
     with _SUITE_JOB_LOCK:
         job = _SUITE_JOBS.get(job_id)
         if not job:
-            raise ValueError(f"Unknown DP3 test suite job: {job_id}")
+            raise HTTPException(status_code=404, detail=f"Unknown DP3 test suite job: {job_id}")
+        return dict(job)
+
+
+@router.get("/test-suite/latest/{test_case}")
+def get_latest_test_suite_job(test_case: str):
+    try:
+        normalized = _normalize_test_case(test_case)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    with _SUITE_JOB_LOCK:
+        job_id = _LATEST_SUITE_JOB_IDS.get(normalized)
+        job = _SUITE_JOBS.get(job_id) if job_id else None
+        return {
+            "test_case": normalized,
+            "job": _job_copy(job),
+            "active_job": _job_summary(_active_job_locked()),
+        }
+
+
+@router.post("/test-suite/jobs/{job_id}/cancel")
+def cancel_test_suite_job(job_id: str):
+    with _SUITE_JOB_LOCK:
+        job = _SUITE_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Unknown DP3 test suite job: {job_id}")
+        if job.get("status") not in _ACTIVE_JOB_STATUSES:
+            return dict(job)
+        job.update({
+            "status": "cancel_requested",
+            "cancel_requested": True,
+            "current_step": "중단 요청됨",
+        })
+        _persist_latest_jobs_locked()
+        return dict(job)
+
+
+def _run_ragas_job(job_id: str, body: RagasRunRequest) -> None:
+    progress = _SuiteProgress(job_id)
+    _update_suite_job(job_id, status="running", current_step="RAGAS 입력 확인", started_at=time.time())
+    try:
+        progress.check_cancelled()
+        input_path = _resolve_ragas_input_path(body.input_path)
+        result = {
+            "input_path": input_path,
+            "ragas_proxy": _ragas_proxy_from_input(input_path),
+            "official_ragas": None,
+        }
+        if body.run_official:
+            result["official_ragas"] = _official_ragas_from_input(
+                input_path,
+                max_rows=body.max_rows,
+                model=body.model,
+                provider=body.provider,
+                progress=progress,
+            )
+        else:
+            progress.reset(1, "Proxy RAGAS 계산")
+            progress.advance("Proxy RAGAS 완료")
+        progress.check_cancelled()
+        with _SUITE_JOB_LOCK:
+            total = int((_RAGAS_JOBS.get(job_id) or {}).get("total", 1))
+        _update_suite_job(
+            job_id,
+            status="completed",
+            current_step="RAGAS 완료",
+            completed=total,
+            cancel_requested=False,
+            result=result,
+            finished_at=time.time(),
+        )
+    except _JobCancelled:
+        _update_suite_job(
+            job_id,
+            status="cancelled",
+            current_step="사용자 중단",
+            cancel_requested=False,
+            result=None,
+            error=None,
+            finished_at=time.time(),
+        )
+    except Exception as exc:
+        _update_suite_job(
+            job_id,
+            status="failed",
+            current_step="RAGAS 오류",
+            cancel_requested=False,
+            error=f"{type(exc).__name__}: {exc}",
+            finished_at=time.time(),
+        )
+
+
+@router.post("/ragas/start")
+def start_ragas_job(body: RagasRunRequest):
+    global _LATEST_RAGAS_JOB_ID
+    input_path = _resolve_ragas_input_path(body.input_path)
+    body.input_path = input_path
+    job_id = str(uuid.uuid4())
+    with _SUITE_JOB_LOCK:
+        active = _active_job_locked()
+        if active:
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "message": "다른 DP3 테스트 또는 RAGAS 작업이 실행 중입니다.",
+                    "active_job": _job_summary(active),
+                },
+            )
+        if _LATEST_RAGAS_JOB_ID:
+            _RAGAS_JOBS.pop(_LATEST_RAGAS_JOB_ID, None)
+        _RAGAS_JOBS[job_id] = {
+            "job_id": job_id,
+            "kind": "ragas",
+            "test_case": "similar_pair_quality",
+            "status": "queued",
+            "current_step": "RAGAS 대기 중",
+            "completed": 0,
+            "total": max(1, body.max_rows if body.max_rows > 0 else 1),
+            "progress_percent": 0.0,
+            "cancel_requested": False,
+            "input_path": input_path,
+            "request": body.model_dump(),
+            "created_at": time.time(),
+        }
+        _LATEST_RAGAS_JOB_ID = job_id
+        _persist_latest_jobs_locked()
+        response = _job_copy(_RAGAS_JOBS[job_id])
+    thread = threading.Thread(target=_run_ragas_job, args=(job_id, body), daemon=True)
+    try:
+        thread.start()
+    except Exception as exc:
+        _update_suite_job(
+            job_id,
+            status="failed",
+            current_step="RAGAS 작업 시작 실패",
+            error=f"{type(exc).__name__}: {exc}",
+            finished_at=time.time(),
+        )
+        raise HTTPException(status_code=500, detail="DP3 RAGAS worker could not be started.") from exc
+    return response
+
+
+@router.get("/ragas/jobs/{job_id}")
+def get_ragas_job(job_id: str):
+    with _SUITE_JOB_LOCK:
+        job = _RAGAS_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Unknown DP3 RAGAS job: {job_id}")
+        return dict(job)
+
+
+@router.get("/ragas/latest")
+def get_latest_ragas_job():
+    with _SUITE_JOB_LOCK:
+        job = _RAGAS_JOBS.get(_LATEST_RAGAS_JOB_ID) if _LATEST_RAGAS_JOB_ID else None
+        return {
+            "job": _job_copy(job),
+            "active_job": _job_summary(_active_job_locked()),
+        }
+
+
+@router.post("/ragas/jobs/{job_id}/cancel")
+def cancel_ragas_job(job_id: str):
+    with _SUITE_JOB_LOCK:
+        job = _RAGAS_JOBS.get(job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail=f"Unknown DP3 RAGAS job: {job_id}")
+        if job.get("status") not in _ACTIVE_JOB_STATUSES:
+            return dict(job)
+        job.update({
+            "status": "cancel_requested",
+            "cancel_requested": True,
+            "current_step": "RAGAS 중단 요청됨",
+        })
+        _persist_latest_jobs_locked()
         return dict(job)

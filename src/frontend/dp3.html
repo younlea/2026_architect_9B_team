@@ -118,6 +118,11 @@
       border-color: var(--accent-2);
       color: #fff;
     }
+    button.danger {
+      background: #b91c1c;
+      border-color: #b91c1c;
+      color: #fff;
+    }
     button:disabled { opacity: 0.55; cursor: wait; }
     .hint {
       margin-top: 8px;
@@ -464,6 +469,7 @@
       </div>
       <div class="actions">
         <button id="runSuiteBtn" class="primary">선택 테스트 시작</button>
+        <button id="stopSuiteBtn" class="danger" hidden>실행 중단</button>
         <button id="refreshBtn">Refresh Stats</button>
       </div>
     </aside>
@@ -495,6 +501,12 @@
     const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
     let latestRagasInputPath = null;
     let availableOllamaModels = [];
+    let selectedSuiteJob = null;
+    let latestRagasJob = null;
+    let activeDp3Job = null;
+    let suitePollToken = 0;
+    let ragasPollToken = 0;
+    const activeJobStatuses = new Set(["queued", "running", "cancel_requested"]);
     const controls = [
       "testCase", "datasetFamily", "dataset", "datasetSplit", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
       "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
@@ -513,6 +525,40 @@
       controls.forEach((id) => { $(id).disabled = isBusy; });
       if (title) $("statusTitle").textContent = title;
       if (text) $("statusText").textContent = text;
+      if (!isBusy) syncExecutionButtons();
+    }
+
+    function isActiveJob(job) {
+      return Boolean(job && activeJobStatuses.has(job.status));
+    }
+
+    function syncExecutionButtons() {
+      const suiteRunning = isActiveJob(selectedSuiteJob);
+      const anyRunning = isActiveJob(activeDp3Job);
+      $("runSuiteBtn").disabled = anyRunning;
+      $("prepareBtn").disabled = anyRunning;
+      $("seedBtn").disabled = anyRunning;
+      $("stopSuiteBtn").hidden = !suiteRunning;
+      $("stopSuiteBtn").disabled = !suiteRunning || selectedSuiteJob?.status === "cancel_requested";
+      syncRagasButtons();
+    }
+
+    function syncRagasButtons() {
+      const proxyBtn = $("runProxyRagasBtn");
+      const officialBtn = $("runOfficialRagasBtn");
+      const stopBtn = $("stopRagasBtn");
+      if (!proxyBtn && !officialBtn && !stopBtn) return;
+      const currentInputJob = latestRagasJob && latestRagasJob.input_path === latestRagasInputPath
+        ? latestRagasJob
+        : null;
+      const ragasRunning = isActiveJob(currentInputJob);
+      const anyRunning = isActiveJob(activeDp3Job);
+      if (proxyBtn) proxyBtn.disabled = anyRunning;
+      if (officialBtn) officialBtn.disabled = anyRunning;
+      if (stopBtn) {
+        stopBtn.hidden = !ragasRunning;
+        stopBtn.disabled = !ragasRunning || currentInputJob.status === "cancel_requested";
+      }
     }
 
     function threshold(id) {
@@ -768,38 +814,135 @@
 
     async function runSuite() {
       const payload = suitePayload();
-      const label = $("testCase").selectedOptions[0].textContent;
-      setBusy(true, `${label} 실행 중`, "Warm-up 후 측정 구간을 실행합니다.");
       try {
         const started = await api("/api/dp3/test-suite/start", {
           method: "POST",
           body: JSON.stringify(payload)
         });
+        selectedSuiteJob = started;
+        activeDp3Job = started;
+        const token = ++suitePollToken;
         updateProgress(started);
         renderRunning(started);
-
-        let job = started;
-        while (!["completed", "failed"].includes(job.status)) {
-          await sleep(1000);
-          job = await api(`/api/dp3/test-suite/jobs/${started.job_id}`);
-          updateProgress(job);
-          renderRunning(job);
-        }
-        if (job.status === "failed") {
-          throw new Error(job.error || "테스트 실행 중 오류가 발생했습니다.");
-        }
-        const result = job.result;
-        $("statusTitle").textContent = `${label} 완료`;
-        $("statusText").textContent = result.test_case === "scalability"
-          ? `${result.max_scale}개 scale, 질문 ${result.query_count}개`
-          : `${result.query_count}개 질문, dataset=${payload.dataset_name}`;
-        updateProgress({ ...job, progress_percent: 100, completed: job.total });
-        renderSuiteResult(result);
-        await refreshStats();
+        syncExecutionButtons();
+        await pollSuiteJob(started.job_id, token);
       } catch (err) {
         showError(err);
-      } finally {
-        setBusy(false);
+        await restoreSelectedCase();
+      }
+    }
+
+    async function stopSuite() {
+      if (!isActiveJob(selectedSuiteJob)) return;
+      try {
+        selectedSuiteJob = await api(
+          `/api/dp3/test-suite/jobs/${selectedSuiteJob.job_id}/cancel`,
+          { method: "POST" }
+        );
+        activeDp3Job = selectedSuiteJob;
+        updateProgress(selectedSuiteJob);
+        renderRunning(selectedSuiteJob);
+        syncExecutionButtons();
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    async function pollSuiteJob(jobId, token) {
+      while (token === suitePollToken) {
+        await sleep(1000);
+        if (token !== suitePollToken) return;
+        const job = await api(`/api/dp3/test-suite/jobs/${jobId}`);
+        if (job.test_case !== $("testCase").value) return;
+        selectedSuiteJob = job;
+        activeDp3Job = isActiveJob(job) ? job : null;
+        if (isActiveJob(job)) {
+          updateProgress(job);
+          renderRunning(job);
+          syncExecutionButtons();
+          continue;
+        }
+        await renderSuiteJobState(job);
+        if (job.status === "completed") {
+          await refreshStats();
+        }
+        syncExecutionButtons();
+        return;
+      }
+    }
+
+    async function renderSuiteJobState(job) {
+      selectedSuiteJob = job || null;
+      latestRagasInputPath = null;
+      if (!job) {
+        $("progressWrap").hidden = true;
+        $("statusTitle").textContent = "준비됨";
+        $("statusText").textContent = "아직 실행 이력이 없습니다.";
+        $("resultRoot").className = "empty";
+        $("resultRoot").textContent = "아직 실행 결과가 없습니다.";
+        return;
+      }
+      if (isActiveJob(job)) {
+        updateProgress(job);
+        renderRunning(job);
+        return;
+      }
+      if (job.status === "completed" && job.result) {
+        const label = $("testCase").selectedOptions[0].textContent;
+        $("statusTitle").textContent = `${label} 완료`;
+        $("statusText").textContent = job.result.test_case === "scalability"
+          ? `${job.result.max_scale}개 scale, 질문 ${job.result.query_count}개`
+          : `${job.result.query_count}개 질문, dataset=${job.request?.dataset_name || "-"}`;
+        updateProgress({ ...job, progress_percent: 100, completed: job.total });
+        renderSuiteResult(job.result);
+        if (job.result.test_case === "similar_pair_quality") {
+          await restoreLatestRagas();
+        }
+        return;
+      }
+      $("progressWrap").hidden = true;
+      $("statusTitle").textContent = job.status === "cancelled"
+        ? "실행 중단됨"
+        : job.status === "interrupted"
+          ? "서버 재시작으로 중단됨"
+          : "실행 실패";
+      $("statusText").textContent = job.error || job.current_step || job.status;
+      $("resultRoot").className = "empty";
+      $("resultRoot").textContent = job.status === "failed"
+        ? `마지막 실행 실패: ${job.error || "알 수 없는 오류"}`
+        : "마지막 실행이 완료되지 않았습니다.";
+    }
+
+    async function restoreSelectedCase(autoSelectActive = false) {
+      const testCase = $("testCase").value;
+      const token = ++suitePollToken;
+      const state = await api(`/api/dp3/test-suite/latest/${encodeURIComponent(testCase)}`);
+      if (token !== suitePollToken || testCase !== $("testCase").value) return;
+      if (autoSelectActive && isActiveJob(state.active_job)) {
+        const activeTestCase = state.active_job.kind === "ragas"
+          ? "similar_pair_quality"
+          : state.active_job.test_case;
+        if (activeTestCase && activeTestCase !== testCase) {
+          $("testCase").value = activeTestCase;
+          applyCaseDefaults();
+          await loadDatasets();
+          updateLabels();
+          return restoreSelectedCase(false);
+        }
+      }
+      selectedSuiteJob = state.job || null;
+      activeDp3Job = state.active_job || null;
+      await renderSuiteJobState(selectedSuiteJob);
+      if (isActiveJob(activeDp3Job) && activeDp3Job.job_id !== selectedSuiteJob?.job_id) {
+        const activeLabel = activeDp3Job.kind === "ragas"
+          ? "TC3 RAGAS"
+          : activeDp3Job.test_case || "다른 테스트";
+        $("statusTitle").textContent = `${activeLabel} 실행 중`;
+        $("statusText").textContent = "실행 중인 항목을 선택하면 진행률 확인과 중단이 가능합니다.";
+      }
+      syncExecutionButtons();
+      if (isActiveJob(selectedSuiteJob)) {
+        pollSuiteJob(selectedSuiteJob.job_id, token).catch(showError);
       }
     }
 
@@ -808,8 +951,6 @@
         showError(new Error("먼저 TC3를 실행해서 RAGAS input을 생성해 주세요."));
         return;
       }
-      const proxyBtn = $("runProxyRagasBtn");
-      const officialBtn = $("runOfficialRagasBtn");
       const target = $("ragasResultRoot");
       const maxRows = Number($("ragasResultMaxRows")?.value || 2);
       const evaluatorOption = $("ragasEvaluatorModel")?.value || "";
@@ -820,13 +961,11 @@
       const evaluatorModel = separatorIndex >= 0
         ? evaluatorOption.slice(separatorIndex + 2)
         : (evaluatorOption || null);
-      if (proxyBtn) proxyBtn.disabled = true;
-      if (officialBtn) officialBtn.disabled = true;
       if (target) {
         target.innerHTML = `<div class="hint">${runOfficial ? "Official RAGAS 실행 중입니다. evaluator LLM 호출 때문에 오래 걸릴 수 있습니다." : "Proxy RAGAS 계산 중입니다."}</div>`;
       }
       try {
-        const result = await api("/api/dp3/ragas/run", {
+        const started = await api("/api/dp3/ragas/start", {
           method: "POST",
           body: JSON.stringify({
             input_path: latestRagasInputPath,
@@ -836,18 +975,126 @@
             model: evaluatorModel
           })
         });
-        if (target) {
-          target.innerHTML = renderRagasRunResult(result);
-        }
+        latestRagasJob = started;
+        activeDp3Job = started;
+        const token = ++ragasPollToken;
+        renderRagasRunning(started);
+        syncExecutionButtons();
+        await pollRagasJob(started.job_id, token);
       } catch (err) {
         if (target) {
           target.innerHTML = `<div class="log">${escapeHtml(String(err.stack || err.message || err))}</div>`;
         } else {
           showError(err);
         }
-      } finally {
-        if (proxyBtn) proxyBtn.disabled = false;
-        if (officialBtn) officialBtn.disabled = false;
+        await restoreSelectedCase();
+      }
+    }
+
+    async function stopRagas() {
+      if (!isActiveJob(latestRagasJob)) return;
+      try {
+        latestRagasJob = await api(
+          `/api/dp3/ragas/jobs/${latestRagasJob.job_id}/cancel`,
+          { method: "POST" }
+        );
+        activeDp3Job = latestRagasJob;
+        renderRagasRunning(latestRagasJob);
+        syncExecutionButtons();
+      } catch (err) {
+        showError(err);
+      }
+    }
+
+    function renderRagasRunning(job) {
+      const target = $("ragasResultRoot");
+      if (!target) return;
+      updateProgress(job);
+      $("statusTitle").textContent = "TC3 RAGAS 실행 중";
+      $("statusText").textContent = `${job.current_step || "평가 중"} · ${job.completed || 0}/${job.total || 1}`;
+      target.innerHTML = `
+        <div class="card">
+          <h3>RAGAS 실행 중</h3>
+          ${metric("Job", job.job_id || "-")}
+          ${metric("상태", job.status || "-")}
+          ${metric("현재 단계", job.current_step || "-")}
+          ${metric("진행률", `${fmt(job.progress_percent || 0)}%`)}
+          ${metric("완료", `${job.completed || 0} / ${job.total || 1}`)}
+        </div>
+      `;
+    }
+
+    async function pollRagasJob(jobId, token) {
+      while (token === ragasPollToken) {
+        await sleep(1000);
+        if (token !== ragasPollToken) return;
+        const job = await api(`/api/dp3/ragas/jobs/${jobId}`);
+        if (job.input_path !== latestRagasInputPath) return;
+        latestRagasJob = job;
+        activeDp3Job = isActiveJob(job) ? job : null;
+        if (isActiveJob(job)) {
+          renderRagasRunning(job);
+          syncExecutionButtons();
+          continue;
+        }
+        renderRagasJobState(job);
+        syncExecutionButtons();
+        return;
+      }
+    }
+
+    function applyRagasRequest(job) {
+      const request = job?.request;
+      if (!request) return;
+      const maxRows = $("ragasResultMaxRows");
+      if (maxRows && request.max_rows) maxRows.value = request.max_rows;
+      const evaluator = $("ragasEvaluatorModel");
+      const value = request.provider && request.model
+        ? `${request.provider}::${request.model}`
+        : "";
+      if (evaluator && value && Array.from(evaluator.options).some((option) => option.value === value)) {
+        evaluator.value = value;
+      }
+    }
+
+    function renderRagasJobState(job) {
+      const target = $("ragasResultRoot");
+      if (!target || !job) return;
+      applyRagasRequest(job);
+      if (isActiveJob(job)) {
+        renderRagasRunning(job);
+      } else if (job.status === "completed" && job.result) {
+        updateProgress({ ...job, progress_percent: 100, completed: job.total });
+        $("statusTitle").textContent = "TC3 RAGAS 완료";
+        $("statusText").textContent = `RAGAS 평가 ${job.completed || job.total || 0}행 완료`;
+        target.innerHTML = renderRagasRunResult(job.result);
+      } else if (job.status === "cancelled" || job.status === "interrupted") {
+        $("progressWrap").hidden = true;
+        $("statusTitle").textContent = job.status === "cancelled" ? "TC3 RAGAS 중단됨" : "TC3 RAGAS 실행 중단됨";
+        $("statusText").textContent = job.current_step || job.status;
+        target.innerHTML = `<div class="hint">${job.status === "cancelled" ? "RAGAS 실행이 중단되었습니다." : "서버 재시작으로 RAGAS 실행이 중단되었습니다."}</div>`;
+      } else {
+        $("progressWrap").hidden = true;
+        $("statusTitle").textContent = "TC3 RAGAS 실패";
+        $("statusText").textContent = job.error || job.current_step || job.status;
+        target.innerHTML = `<div class="log">${escapeHtml(job.error || "RAGAS 실행에 실패했습니다.")}</div>`;
+      }
+    }
+
+    async function restoreLatestRagas() {
+      if (!latestRagasInputPath) return;
+      const token = ++ragasPollToken;
+      const state = await api("/api/dp3/ragas/latest");
+      if (token !== ragasPollToken) return;
+      activeDp3Job = state.active_job || null;
+      const job = state.job;
+      latestRagasJob = job && job.input_path === latestRagasInputPath ? job : null;
+      if (latestRagasJob) {
+        renderRagasJobState(latestRagasJob);
+      }
+      syncExecutionButtons();
+      if (isActiveJob(latestRagasJob)) {
+        pollRagasJob(latestRagasJob.job_id, token).catch(showError);
       }
     }
 
@@ -1212,6 +1459,7 @@
           <div class="actions">
             <button id="runProxyRagasBtn" onclick="runRagasForLatest(false)">Run Proxy RAGAS</button>
             <button id="runOfficialRagasBtn" class="secondary" onclick="runRagasForLatest(true)">Run Official RAGAS</button>
+            <button id="stopRagasBtn" class="danger" onclick="stopRagas()" hidden>Stop RAGAS</button>
           </div>
           <div id="ragasResultRoot"></div>
         </div>
@@ -1442,10 +1690,18 @@
       $(id).addEventListener("change", async () => {
         try {
           if (id === "testCase") {
+            suitePollToken += 1;
+            ragasPollToken += 1;
+            selectedSuiteJob = null;
+            latestRagasJob = null;
+            latestRagasInputPath = null;
             applyCaseDefaults();
           }
           await loadDatasets();
           updateLabels();
+          if (id === "testCase") {
+            await restoreSelectedCase();
+          }
         } catch (err) {
           showError(err);
         }
@@ -1458,6 +1714,7 @@
     $("prepareBtn").addEventListener("click", prepareLongBench);
     $("seedBtn").addEventListener("click", seedPool);
     $("runSuiteBtn").addEventListener("click", runSuite);
+    $("stopSuiteBtn").addEventListener("click", stopSuite);
     $("refreshBtn").addEventListener("click", async () => {
       setBusy(true, "통계 새로고침", "질문풀 상태를 확인합니다.");
       try {
@@ -1479,8 +1736,7 @@
         await loadOllamaModels();
         await loadDatasets();
         await refreshStats();
-        $("statusTitle").textContent = "준비됨";
-        $("statusText").textContent = "테스트 종류와 옵션을 지정한 뒤 시작하세요.";
+        await restoreSelectedCase(true);
       } catch (err) {
         showError(err);
       } finally {

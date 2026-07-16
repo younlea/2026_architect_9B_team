@@ -24,6 +24,8 @@ src/data/*.zip
 /tmp/
 src/data/dp3_run_logs/
 src/data/dp3_ragas_inputs/
+src/data/dp3_latest_jobs.json
+src/data/dp3_latest_jobs.json.tmp
 
 # OS
 .DS_Store
