@@ -399,8 +399,7 @@
           <option value="llama-3.1-8b-instant">Llama 8B - llama-3.1-8b-instant</option>
           <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
           <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
-          <option value="ollama::llama3:8b">Ollama - llama3:8b</option>
-          <option value="ollama::qwen3:8b">Ollama - qwen3:8b</option>
+          <optgroup id="ollamaLlmOptions" label="Ollama (RAG Compare PoC)"></optgroup>
         </select>
         <div class="hint">Mock Est. Total+LLM = total_ms + llm_call_count * 700ms (GROQ llama-3.1-8b-instant, about 5.6K tokens).</div>
         <div class="hint">TC1은 항상 Mock으로 실행합니다. TC2는 기본 Mock, TC3는 선택한 LLM을 사용할 수 있습니다.</div>
@@ -495,6 +494,7 @@
     const $ = (id) => document.getElementById(id);
     const API_BASE = location.port === "8000" ? "" : "http://127.0.0.1:8000";
     let latestRagasInputPath = null;
+    let availableOllamaModels = [];
     const controls = [
       "testCase", "datasetFamily", "dataset", "datasetSplit", "numExamples", "queryCount", "warmupCount", "seed", "scope", "maxScale",
       "resetMetadata", "llmOption", "sampleRate", "minPerDataset", "poolSeed", "routeThreshold",
@@ -609,6 +609,25 @@
         throw new Error(`${response.status} ${text}`);
       }
       return response.json();
+    }
+
+    async function loadOllamaModels() {
+      const data = await api("/api/models");
+      availableOllamaModels = data.models || [];
+      const group = $("ollamaLlmOptions");
+      group.innerHTML = "";
+      availableOllamaModels.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = `ollama::${model}`;
+        option.textContent = `Ollama - ${model}`;
+        group.appendChild(option);
+      });
+    }
+
+    function ollamaRagasOptions() {
+      return availableOllamaModels.map((model) =>
+        `<option value="ollama::${escapeHtml(model)}">Ollama / ${escapeHtml(model)}</option>`
+      ).join("");
     }
 
     function sourceId() {
@@ -1182,8 +1201,7 @@
                 <option value="groq::llama-3.3-70b-versatile">Groq / Llama 70B - llama-3.3-70b-versatile</option>
                 <option value="groq::qwen/qwen3-32b">Groq / Qwen 32B - qwen/qwen3-32b</option>
                 <option value="groq::qwen/qwen3.6-27b">Groq / Qwen 27B - qwen/qwen3.6-27b</option>
-                <option value="ollama::llama3:8b">Ollama / llama3:8b</option>
-                <option value="ollama::qwen3:8b">Ollama / qwen3:8b</option>
+                ${ollamaRagasOptions()}
               </select>
             </div>
             <div>
@@ -1458,6 +1476,7 @@
       updateLabels();
       setBusy(true, "초기화 중", "LongBench dataset과 질문풀 상태를 불러옵니다.");
       try {
+        await loadOllamaModels();
         await loadDatasets();
         await refreshStats();
         $("statusTitle").textContent = "준비됨";
