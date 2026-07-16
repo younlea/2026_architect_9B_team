@@ -2,8 +2,14 @@ import requests as _requests
 from backend.config import LLM_PROVIDER, OPENAI_API_KEY, OPENAI_MODEL, OLLAMA_BASE_URL, OLLAMA_MODEL
 
 
-def get_llm_answer(prompt: str, model: str = None, deterministic: bool = False) -> str:
-    if LLM_PROVIDER == "ollama":
+def get_llm_answer(
+    prompt: str,
+    model: str = None,
+    deterministic: bool = False,
+    provider: str | None = None,
+) -> str:
+    selected_provider = (provider or LLM_PROVIDER).strip().lower()
+    if selected_provider == "ollama":
         return _ollama(prompt, model or OLLAMA_MODEL, deterministic)
     return _openai(prompt, model or OPENAI_MODEL, deterministic)
 

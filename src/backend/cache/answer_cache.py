@@ -722,17 +722,32 @@ def _retrieve_context_units(
     return result
 
 
-def _build_prompt(query: str, sources: list[dict]) -> str:
-    context = "\n\n".join(f"[{s['logical_eu_id']}]\n{s['text']}" for s in sources)
-    return f"""Answer in English only. Use the provided context. Keep the answer concise and factual.
+def _build_prompt_from_context(query: str, context: str) -> str:
+    return f"""Answer in English only.
 
-[Context]
+Rules:
+1. Use only information found inside <context>. Do not use prior knowledge or make assumptions.
+2. End the answer with the IDs of the documents used, in square brackets (for example, [doc-1]).
+3. If <context> does not contain enough information to answer, respond with exactly "The provided context does not contain enough information to answer this question." and nothing else.
+
+Keep the answer concise and factual.
+
+<context>
 {context}
+</context>
 
-[Question]
+<question>
 {query}
+</question>
 
-[Answer]"""
+<answer>"""
+
+
+def _build_prompt(query: str, sources: list[dict]) -> str:
+    context = "\n\n".join(
+        f"[doc_id: {s['logical_eu_id']}]\n{s['text']}" for s in sources
+    )
+    return _build_prompt_from_context(query, context)
 
 
 def _store_answer_cache(

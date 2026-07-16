@@ -74,7 +74,12 @@ def get_dp3_answer_with_metadata(prompt: str, model: str = None, provider: str |
         return _groq(prompt, model or GROQ_MODEL)
     from backend.rag.llm_client import get_llm_answer
     return {
-        "answer": get_llm_answer(prompt, model, deterministic=True),
+        "answer": get_llm_answer(
+            prompt,
+            model,
+            deterministic=True,
+            provider=selected if selected in {"openai", "ollama"} else None,
+        ),
         "provider": selected,
         "model": model,
         "usage": {

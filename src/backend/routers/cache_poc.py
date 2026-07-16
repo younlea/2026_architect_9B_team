@@ -169,6 +169,7 @@ class RagasRunRequest(BaseModel):
     input_path: str
     run_official: bool = False
     max_rows: int = 2
+    provider: Optional[str] = None
     model: Optional[str] = None
 
 
@@ -2121,7 +2122,12 @@ class _RagasUsageCallback(BaseCallbackHandler):
         }
 
 
-def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None = None) -> dict:
+def _official_ragas_from_input(
+    path: str,
+    max_rows: int = 18,
+    model: str | None = None,
+    provider: str | None = None,
+) -> dict:
     started = time.perf_counter()
     rows = _read_jsonl(path)
     if max_rows and max_rows > 0:
@@ -2148,7 +2154,15 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
         from langchain_community.embeddings import HuggingFaceEmbeddings
         from langchain_core.rate_limiters import InMemoryRateLimiter
         from langchain_openai import ChatOpenAI
-        from backend.config import EMBEDDING_MODEL, GROQ_API_KEY, GROQ_BASE_URL, GROQ_MODEL, OPENAI_API_KEY, OPENAI_MODEL
+        from backend.config import (
+            EMBEDDING_MODEL,
+            GROQ_API_KEY,
+            GROQ_BASE_URL,
+            OPENAI_API_KEY,
+            OPENAI_MODEL,
+            OLLAMA_BASE_URL,
+            OLLAMA_MODEL,
+        )
     except Exception as exc:
         return {
             "type": "official_ragas",
@@ -2158,11 +2172,20 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
             "row_count": len(rows),
         }
 
-    if not GROQ_API_KEY and not OPENAI_API_KEY:
+    requested_provider = (provider or "").strip().lower()
+    if requested_provider and requested_provider not in {"groq", "openai", "ollama"}:
         return {
             "type": "official_ragas",
             "status": "unavailable",
-            "reason": "GROQ_API_KEY or OPENAI_API_KEY is required for the evaluator LLM.",
+            "reason": f"Unsupported evaluator provider: {requested_provider}",
+            "input_path": path,
+            "row_count": len(rows),
+        }
+    if requested_provider != "ollama" and not GROQ_API_KEY and not OPENAI_API_KEY:
+        return {
+            "type": "official_ragas",
+            "status": "unavailable",
+            "reason": "GROQ_API_KEY or OPENAI_API_KEY is required unless provider=ollama.",
             "input_path": path,
             "row_count": len(rows),
         }
@@ -2182,20 +2205,30 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
         ])
 
         attempts = []
-        if GROQ_API_KEY:
-            provider = "groq"
+        evaluator_provider = requested_provider
+        if not evaluator_provider:
+            evaluator_provider = "groq" if GROQ_API_KEY else "openai"
+
+        if evaluator_provider == "groq":
+            if not GROQ_API_KEY:
+                raise RuntimeError("GROQ_API_KEY is required for the Groq evaluator.")
             model_candidates = _ragas_model_candidates(model)
-        else:
-            provider = "openai"
+        elif evaluator_provider == "openai":
+            if not OPENAI_API_KEY:
+                raise RuntimeError("OPENAI_API_KEY is required for the OpenAI evaluator.")
             model_candidates = [model or OPENAI_MODEL]
+        else:
+            model_candidates = [model or OLLAMA_MODEL]
 
         for evaluator_model in model_candidates:
             usage_callback = _RagasUsageCallback()
-            rate_limiter = InMemoryRateLimiter(
-                requests_per_second=1 / RAGAS_EVALUATOR_INTERVAL_SECONDS,
-                check_every_n_seconds=1,
-                max_bucket_size=1,
-            )
+            rate_limiter = None
+            if evaluator_provider != "ollama":
+                rate_limiter = InMemoryRateLimiter(
+                    requests_per_second=1 / RAGAS_EVALUATOR_INTERVAL_SECONDS,
+                    check_every_n_seconds=1,
+                    max_bucket_size=1,
+                )
             run_config = RunConfig(
                 timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
                 max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
@@ -2203,7 +2236,7 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                 max_workers=RAGAS_EVALUATOR_MAX_WORKERS,
             )
             try:
-                if provider == "groq":
+                if evaluator_provider == "groq":
                     llm = ChatOpenAI(
                         model=evaluator_model,
                         api_key=GROQ_API_KEY,
@@ -2214,7 +2247,7 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                         max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
                         rate_limiter=rate_limiter,
                     )
-                else:
+                elif evaluator_provider == "openai":
                     llm = ChatOpenAI(
                         model=evaluator_model,
                         api_key=OPENAI_API_KEY,
@@ -2223,6 +2256,16 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                         timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
                         max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
                         rate_limiter=rate_limiter,
+                    )
+                else:
+                    llm = ChatOpenAI(
+                        model=evaluator_model,
+                        api_key="ollama",
+                        base_url=f"{OLLAMA_BASE_URL.rstrip('/')}/v1",
+                        temperature=0,
+                        max_tokens=1024,
+                        timeout=RAGAS_EVALUATOR_TIMEOUT_SECONDS,
+                        max_retries=RAGAS_EVALUATOR_MAX_RETRIES,
                     )
                 result = evaluate(
                     dataset,
@@ -2248,7 +2291,7 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                     "input_path": path,
                     "score_path": score_path,
                     "row_count": len(records),
-                    "evaluator_provider": provider,
+                    "evaluator_provider": evaluator_provider,
                     "evaluator_model": evaluator_model,
                     "evaluator_attempts": attempts,
                     "evaluator_rate_limit": {
@@ -2269,7 +2312,7 @@ def _official_ragas_from_input(path: str, max_rows: int = 18, model: str | None 
                     "fallback_reason": "tokens_per_day" if _is_token_per_day_limit(model_exc) else "none",
                     "usage": usage_callback.summary(),
                 })
-                if provider == "groq" and _is_token_per_day_limit(model_exc):
+                if evaluator_provider == "groq" and _is_token_per_day_limit(model_exc):
                     continue
                 raise
 
@@ -2541,6 +2584,7 @@ def run_ragas(body: RagasRunRequest):
             input_path,
             max_rows=body.max_rows,
             model=body.model,
+            provider=body.provider,
         )
     return result
 

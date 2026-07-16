@@ -399,6 +399,8 @@
           <option value="llama-3.1-8b-instant">Llama 8B - llama-3.1-8b-instant</option>
           <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
           <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
+          <option value="ollama::llama3:8b">Ollama - llama3:8b</option>
+          <option value="ollama::qwen3:8b">Ollama - qwen3:8b</option>
         </select>
         <div class="hint">Mock Est. Total+LLM = total_ms + llm_call_count * 700ms (GROQ llama-3.1-8b-instant, about 5.6K tokens).</div>
         <div class="hint">TC1은 항상 Mock으로 실행합니다. TC2는 기본 Mock, TC3는 선택한 LLM을 사용할 수 있습니다.</div>
@@ -621,6 +623,9 @@
       if (option === "mock") {
         return { llm_provider: "mock", model: null };
       }
+      if (option.startsWith("ollama::")) {
+        return { llm_provider: "ollama", model: option.slice("ollama::".length) };
+      }
       return { llm_provider: "groq", model: option };
     }
 
@@ -788,7 +793,14 @@
       const officialBtn = $("runOfficialRagasBtn");
       const target = $("ragasResultRoot");
       const maxRows = Number($("ragasResultMaxRows")?.value || 2);
-      const evaluatorModel = $("ragasEvaluatorModel")?.value || null;
+      const evaluatorOption = $("ragasEvaluatorModel")?.value || "";
+      const separatorIndex = evaluatorOption.indexOf("::");
+      const evaluatorProvider = separatorIndex >= 0
+        ? evaluatorOption.slice(0, separatorIndex)
+        : null;
+      const evaluatorModel = separatorIndex >= 0
+        ? evaluatorOption.slice(separatorIndex + 2)
+        : (evaluatorOption || null);
       if (proxyBtn) proxyBtn.disabled = true;
       if (officialBtn) officialBtn.disabled = true;
       if (target) {
@@ -801,6 +813,7 @@
             input_path: latestRagasInputPath,
             run_official: runOfficial,
             max_rows: maxRows,
+            provider: evaluatorProvider,
             model: evaluatorModel
           })
         });
@@ -1165,10 +1178,12 @@
             <div>
               <label for="ragasEvaluatorModel">Official RAGAS evaluator</label>
               <select id="ragasEvaluatorModel">
-                <option value="meta-llama/llama-4-scout-17b-16e-instruct" selected>Llama 4 Scout - meta-llama/llama-4-scout-17b-16e-instruct</option>
-                <option value="llama-3.3-70b-versatile">Llama 70B - llama-3.3-70b-versatile</option>
-                <option value="qwen/qwen3-32b">Qwen 32B - qwen/qwen3-32b</option>
-                <option value="qwen/qwen3.6-27b">Qwen 27B - qwen/qwen3.6-27b</option>
+                <option value="groq::meta-llama/llama-4-scout-17b-16e-instruct" selected>Groq / Llama 4 Scout - meta-llama/llama-4-scout-17b-16e-instruct</option>
+                <option value="groq::llama-3.3-70b-versatile">Groq / Llama 70B - llama-3.3-70b-versatile</option>
+                <option value="groq::qwen/qwen3-32b">Groq / Qwen 32B - qwen/qwen3-32b</option>
+                <option value="groq::qwen/qwen3.6-27b">Groq / Qwen 27B - qwen/qwen3.6-27b</option>
+                <option value="ollama::llama3:8b">Ollama / llama3:8b</option>
+                <option value="ollama::qwen3:8b">Ollama / qwen3:8b</option>
               </select>
             </div>
             <div>
