@@ -36,13 +36,28 @@ SWE-bench 이슈 866건 전체에 대해 12개 조합의 Top-3 검색 결과를 
 - **Context Recall@3**: 전체 정답 파일 중 Top-3에서 회수된 비율
 - **MRR**: 정답이 처음 등장한 순위의 역수 평균
 
-### 1.1 차트
+### 1.1 평가 데이터 및 규모
+
+| 항목 | 값 |
+|---|---|
+| 이슈 수 | **866건** (SWE-bench Lite + Full 합산, 표본 추출 없이 전량 사용) |
+| 대상 오픈소스 저장소(repo) | **12개** — django/django(591) · astropy/astropy(95) · sympy/sympy(77) · scikit-learn(23) · matplotlib(23) · pytest(17) · sphinx(16) · pylint(6) · requests(6) · xarray(5) · seaborn(4) · flask(3) |
+| repo × version 조합(파티션 단위) | **69개** — Routed 전략에서 실제로 생성된 파티션 컬렉션 수와 동일 |
+| RAG 엔진 × 검색 전략 조합 | 4 × 3 = **12개** (엔진: Legacy/BasicRAG/RaptorRAG/ROIRAG, 전략: Flat/PostFilter/Routed) |
+| 쿼리 실행 수 | 866건 × 12조합 = **10,392회** 검색 실행 |
+| Top-K / Prefetch-K | 3 / 10 |
+
+repo 분포가 django(591건, 68%)에 크게 편중되어 있어, 전략별 평균(§1.4)은 django 성향에 다소 가중될 수 있습니다.
+다만 4개 RAG 엔진 각각에 동일한 866건·69개 파티션 구성이 적용되므로, 엔진 간 비교와 전략 간 비교의 상대적 우열은
+편중의 영향을 받지 않습니다.
+
+### 1.2 차트
 
 ![Hit@3 / Context Precision@3](assets/dp2_appendix/appendix_a_hit_precision.png)
 
 ![Context Recall@3 / MRR](assets/dp2_appendix/appendix_a_recall_mrr.png)
 
-### 1.2 조합별 실측 결과 (n=866)
+### 1.3 조합별 실측 결과 (n=866)
 
 | RAG 엔진 | 전략 | Hit@3 | Precision@3 | Recall@3 | MRR | 평균 지연(ms) |
 |---|---|---:|---:|---:|---:|---:|
@@ -59,7 +74,26 @@ SWE-bench 이슈 866건 전체에 대해 12개 조합의 Top-3 검색 결과를 
 | ROI-RAG | PostFilter | 73.8% | 51.4% | 71.8% | 0.679 | 58.6 |
 | ROI-RAG | Routed | 80.0% | 44.8% | 78.0% | 0.713 | 18.4 |
 
-### 1.3 전략별 평균 (4개 RAG 엔진 평균)
+**컬럼 설명**
+
+- **RAG 엔진** — 인덱싱(DB 구축) 방식. Legacy는 Python AST 기반 함수/클래스 단위 청킹(베이스라인), BasicRAG는
+  고정 크기 청킹, RaptorRAG는 DBSCAN 클러스터링 기반 계층 노드, ROI-RAG는 kNN 기반 엔트로피 가이드 EU(Evidence
+  Unit) 구성 방식입니다. 검색 전략(Flat/PostFilter/Routed)과 독립적으로 조합됩니다.
+- **전략** — 같은 인덱스에 대해 검색 시점에 적용하는 권한/버전 스코프 처리 방식. Flat은 스코프 조건 없이 통합
+  DB 전체에서 검색, PostFilter는 Top-10을 먼저 가져온 뒤 repo/version이 맞는 것만 남기는 사후 필터링(DP2 Option
+  B), Routed는 repo×version 파티션을 검색 전에 먼저 선택하는 사전 라우팅(DP2 Option A)입니다.
+- **Hit@3** — 정답 파일이 Top-3 청크 중 하나라도 포함되면 1, 아니면 0으로 채점한 뒤 866건 평균. "검색이 최소
+  한 번은 정답 근처를 찾아냈는가"를 나타내는 가장 관대한 지표입니다.
+- **Precision@3** — Top-3 중 정답 파일을 포함하는 청크의 비율. 값이 낮을수록 Top-3에 정답과 무관한 노이즈
+  청크가 많이 섞여 있다는 의미입니다.
+- **Recall@3** — 이슈가 요구하는 전체 정답 파일 중 Top-3에서 실제로 회수된 파일의 비율. 정답 파일이 여러 개인
+  이슈에서는 3개 슬롯으로 전부 회수하기 어려워 Precision보다 낮게 나올 수 있습니다.
+- **MRR(Mean Reciprocal Rank)** — 정답이 처음 등장한 순위 r의 역수(1/r)를 866건 평균한 값. 정답을 1위로
+  찾아낼수록 1.0에 가까워지며, Hit@3보다 "얼마나 상위에 정답을 배치했는가"에 더 민감합니다.
+- **평균 지연(ms)** — 임베딩 계산을 제외한 검색 전략 자체의 처리 시간(ms) 평균. §2의 응답성 지표와 동일한
+  측정 방식이며, Routed가 파티션이 작아 매 조합에서 가장 낮게 나타납니다(18~26ms).
+
+### 1.4 전략별 평균 (4개 RAG 엔진 평균)
 
 | 전략 | Hit@3 | Precision@3 | Recall@3 | MRR |
 |---|---:|---:|---:|---:|
