@@ -1,0 +1,582 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DP2 백데이터 — RAG 검색 전략 실측 평가</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page-plane:     #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --baseline:       #c3c2b7;
+    --border:         rgba(11,11,11,0.10);
+    --card-bg:        #ffffff;
+
+    --s-blue:    #2a78d6;
+    --s-orange:  #eb6834;
+    --s-aqua:    #1baf7a;
+    --s-yellow:  #eda100;
+
+    --good: #0ca30c;
+    --critical: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page-plane:     #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --baseline:       #383835;
+      --border:         rgba(255,255,255,0.10);
+      --card-bg:        #232322;
+
+      --s-blue:    #3987e5;
+      --s-orange:  #d95926;
+      --s-aqua:    #199e70;
+      --s-yellow:  #c98500;
+
+      --good: #0ca30c;
+      --critical: #e66767;
+    }
+  }
+  :root[data-theme="dark"] .viz-root {
+    color-scheme: dark;
+    --surface-1:      #1a1a19;
+    --page-plane:     #0d0d0d;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:       #2c2c2a;
+    --baseline:       #383835;
+    --border:         rgba(255,255,255,0.10);
+    --card-bg:        #232322;
+
+    --s-blue:    #3987e5;
+    --s-orange:  #d95926;
+    --s-aqua:    #199e70;
+    --s-yellow:  #c98500;
+
+    --good: #0ca30c;
+    --critical: #e66767;
+  }
+
+  .viz-root {
+    background: var(--page-plane);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    line-height: 1.5;
+    padding: 0 0 64px 0;
+  }
+  .viz-root * { box-sizing: border-box; }
+
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 40px 24px 0; }
+
+  header.page-header { margin-bottom: 8px; }
+  .eyebrow {
+    font-size: 12.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+    color: var(--s-blue);
+  }
+  h1 { font-size: 28px; font-weight: 700; margin: 6px 0 8px; letter-spacing: -0.01em; }
+  .subtitle { color: var(--text-secondary); font-size: 15px; max-width: 720px; }
+  .meta-row {
+    display: flex; gap: 18px; flex-wrap: wrap; margin-top: 18px; padding: 14px 16px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    font-size: 13px; color: var(--text-secondary);
+  }
+  .meta-row b { color: var(--text-primary); font-weight: 600; }
+
+  section.appendix { margin-top: 56px; }
+  .appendix-tag {
+    display: inline-block; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+    color: var(--text-secondary); background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 999px; padding: 3px 10px; margin-bottom: 10px;
+  }
+  h2 { font-size: 21px; font-weight: 700; margin: 0 0 6px; }
+  .section-desc { color: var(--text-secondary); font-size: 14.5px; max-width: 760px; margin-bottom: 24px; }
+
+  .legend-row {
+    display: flex; gap: 18px; flex-wrap: wrap; align-items: center;
+    margin: 4px 0 20px; font-size: 13px; color: var(--text-secondary);
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+
+  .chart-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 20px;
+  }
+  @media (max-width: 760px) { .chart-grid { grid-template-columns: 1fr; } }
+
+  .chart-card {
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px;
+    padding: 18px 18px 10px;
+  }
+  .chart-card h3 { font-size: 14.5px; font-weight: 700; margin: 0 0 2px; }
+  .chart-card .chart-sub { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+  .chart-card svg { width: 100%; height: auto; display: block; overflow: visible; }
+
+  .axis-label { fill: var(--text-muted); font-size: 10.5px; }
+  .grid-line { stroke: var(--gridline); stroke-width: 1; }
+  .base-line { stroke: var(--baseline); stroke-width: 1; }
+  .cat-label { fill: var(--text-secondary); font-size: 11px; font-weight: 600; }
+  .val-label { fill: var(--text-primary); font-size: 11.5px; font-weight: 700; }
+
+  .bar-rect { cursor: pointer; }
+
+  .tooltip {
+    position: fixed; pointer-events: none; z-index: 999;
+    background: var(--text-primary); color: var(--surface-1);
+    font-size: 12px; padding: 6px 10px; border-radius: 6px;
+    opacity: 0; transform: translate(-50%, -100%); transition: opacity .08s ease;
+    white-space: nowrap; font-weight: 600;
+  }
+  :root:not([data-theme="light"]) .tooltip { }
+  .tooltip.show { opacity: 1; }
+
+  table.data-table {
+    width: 100%; border-collapse: collapse; font-size: 12.5px; margin-top: 22px;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden;
+  }
+  table.data-table caption {
+    text-align: left; font-size: 12.5px; font-weight: 700; color: var(--text-secondary);
+    padding: 12px 14px 4px; caption-side: top;
+  }
+  .table-scroll { overflow-x: auto; border-radius: 10px; }
+  table.data-table th, table.data-table td {
+    padding: 8px 12px; text-align: right; border-bottom: 1px solid var(--gridline);
+    font-variant-numeric: tabular-nums; white-space: nowrap;
+  }
+  table.data-table th:first-child, table.data-table td:first-child { text-align: left; font-variant-numeric: normal; }
+  table.data-table thead th {
+    color: var(--text-muted); font-weight: 600; font-size: 11px; text-transform: uppercase;
+    letter-spacing: .03em; border-bottom: 1px solid var(--baseline);
+  }
+  table.data-table tbody tr:last-child td { border-bottom: none; }
+  table.data-table tbody tr:hover { background: var(--surface-1); }
+  .badge {
+    display: inline-block; font-size: 10.5px; font-weight: 700; padding: 1px 7px;
+    border-radius: 999px; margin-left: 6px;
+  }
+  .badge-good { color: var(--good); background: color-mix(in srgb, var(--good) 15%, transparent); }
+  .badge-critical { color: var(--critical); background: color-mix(in srgb, var(--critical) 15%, transparent); }
+
+  .callout {
+    margin-top: 22px; padding: 16px 18px; border-radius: 10px;
+    background: var(--surface-1); border: 1px solid var(--border); font-size: 13.5px;
+    color: var(--text-secondary);
+  }
+  .callout b { color: var(--text-primary); }
+  .callout ul { margin: 8px 0 0; padding-left: 18px; }
+  .callout li { margin-bottom: 4px; }
+
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 22px; }
+  @media (max-width: 760px) { .two-col { grid-template-columns: 1fr; } }
+
+  footer.page-footer {
+    margin-top: 60px; padding-top: 18px; border-top: 1px solid var(--border);
+    font-size: 12px; color: var(--text-muted); max-width: 760px;
+  }
+  footer.page-footer code {
+    background: var(--surface-1); padding: 1px 5px; border-radius: 4px; font-size: 11.5px;
+  }
+</style>
+</head>
+<body>
+
+<div class="viz-root">
+<div class="wrap">
+
+  <header class="page-header">
+    <div class="eyebrow">DP2 · 권한/버전 기반 Dataset &amp; Retrieval Strategy 백데이터</div>
+    <h1>RAG 검색 전략 실측 평가 — Appendix A / B</h1>
+    <p class="subtitle">
+      <code>doc/03_DP2_Permission_Aware_Dataset_Strategy.md</code>에서 정의한 Option A(권한/버전 기반 Source
+      Routing)와 Option B(통합 DB + Source Metadata Post-filtering)를 SWE-bench PoC 페이지(<code>/swebench</code>)의
+      실제 인덱스에 대해 재현·측정한 결과입니다. SWE-bench의 <b>repo + version 경계</b>를 DP2의
+      "프로젝트/부서 권한 + 요청 Source Version 범위" 아날로그로 사용했습니다.
+    </p>
+    <div class="meta-row" id="meta-row"></div>
+  </header>
+
+  <!-- ============ Appendix A ============ -->
+  <section class="appendix" id="appendix-a">
+    <div class="appendix-tag">Appendix A</div>
+    <h2>RAGAS 스타일 검색 품질 평가</h2>
+    <p class="section-desc">
+      SWE-bench 이슈 <b>866건</b> 전체에 대해 4가지 RAG 인덱싱 방식(Legacy / BasicRAG / RaptorRAG / ROIRAG) ×
+      3가지 검색 전략(Flat / PostFilter / Routed) = 12개 조합에서 Top‑3 검색 결과를 <code>backend/routers/swebench.py</code>의
+      RAGAS 스타일 메트릭 정의(Hit@K, Context Precision, Context Recall, MRR)로 채점했습니다.
+    </p>
+
+    <div class="legend-row" id="legend-a"></div>
+    <div class="chart-grid" id="charts-a"></div>
+
+    <div class="table-scroll">
+      <table class="data-table" id="table-a">
+        <caption>RAG 엔진 × 검색 전략 조합별 실측 RAGAS 지표 (n=866 issues, Top‑3)</caption>
+      </table>
+    </div>
+  </section>
+
+  <!-- ============ Appendix B ============ -->
+  <section class="appendix" id="appendix-b">
+    <div class="appendix-tag">Appendix B</div>
+    <h2>RAG 검색 전략 선택 지표 — 보안성 · 응답성 · 확장성/운용성 · 근거추적성</h2>
+    <p class="section-desc">
+      DP2 §7 Trade-off 평가에서 정의한 4개 QA 축을 같은 실측 데이터로 계산했습니다. 각 값은 4개 RAG 엔진의 평균이며,
+      Flat = 통제 없는 통합 검색(baseline), PostFilter = DP2 Option B, Routed = DP2 Option A에 대응합니다.
+    </p>
+
+    <div class="legend-row" id="legend-b"></div>
+    <div class="chart-grid" id="charts-b"></div>
+
+    <div class="callout" id="callout-b"></div>
+
+    <div class="table-scroll">
+      <table class="data-table" id="table-b">
+        <caption>전략별 QA 지표 실측 요약 (4개 RAG 엔진 평균, n=866 issues)</caption>
+      </table>
+    </div>
+  </section>
+
+  <footer class="page-footer">
+    데이터 출처: <code>src/data/dp2_backdata.json</code> (SWE-bench PoC ChromaDB 인덱스 866 issues에 대해
+    <code>backend/rag/swebench_rag_engines.py</code>의 컬렉션 선택/필터 로직을 그대로 재현하여 직접 측정, 2026-08-11 생성).
+    참고 문서: <code>doc/03_DP2_Permission_Aware_Dataset_Strategy.md</code>.
+    보안성/근거추적성 지표는 SWE-bench의 repo+version 경계를 권한/버전 스코프의 대리 지표(proxy)로 사용한 PoC 실측치이며,
+    실제 조직의 권한 체계(RBAC, 부서/프로젝트 단위) 적용 시 재측정이 필요합니다.
+  </footer>
+
+</div>
+</div>
+
+<div class="tooltip" id="tooltip"></div>
+
+<script>
+const DATA = {
+  meta: {
+    issues: 866, topK: 3, prefetchK: 10,
+    generated: "2026-08-11",
+  },
+  engines: [
+    { key: "Legacy",    label: "Legacy (AST 청킹)", color: "var(--s-blue)" },
+    { key: "BasicRAG",  label: "BasicRAG",           color: "var(--s-orange)" },
+    { key: "RaptorRAG", label: "RaptorRAG",          color: "var(--s-aqua)" },
+    { key: "ROIRAG",    label: "ROI-RAG",            color: "var(--s-yellow)" },
+  ],
+  strategies: [
+    { key: "Flat",       label: "Flat" },
+    { key: "PostFilter", label: "PostFilter" },
+    { key: "Routed",     label: "Routed" },
+  ],
+  ragas: {
+    "Legacy+Flat":        { hit_at_k: 0.6894, context_precision: 0.3726, context_recall: 0.6260, mrr: 0.6026, avg_latency_ms: 58.297 },
+    "Legacy+PostFilter":  { hit_at_k: 0.7829, context_precision: 0.5308, context_recall: 0.7248, mrr: 0.7244, avg_latency_ms: 59.318 },
+    "Legacy+Routed":      { hit_at_k: 0.8360, context_precision: 0.4334, context_recall: 0.7755, mrr: 0.7537, avg_latency_ms: 18.929 },
+    "BasicRAG+Flat":       { hit_at_k: 0.6051, context_precision: 0.3664, context_recall: 0.5571, mrr: 0.5346, avg_latency_ms: 52.343 },
+    "BasicRAG+PostFilter": { hit_at_k: 0.6813, context_precision: 0.4971, context_recall: 0.6375, mrr: 0.6266, avg_latency_ms: 55.222 },
+    "BasicRAG+Routed":     { hit_at_k: 0.7125, context_precision: 0.4446, context_recall: 0.6695, mrr: 0.6455, avg_latency_ms: 19.306 },
+    "RaptorRAG+Flat":       { hit_at_k: 0.6547, context_precision: 0.4419, context_recall: 0.5912, mrr: 0.5791, avg_latency_ms: 123.088 },
+    "RaptorRAG+PostFilter": { hit_at_k: 0.7771, context_precision: 0.5935, context_recall: 0.7113, mrr: 0.7200, avg_latency_ms: 129.224 },
+    "RaptorRAG+Routed":     { hit_at_k: 0.8176, context_precision: 0.5504, context_recall: 0.7520, mrr: 0.7435, avg_latency_ms: 26.389 },
+    "ROIRAG+Flat":       { hit_at_k: 0.6397, context_precision: 0.3614, context_recall: 0.6089, mrr: 0.5568, avg_latency_ms: 54.100 },
+    "ROIRAG+PostFilter": { hit_at_k: 0.7379, context_precision: 0.5139, context_recall: 0.7176, mrr: 0.6790, avg_latency_ms: 58.637 },
+    "ROIRAG+Routed":     { hit_at_k: 0.8002, context_precision: 0.4480, context_recall: 0.7798, mrr: 0.7129, avg_latency_ms: 18.428 },
+  },
+  // Appendix B: strategy-level averages across the 4 engines
+  strategyAgg: {
+    Flat:       { exposure: 0.6217, avgLatency: 71.96, p95Latency: 104.29, citation: 0.3783, scopeDeclared: 0.0,  indexOps: 4,   dropRate: null },
+    PostFilter: { exposure: 0.0025, avgLatency: 75.60, p95Latency: 117.80, citation: 0.9975, scopeDeclared: 1.0,  indexOps: 4,   dropRate: 0.7211 },
+    Routed:     { exposure: 0.0021, avgLatency: 20.76, p95Latency: 79.61,  citation: 0.9980, scopeDeclared: 1.0,  indexOps: 276, dropRate: null },
+  },
+};
+
+function cssVar(v) {
+  // resolve a css var() string against the viz-root for computations that need raw hex (not needed for SVG fill, browsers accept var())
+  return v;
+}
+
+function fmtPct(v) { return (v * 100).toFixed(1) + "%"; }
+function fmtPct0(v) { return Math.round(v * 100) + "%"; }
+function fmtMs(v) { return Math.round(v) + "ms"; }
+function fmtNum(v) { return v.toLocaleString("en-US"); }
+
+// ---- tooltip ----
+const tooltipEl = document.getElementById("tooltip");
+function showTooltip(evt, html) {
+  tooltipEl.innerHTML = html;
+  tooltipEl.style.left = evt.clientX + "px";
+  tooltipEl.style.top = (evt.clientY - 10) + "px";
+  tooltipEl.classList.add("show");
+}
+function moveTooltip(evt) {
+  tooltipEl.style.left = evt.clientX + "px";
+  tooltipEl.style.top = (evt.clientY - 10) + "px";
+}
+function hideTooltip() { tooltipEl.classList.remove("show"); }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const el = document.createElementNS(SVG_NS, tag);
+  for (const k in attrs) el.setAttribute(k, attrs[k]);
+  return el;
+}
+
+// ---- Grouped bar chart (Appendix A): groups = strategies, series = engines ----
+function renderGroupedBar(container, { groups, series, getValue, yMax, yTicks, valueFmt, tooltipFmt }) {
+  const W = 480, H = 260;
+  const marginL = 34, marginR = 8, marginT = 10, marginB = 30;
+  const plotW = W - marginL - marginR, plotH = H - marginT - marginB;
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+
+  // gridlines + y ticks
+  yTicks.forEach(t => {
+    const y = marginT + plotH - (t / yMax) * plotH;
+    svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: y, y2: y, class: "grid-line" }));
+    const lbl = svgEl("text", { x: marginL - 6, y: y + 3, class: "axis-label", "text-anchor": "end" });
+    lbl.textContent = valueFmt(t);
+    svg.appendChild(lbl);
+  });
+  svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: marginT + plotH, y2: marginT + plotH, class: "base-line" }));
+
+  const groupW = plotW / groups.length;
+  const barW = 15, barGap = 2;
+  const seriesN = series.length;
+  const clusterW = seriesN * barW + (seriesN - 1) * barGap;
+
+  groups.forEach((g, gi) => {
+    const groupCenterX = marginL + groupW * gi + groupW / 2;
+    const clusterStartX = groupCenterX - clusterW / 2;
+
+    series.forEach((s, si) => {
+      const v = getValue(g.key, s.key);
+      const barH = Math.max(0, (v / yMax) * plotH);
+      const x = clusterStartX + si * (barW + barGap);
+      const y = marginT + plotH - barH;
+      const rect = svgEl("rect", {
+        x, y, width: barW, height: Math.max(barH, 1),
+        rx: 4, ry: 4, fill: s.color, class: "bar-rect",
+      });
+      rect.addEventListener("mouseenter", (e) => showTooltip(e, `<b>${s.label}</b> · ${g.label}<br>${tooltipFmt(v)}`));
+      rect.addEventListener("mousemove", moveTooltip);
+      rect.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(rect);
+    });
+
+    const catLbl = svgEl("text", { x: groupCenterX, y: marginT + plotH + 18, class: "cat-label", "text-anchor": "middle" });
+    catLbl.textContent = g.label;
+    svg.appendChild(catLbl);
+  });
+
+  container.appendChild(svg);
+}
+
+// ---- Single-series category bar chart (Appendix B): one bar per strategy, direct-labeled ----
+function renderCategoryBar(container, { categories, yMax, yTicks, valueFmt, tooltipFmt }) {
+  const W = 480, H = 260;
+  const marginL = 40, marginR = 8, marginT = 18, marginB = 30;
+  const plotW = W - marginL - marginR, plotH = H - marginT - marginB;
+
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+
+  yTicks.forEach(t => {
+    const y = marginT + plotH - (t / yMax) * plotH;
+    svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: y, y2: y, class: "grid-line" }));
+    const lbl = svgEl("text", { x: marginL - 6, y: y + 3, class: "axis-label", "text-anchor": "end" });
+    lbl.textContent = valueFmt(t);
+    svg.appendChild(lbl);
+  });
+  svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: marginT + plotH, y2: marginT + plotH, class: "base-line" }));
+
+  const slotW = plotW / categories.length;
+  const barW = 44;
+
+  categories.forEach((c, i) => {
+    const cx = marginL + slotW * i + slotW / 2;
+    const barH = Math.max(0, (c.value / yMax) * plotH);
+    const x = cx - barW / 2;
+    const y = marginT + plotH - barH;
+    const rect = svgEl("rect", {
+      x, y, width: barW, height: Math.max(barH, 1),
+      rx: 4, ry: 4, fill: c.color, class: "bar-rect",
+    });
+    rect.addEventListener("mouseenter", (e) => showTooltip(e, `<b>${c.label}</b><br>${tooltipFmt(c.value)}`));
+    rect.addEventListener("mousemove", moveTooltip);
+    rect.addEventListener("mouseleave", hideTooltip);
+    svg.appendChild(rect);
+
+    const valLbl = svgEl("text", { x: cx, y: y - 7, class: "val-label", "text-anchor": "middle" });
+    valLbl.textContent = valueFmt(c.value);
+    svg.appendChild(valLbl);
+
+    const catLbl = svgEl("text", { x: cx, y: marginT + plotH + 18, class: "cat-label", "text-anchor": "middle" });
+    catLbl.textContent = c.label;
+    svg.appendChild(catLbl);
+  });
+
+  container.appendChild(svg);
+}
+
+function chartCard(parent, title, sub) {
+  const card = document.createElement("div");
+  card.className = "chart-card";
+  const h3 = document.createElement("h3"); h3.textContent = title;
+  const p = document.createElement("div"); p.className = "chart-sub"; p.textContent = sub;
+  card.appendChild(h3); card.appendChild(p);
+  parent.appendChild(card);
+  return card;
+}
+
+// ============ Build Appendix A ============
+(function buildAppendixA() {
+  const legend = document.getElementById("legend-a");
+  DATA.engines.forEach(e => {
+    const item = document.createElement("div"); item.className = "legend-item";
+    const sw = document.createElement("span"); sw.className = "legend-swatch"; sw.style.background = e.color;
+    const txt = document.createElement("span"); txt.textContent = e.label;
+    item.appendChild(sw); item.appendChild(txt); legend.appendChild(item);
+  });
+
+  const chartsA = document.getElementById("charts-a");
+  const metricDefs = [
+    { key: "hit_at_k", title: "Hit@3", sub: "정답 파일이 Top-3에 포함된 비율 (높을수록 좋음)" },
+    { key: "context_precision", title: "Context Precision@3", sub: "Top-3 중 정답 파일 비중 (높을수록 좋음)" },
+    { key: "context_recall", title: "Context Recall@3", sub: "정답 파일이 Top-3에서 회수된 비율 (높을수록 좋음)" },
+    { key: "mrr", title: "MRR", sub: "정답 최초 등장 순위의 역수 평균 (높을수록 좋음)" },
+  ];
+  metricDefs.forEach(md => {
+    const card = chartCard(chartsA, md.title, md.sub);
+    renderGroupedBar(card, {
+      groups: DATA.strategies,
+      series: DATA.engines,
+      getValue: (stratKey, engKey) => DATA.ragas[`${engKey}+${stratKey}`][md.key],
+      yMax: 1.0,
+      yTicks: [0, 0.2, 0.4, 0.6, 0.8, 1.0],
+      valueFmt: fmtPct0,
+      tooltipFmt: (v) => fmtPct(v),
+    });
+  });
+
+  // data table
+  const table = document.getElementById("table-a");
+  const thead = document.createElement("thead");
+  thead.innerHTML = `<tr><th>RAG 엔진 + 전략</th><th>Hit@3</th><th>Precision@3</th><th>Recall@3</th><th>MRR</th><th>평균 지연(ms)</th></tr>`;
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  DATA.engines.forEach(e => {
+    DATA.strategies.forEach(s => {
+      const row = DATA.ragas[`${e.key}+${s.key}`];
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td>${e.label} + ${s.label}</td><td>${fmtPct(row.hit_at_k)}</td><td>${fmtPct(row.context_precision)}</td><td>${fmtPct(row.context_recall)}</td><td>${row.mrr.toFixed(3)}</td><td>${fmtMs(row.avg_latency_ms)}</td>`;
+      tbody.appendChild(tr);
+    });
+  });
+  table.appendChild(tbody);
+})();
+
+// ============ Build Appendix B ============
+(function buildAppendixB() {
+  const stratColor = { Flat: "var(--s-blue)", PostFilter: "var(--s-orange)", Routed: "var(--s-aqua)" };
+  const legend = document.getElementById("legend-b");
+  DATA.strategies.forEach(s => {
+    const item = document.createElement("div"); item.className = "legend-item";
+    const sw = document.createElement("span"); sw.className = "legend-swatch"; sw.style.background = stratColor[s.key];
+    const txt = document.createElement("span"); txt.textContent = s.label;
+    item.appendChild(sw); item.appendChild(txt); legend.appendChild(item);
+  });
+
+  const chartsB = document.getElementById("charts-b");
+  const agg = DATA.strategyAgg;
+
+  // 1. 보안성
+  let card = chartCard(chartsB, "① 보안성 — Unauthorized Scope Exposure Rate", "권한/버전 범위 밖 청크가 Top-3에 포함된 비율 (낮을수록 좋음)");
+  renderCategoryBar(card, {
+    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].exposure, color: stratColor[s.key] })),
+    yMax: 0.7, yTicks: [0, 0.175, 0.35, 0.525, 0.7],
+    valueFmt: fmtPct0, tooltipFmt: fmtPct,
+  });
+
+  // 2. 응답성
+  card = chartCard(chartsB, "② 응답성 — 평균 검색 지연시간", "쿼리당 검색 전략 처리 시간, ms (낮을수록 좋음)");
+  renderCategoryBar(card, {
+    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].avgLatency, color: stratColor[s.key] })),
+    yMax: 90, yTicks: [0, 22.5, 45, 67.5, 90],
+    valueFmt: (v) => Math.round(v) + "ms", tooltipFmt: fmtMs,
+  });
+
+  // 3. 확장성/운용성
+  card = chartCard(chartsB, "③ 확장성/운용성 — Index Operation Count", "4개 RAG 엔진 전체가 운영해야 하는 ChromaDB 컬렉션 총 개수");
+  renderCategoryBar(card, {
+    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].indexOps, color: stratColor[s.key] })),
+    yMax: 300, yTicks: [0, 75, 150, 225, 300],
+    valueFmt: (v) => fmtNum(v), tooltipFmt: (v) => `${fmtNum(v)}개 컬렉션`,
+  });
+
+  // 4. 근거추적성
+  card = chartCard(chartsB, "④ 근거추적성 — Verifiable Citation Coverage", "반환된 청크 중 올바른 스코프로 검증 가능한 근거 비율 (높을수록 좋음)");
+  renderCategoryBar(card, {
+    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].citation, color: stratColor[s.key] })),
+    yMax: 1.0, yTicks: [0, 0.25, 0.5, 0.75, 1.0],
+    valueFmt: fmtPct0, tooltipFmt: fmtPct,
+  });
+
+  // callout
+  const callout = document.getElementById("callout-b");
+  callout.innerHTML = `
+    <b>해석 — DP2 Decision과의 정합성</b>
+    <ul>
+      <li><b>보안성/응답성</b>: Routed(Option A)가 노출률 0.21%, 평균 지연 20.8ms로 두 축 모두 실측 최우수 — DP2가 Option A를 우선
+      선택한 근거(§8.1 "보안성과 버전 정합성이 가장 명확하다")를 뒷받침합니다.</li>
+      <li><b>확장성/운용성</b>: 그러나 Routed는 파티션 컬렉션을 276개(엔진당 69개, repo×version 조합 수에 비례) 운영해야 해
+      Flat/PostFilter(4개) 대비 운영 부담이 큽니다 — DP2 §7.2 "Source Scope가 늘어날수록 운영 복잡도가 증가"와 일치합니다.</li>
+      <li><b>근거추적성</b>: PostFilter도 사후 필터링만으로 노출률 0.25%, 인용 검증률 99.75%까지 낮출 수 있었지만, 이 과정에서
+      Prefetch된 결과의 <b>72.1%를 폐기(Drop)</b>하는 비효율이 발생 — DP2 §6.4에서 지적한 "Top-K 결과가 제거 대상으로 채워지는" 리스크가
+      실측으로 확인됩니다.</li>
+      <li>Flat(무통제 베이스라인)은 노출률 62.2%, 근거추적성 37.8%로 두 지표 모두 최하위 — "권한/버전 통제가 없으면 검색 정확도와
+      무관하게 시스템을 사용할 수 없다"는 DP2 §1.4의 문제의식을 정량적으로 뒷받침합니다.</li>
+    </ul>
+  `;
+
+  // table
+  const table = document.getElementById("table-b");
+  const thead = document.createElement("thead");
+  thead.innerHTML = `<tr><th>전략</th><th>DP2 대응</th><th>노출률</th><th>평균 지연</th><th>P95 지연</th><th>Index 운영 수</th><th>Post-filter Drop</th><th>인용 검증률</th><th>스코프 사전선언</th></tr>`;
+  table.appendChild(thead);
+  const tbody = document.createElement("tbody");
+  const dp2Map = { Flat: "해당 없음 (baseline)", PostFilter: "Option B", Routed: "Option A (선택안)" };
+  DATA.strategies.forEach(s => {
+    const a = agg[s.key];
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${s.label}</td><td>${dp2Map[s.key]}</td><td>${fmtPct(a.exposure)}</td><td>${fmtMs(a.avgLatency)}</td><td>${fmtMs(a.p95Latency)}</td><td>${fmtNum(a.indexOps)}</td><td>${a.dropRate != null ? fmtPct(a.dropRate) : "—"}</td><td>${fmtPct(a.citation)}</td><td>${fmtPct0(a.scopeDeclared)}</td>`;
+    tbody.appendChild(tr);
+  });
+  table.appendChild(tbody);
+})();
+
+// meta row
+(function buildMeta() {
+  const meta = document.getElementById("meta-row");
+  const items = [
+    ["평가 대상", `SWE-bench Issue ${DATA.meta.issues}건 (전량)`],
+    ["조합", "4개 RAG 엔진 × 3개 검색 전략 = 12"],
+    ["Top-K / Prefetch-K", `${DATA.meta.topK} / ${DATA.meta.prefetchK}`],
+    ["생성일", DATA.meta.generated],
+  ];
+  items.forEach(([k, v]) => {
+    const d = document.createElement("div");
+    d.innerHTML = `${k} <b>${v}</b>`;
+    meta.appendChild(d);
+  });
+})();
+</script>
+</body>
+</html>
