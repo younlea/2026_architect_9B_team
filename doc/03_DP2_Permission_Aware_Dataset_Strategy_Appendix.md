@@ -103,8 +103,33 @@ DP2 §7.0에서 정의한 4개 QA 축을 동일 실측 데이터로 계산했습
 | PostFilter | Option B | 0.25% | 75.6ms | 117.8ms | 4 | **72.1%** | 99.75% | 100% |
 | Routed | **Option A (선택안)** | **0.21%** | **20.8ms** | 79.6ms | **276** | — | **99.80%** | 100% |
 
-※ Index Operation Count: Flat/PostFilter는 엔진당 통합 컬렉션 1개(4개 엔진 × 1 = 4), Routed는 엔진당 실제 생성된
-repo×version 파티션 69개(4개 엔진 × 69 = 276).
+**컬럼 설명**
+
+- **노출률(①)** — Unauthorized Scope Exposure Rate. 질의로 반환된 Top-3 청크 중 해당 이슈의 repo/version과
+  일치하지 않는(= 다른 프로젝트·버전 소스인) 청크의 비율입니다. SWE-bench에서는 repo+version 경계를 권한/버전
+  스코프의 대리 지표로 사용했으므로, 이 값은 "권한 없는 사용자에게 보여서는 안 되는 소스가 실제로 답변 근거에
+  섞여 나온 비율"에 해당합니다. Flat은 스코프 조건 없이 전체 DB에서 검색하므로 62.2%로 가장 높고, PostFilter·Routed는
+  검색 결과를 스코프로 필터링/제한하기 때문에 0%대로 낮습니다.
+- **평균 지연(②) / P95 지연(②)** — 임베딩 계산 시간을 제외한, 검색 전략 자체의 처리 시간(ms)입니다. 평균은
+  전체 866건 쿼리의 산술 평균, P95는 느린 쪽 5%를 제외한 상위 95번째 백분위 값으로 "체감 지연의 상한선"에
+  가깝습니다. Routed는 검색 대상이 이슈의 repo×version 파티션(작은 컬렉션)으로 좁혀져 있어 평균 20.8ms로 가장
+  빠르고, Flat·PostFilter는 전체 통합 컬렉션을 매번 훑기 때문에 70ms대로 더 느립니다. PostFilter는 여기에 더해
+  Top-10 Prefetch → 필터링이라는 추가 단계가 있어 Flat보다도 약간 느립니다.
+- **Index 운영 수(③)** — Index/Partition Operation Count. 4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 전체가
+  실제로 운영해야 하는 ChromaDB 컬렉션의 총 개수입니다. Flat/PostFilter는 엔진당 통합 컬렉션 1개만 있으면 되므로
+  4개 엔진 × 1 = **4개**, Routed는 repo×version 조합마다 별도 파티션 컬렉션을 만들어야 하므로 엔진당 실제 생성된
+  파티션 69개 × 4개 엔진 = **276개**입니다. 즉 이 지표는 "권한/버전 스코프를 세분화할수록 늘어나는 운영 부담"을
+  나타내며, Routed(Option A)의 보안성·응답성 우위에 대한 트레이드오프로 읽어야 합니다.
+- **Post-filter Drop(③ 보조)** — PostFilter가 Top-10을 Prefetch한 뒤 repo/version 불일치로 폐기하는 비율입니다.
+  72.1%는 "Prefetch한 10개 중 평균 7.2개는 애초에 스코프가 맞지 않아 버려진다"는 의미로, 검색 자원을 낭비하는
+  비효율을 정량화한 값입니다. Flat과 Routed는 별도의 폐기 단계가 없어 해당 없음(—)입니다.
+- **인용 검증률(④)** — Verifiable Citation Coverage. 반환된 청크 중 repo/version이 질의 스코프와 일치해 "이 근거를
+  그대로 Citation으로 사용해도 되는" 비율입니다(= 100% − 노출률과 거의 대응). Flat은 37.8%로, Top-3 중 절반 이상이
+  실제로는 다른 프로젝트/버전의 코드라 근거로 쓸 수 없다는 뜻입니다.
+- **스코프 사전선언(④ 보조)** — Scope Declared Rate. 검색을 실행하기 전에 "어떤 repo/version 범위를 검색할 것인지"를
+  시스템이 명시적으로 선언했는지 여부입니다. Routed는 라우팅 키(`repo@version`)를, PostFilter는 필터 조건을 검색
+  시점에 선언하므로 100%이고, Flat은 조건 없이 전체를 검색하므로 0%입니다. 이 값 자체는 노출률과 달리 사후 결과가
+  아니라 "설계상 감사(Audit) 가능한 질의였는가"를 나타내는 정성적 신호입니다.
 
 ### 2.4 해석 — DP2 Decision과의 정합성
 

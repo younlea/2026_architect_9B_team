@@ -245,6 +245,8 @@
         <caption>전략별 QA 지표 실측 요약 (4개 RAG 엔진 평균, n=866 issues)</caption>
       </table>
     </div>
+
+    <div class="callout" id="coldef-b"></div>
   </section>
 
   <footer class="page-footer">
@@ -560,6 +562,34 @@ function chartCard(parent, title, sub) {
     tbody.appendChild(tr);
   });
   table.appendChild(tbody);
+
+  // column definitions
+  const coldef = document.getElementById("coldef-b");
+  coldef.innerHTML = `
+    <b>컬럼 설명</b>
+    <ul>
+      <li><b>노출률(①)</b> — Unauthorized Scope Exposure Rate. Top-3 청크 중 해당 이슈의 repo/version과 불일치하는
+      (다른 프로젝트·버전 소스) 청크 비율. SWE-bench의 repo+version 경계를 권한/버전 스코프의 대리 지표로 사용했으므로,
+      "권한 없는 소스가 실제로 답변 근거에 섞여 나온 비율"에 해당합니다. Flat은 스코프 조건이 없어 62.2%로 가장 높고,
+      PostFilter·Routed는 결과를 스코프로 제한하므로 0%대입니다.</li>
+      <li><b>평균 지연 / P95 지연(②)</b> — 임베딩 계산을 제외한 검색 전략 자체의 처리 시간(ms). 평균은 866건의 산술
+      평균, P95는 느린 쪽 5%를 제외한 체감 지연 상한선입니다. Routed는 이슈의 repo×version 파티션(작은 컬렉션)만
+      검색해 20.8ms로 가장 빠르고, Flat·PostFilter는 통합 컬렉션 전체를 매번 훑어 70ms대로 느립니다.</li>
+      <li><b>Index 운영 수(③)</b> — 4개 RAG 엔진 전체가 실제 운영해야 하는 ChromaDB 컬렉션 총 개수. Flat/PostFilter는
+      엔진당 통합 컬렉션 1개(4개 엔진 × 1 = 4), Routed는 repo×version 조합마다 파티션이 필요해 엔진당 69개 × 4 =
+      276개입니다. 권한/버전 스코프를 세분화할수록 커지는 운영 부담이며, Routed의 보안성·응답성 우위에 대한
+      트레이드오프로 읽어야 합니다.</li>
+      <li><b>Post-filter Drop(③ 보조)</b> — PostFilter가 Top-10을 Prefetch한 뒤 repo/version 불일치로 폐기하는 비율.
+      72.1%는 "Prefetch한 10개 중 평균 7.2개가 스코프 불일치로 버려진다"는 뜻으로, 검색 자원 낭비를 정량화한
+      값입니다. Flat·Routed는 별도 폐기 단계가 없어 해당 없음(—)입니다.</li>
+      <li><b>인용 검증률(④)</b> — Verifiable Citation Coverage. 반환된 청크 중 repo/version이 질의 스코프와 일치해
+      Citation으로 그대로 사용 가능한 비율(≈ 100% − 노출률). Flat은 37.8%로, Top-3 중 절반 이상이 실제로는 다른
+      프로젝트/버전 코드라 근거로 쓸 수 없다는 뜻입니다.</li>
+      <li><b>스코프 사전선언(④ 보조)</b> — Scope Declared Rate. 검색 실행 전에 repo/version 범위를 시스템이 명시적으로
+      선언했는지 여부. Routed는 라우팅 키를, PostFilter는 필터 조건을 검색 시점에 선언해 100%이고, Flat은 조건 없이
+      전체를 검색해 0%입니다. 사후 결과가 아니라 "설계상 감사 가능한 질의였는가"를 나타내는 정성적 신호입니다.</li>
+    </ul>
+  `;
 })();
 
 // meta row
