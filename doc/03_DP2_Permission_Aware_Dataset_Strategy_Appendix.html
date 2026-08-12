@@ -232,6 +232,48 @@
     </div>
   </section>
 
+  <section class="appendix" style="margin-top:32px;">
+    <div class="appendix-tag">설정값 상세</div>
+    <h2 style="font-size:18px;">Routed / PostFilter 파라미터</h2>
+
+    <div class="callout">
+      <b>Routed — DB(파티션 컬렉션) 개수를 어떻게 정했나</b>
+      <div style="margin-top:6px;">Routed는 "DB를 몇 개로 나눌지"를 고정 파라미터로 미리 정하지 않습니다.
+      <b>866건의 이슈에 실제로 존재하는 repo@version 조합의 수만큼</b> 파티션 컬렉션이 자동으로 생성됩니다.</div>
+      <ul style="margin-top:8px;">
+        <li>이슈마다 <code>repo</code>(예: <code>django/django</code>)와 <code>version</code>(예: <code>3.1</code>)이
+        있고, 인덱싱 시점에 <code>{repo}@{version}</code> 키가 처음 등장할 때마다 새 컬렉션(예:
+        <code>sweb_basic_django_django_3_1</code>)을 만듭니다.</li>
+        <li>866건 전체를 훑은 결과 고유 repo@version 조합은 <b>69개</b>였고, 이 69개가 그대로 파티션(DB) 개수가 됩니다.</li>
+        <li>4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 각각에 반복하므로, 엔진마다 69개씩, 총
+        <b>69 × 4 = 276개</b>의 파티션 컬렉션을 운영합니다(Index Operation Count와 동일 수치).</li>
+        <li>즉 "276개"는 임의로 정한 값이 아니라 <b>이 데이터셋의 권한/버전 스코프 다양성을 그대로 반영한 결과</b>이며,
+        실제 사내 환경에서는 (프로젝트 수 × Branch/Release 수)만큼 늘어납니다.</li>
+      </ul>
+    </div>
+
+    <div class="callout">
+      <b>PostFilter — Prefetch/필터 파라미터</b>
+      <div style="margin-top:6px;">PostFilter는 "얼마나 많이 미리 가져온 뒤 얼마나 남길지"가 명시적인 두 개 숫자로
+      정해져 있습니다(<code>backend/rag/swebench_rag_engines.py</code>의 <code>TOP_K</code>, <code>PREFETCH_K</code>).</div>
+      <div class="table-scroll" style="margin-top:8px;">
+        <table class="data-table">
+          <thead><tr><th>파라미터</th><th>값</th><th>의미</th></tr></thead>
+          <tbody>
+            <tr><td>Prefetch-K</td><td><b>10</b></td><td>통합 DB(Flat과 동일 컬렉션)에서 질의당 먼저 가져오는 후보 청크 수</td></tr>
+            <tr><td>Top-K</td><td><b>3</b></td><td>필터링 후 최종적으로 답변 근거로 남기는 청크 수</td></tr>
+            <tr><td>필터 조건</td><td colspan="2"><code>repo == 질의 repo AND version == 질의 version</code> — Prefetch한 10개 중 이 조건을 만족하는 것만 통과</td></tr>
+            <tr><td>폴백 처리</td><td colspan="2">조건 만족 청크가 있으면 그중 Top-3 사용, 없으면 <code>WHERE</code> 조건절로 재질의 → 그래도 없으면 필터 없는 Top-3로 폴백</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;">실측 결과 기준으로 이 10개 중 평균 <b>7.2개(72.1%)</b>가 필터 조건에 걸려
+      폐기되고, 나머지 약 2.8개 중에서 Top-3를 채웁니다. 즉 Prefetch-K=10은 Top-K=3의 "3배 여유"가 아니라
+      실질적으로는 <b>10개 중 3개도 채 남지 않는 경우가 흔한 값</b>이라는 뜻이며, DP2가 제시한 Post-filter Drop
+      Rate 목표(30% 이하)와 비교하면 현재 Prefetch-K=10은 부족하다고 볼 수 있습니다.</div>
+    </div>
+  </section>
+
   <!-- ============ Appendix A ============ -->
   <section class="appendix" id="appendix-a">
     <div class="appendix-tag">Appendix A</div>
