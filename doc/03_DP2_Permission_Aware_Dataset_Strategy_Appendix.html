@@ -272,6 +272,66 @@
       실질적으로는 <b>10개 중 3개도 채 남지 않는 경우가 흔한 값</b>이라는 뜻이며, DP2가 제시한 Post-filter Drop
       Rate 목표(30% 이하)와 비교하면 현재 Prefetch-K=10은 부족하다고 볼 수 있습니다.</div>
     </div>
+
+    <div class="callout">
+      <b>SWE-bench 데이터 구조</b>
+      <div style="margin-top:6px;">SWE-bench는 실제 GitHub 이슈와 그 이슈를 해결한 PR(patch)로 구성된 벤치마크입니다.
+      본 백데이터는 <code>swebench_issues</code> 테이블의 아래 필드를 그대로 사용합니다.</div>
+      <div class="table-scroll" style="margin-top:8px;">
+        <table class="data-table">
+          <thead><tr><th>필드</th><th>설명</th><th>본 평가에서의 역할</th></tr></thead>
+          <tbody>
+            <tr><td><code>instance_id</code></td><td>이슈 고유 ID (예: <code>django__django-12262</code>)</td><td>이슈 식별자</td></tr>
+            <tr><td><code>repo</code></td><td>오픈소스 저장소 (예: <code>django/django</code>)</td><td>권한/버전 스코프의 "프로젝트" 대리 지표</td></tr>
+            <tr><td><code>version</code></td><td>해당 이슈가 발생한 저장소 버전 (예: <code>3.1</code>)</td><td>권한/버전 스코프의 "버전" 대리 지표</td></tr>
+            <tr><td><code>problem_statement</code></td><td>이슈 본문(자연어로 작성된 버그 설명/요구사항)</td><td>RAG 검색의 질의(query)로 그대로 사용</td></tr>
+            <tr><td><code>patch</code></td><td>이슈를 해결한 실제 커밋의 diff</td><td>정답 파일 목록(<code>answer_files</code>) 추출 소스</td></tr>
+            <tr><td><code>answer_files</code></td><td><code>patch</code>에서 <code>diff --git a/{file}</code> 패턴으로 추출한 수정 파일 목록</td><td>검색 결과가 "정답"을 포함하는지 판정하는 정답 레이블(ground truth)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;">즉 "이 버그를 고치려면 어떤 코드를 봐야 하는가"라는 실제 개발자 질문
+      (<code>problem_statement</code>)에 대해, RAG가 실제로 수정된 파일(<code>answer_files</code>)을 Top-3 안에
+      찾아내는지를 측정하는 구조입니다. <code>repo</code>/<code>version</code>은 이슈 자체가 "어떤 프로젝트,
+      어떤 버전에서 발생했는가"를 나타내는 필드이므로, 본 백데이터에서는 이를 DP2의 권한/버전 스코프 대리 지표로
+      재사용했습니다.</div>
+    </div>
+
+    <div class="callout">
+      <b>평가 방법 — 질의 → 검색 → 채점 흐름</b>
+      <ol style="margin:8px 0 0; padding-left: 20px;">
+        <li>이슈의 <code>problem_statement</code>를 질의로 사용해 임베딩을 계산합니다(이슈당 1회, 12개 조합에 재사용).</li>
+        <li>RAG 엔진(4종) × 검색 전략(3종) = 12개 조합 각각에서 Top-3 청크를 반환받습니다.</li>
+        <li>반환된 청크의 <code>file_path</code>를 <code>answer_files</code>와 대조해 RAGAS 스타일 지표(Hit@3,
+        Precision@3, Recall@3, MRR)를 산출합니다 — <b>Appendix A</b>.</li>
+        <li>반환된 청크의 <code>repo</code>/<code>version</code> 메타데이터를 질의의 <code>repo</code>/<code>version</code>과
+        대조해 보안성/근거추적성 지표를 산출합니다 — <b>Appendix B</b>.</li>
+        <li>866건 전체(=12조합 × 866 = 10,392회 쿼리)에 대해 위 과정을 반복한 뒤 평균을 냅니다.</li>
+      </ol>
+    </div>
+
+    <div class="callout">
+      <b>평가 용어 정리</b>
+      <div class="table-scroll" style="margin-top:8px;">
+        <table class="data-table">
+          <thead><tr><th>구분</th><th>용어</th><th>정의</th><th>방향</th></tr></thead>
+          <tbody>
+            <tr><td>데이터 파라미터</td><td>Top-K</td><td colspan="1">최종적으로 답변 근거로 사용하는 검색 결과 수 (본 평가: 3)</td><td>—</td></tr>
+            <tr><td>데이터 파라미터</td><td>Prefetch-K</td><td>PostFilter가 필터링 전에 미리 가져오는 후보 수 (본 평가: 10)</td><td>—</td></tr>
+            <tr><td>RAGAS (A)</td><td>Hit@3</td><td>정답 파일이 Top-3에 하나라도 포함되면 1, 아니면 0의 866건 평균</td><td>높을수록 좋음</td></tr>
+            <tr><td>RAGAS (A)</td><td>Context Precision@3</td><td>Top-3 중 정답 파일을 포함하는 청크의 비율</td><td>높을수록 좋음</td></tr>
+            <tr><td>RAGAS (A)</td><td>Context Recall@3</td><td>전체 정답 파일 중 Top-3에서 회수된 비율</td><td>높을수록 좋음</td></tr>
+            <tr><td>RAGAS (A)</td><td>MRR</td><td>정답 최초 등장 순위의 역수(1/r) 평균</td><td>높을수록 좋음</td></tr>
+            <tr><td>QA 지표 (B)</td><td>노출률(Exposure Rate)</td><td>Top-3 중 질의 repo/version과 불일치하는 청크 비율</td><td>낮을수록 좋음</td></tr>
+            <tr><td>QA 지표 (B)</td><td>평균/P95 지연</td><td>임베딩 계산을 제외한 검색 전략 자체의 처리 시간</td><td>낮을수록 좋음</td></tr>
+            <tr><td>QA 지표 (B)</td><td>Index Operation Count</td><td>운영 중인 ChromaDB 컬렉션(DB) 총 개수</td><td>상황에 따라 다름</td></tr>
+            <tr><td>QA 지표 (B)</td><td>Post-filter Drop Rate</td><td>PostFilter가 Prefetch한 결과 중 폐기하는 비율</td><td>낮을수록 좋음</td></tr>
+            <tr><td>QA 지표 (B)</td><td>인용 검증률(Citation Coverage)</td><td>반환된 청크 중 repo/version이 일치해 근거로 신뢰 가능한 비율</td><td>높을수록 좋음</td></tr>
+            <tr><td>QA 지표 (B)</td><td>스코프 사전선언(Scope Declared)</td><td>검색 시점에 권한/버전 조건을 명시적으로 선언했는지 여부</td><td>높을수록 좋음</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
   </section>
 
   <!-- ============ Appendix A ============ -->
@@ -337,8 +397,9 @@
     <div class="appendix-tag">Appendix B</div>
     <h2>RAG 검색 전략 선택 지표 — 보안성 · 응답성 · 확장성/운용성 · 근거추적성</h2>
     <p class="section-desc">
-      DP2 §7 Trade-off 평가에서 정의한 4개 QA 축을 같은 실측 데이터로 계산했습니다. 각 값은 4개 RAG 엔진의 평균이며,
-      Flat = 통제 없는 통합 검색(baseline), PostFilter = DP2 Option B, Routed = DP2 Option A에 대응합니다.
+      DP2 §7 Trade-off 평가에서 정의한 4개 QA 축을 같은 실측 데이터로 계산했습니다. Flat = 통제 없는 통합 검색
+      (baseline), PostFilter = DP2 Option B, Routed = DP2 Option A에 대응합니다. 아래 차트는 각 지표를 "4개 RAG
+      엔진 평균"과 실제 도입을 검토 중인 "ROI-RAG만"으로 나란히 비교합니다(§2.7 참고).
     </p>
 
     <div class="callout">
@@ -458,6 +519,12 @@ const DATA = {
     PostFilter: { exposure: 0.0025, avgLatency: 75.60, p95Latency: 117.80, citation: 0.9975, scopeDeclared: 1.0,  indexOps: 4,   dropRate: 0.7211 },
     Routed:     { exposure: 0.0021, avgLatency: 20.76, p95Latency: 79.61,  citation: 0.9980, scopeDeclared: 1.0,  indexOps: 276, dropRate: null },
   },
+  // Appendix B: ROI-RAG only (same 866 issues, single engine) — for consistency check against the 4-engine average
+  strategyAggRoi: {
+    Flat:       { exposure: 0.6601, avgLatency: 54.10,  citation: 0.3399, indexOps: 1,  dropRate: null },
+    PostFilter: { exposure: 0.0,    avgLatency: 58.637, citation: 1.0,    indexOps: 1,  dropRate: 0.7509 },
+    Routed:     { exposure: 0.0,    avgLatency: 18.428, citation: 1.0,    indexOps: 69, dropRate: null },
+  },
 };
 
 function cssVar(v) {
@@ -541,8 +608,8 @@ function renderGroupedBar(container, { groups, series, getValue, yMax, yTicks, v
   container.appendChild(svg);
 }
 
-// ---- Single-series category bar chart (Appendix B): one bar per strategy, direct-labeled ----
-function renderCategoryBar(container, { categories, yMax, yTicks, valueFmt, tooltipFmt }) {
+// ---- 2-series comparison bar chart (Appendix B): groups = strategies, series = {4-engine avg, ROI-RAG only} ----
+function renderCompareBar(container, { groups, series, getValue, yMax, yTicks, valueFmt, tooltipFmt }) {
   const W = 480, H = 260;
   const marginL = 40, marginR = 8, marginT = 18, marginB = 30;
   const plotW = W - marginL - marginR, plotH = H - marginT - marginB;
@@ -558,29 +625,35 @@ function renderCategoryBar(container, { categories, yMax, yTicks, valueFmt, tool
   });
   svg.appendChild(svgEl("line", { x1: marginL, x2: W - marginR, y1: marginT + plotH, y2: marginT + plotH, class: "base-line" }));
 
-  const slotW = plotW / categories.length;
-  const barW = 44;
+  const groupW = plotW / groups.length;
+  const barW = 26, barGap = 6;
+  const clusterW = series.length * barW + (series.length - 1) * barGap;
 
-  categories.forEach((c, i) => {
-    const cx = marginL + slotW * i + slotW / 2;
-    const barH = Math.max(0, (c.value / yMax) * plotH);
-    const x = cx - barW / 2;
-    const y = marginT + plotH - barH;
-    const rect = svgEl("rect", {
-      x, y, width: barW, height: Math.max(barH, 1),
-      rx: 4, ry: 4, fill: c.color, class: "bar-rect",
+  groups.forEach((g, gi) => {
+    const groupCenterX = marginL + groupW * gi + groupW / 2;
+    const clusterStartX = groupCenterX - clusterW / 2;
+
+    series.forEach((s, si) => {
+      const v = getValue(g.key, s.key);
+      const barH = Math.max(0, (v / yMax) * plotH);
+      const x = clusterStartX + si * (barW + barGap);
+      const y = marginT + plotH - barH;
+      const rect = svgEl("rect", {
+        x, y, width: barW, height: Math.max(barH, 1),
+        rx: 4, ry: 4, fill: s.color, class: "bar-rect",
+      });
+      rect.addEventListener("mouseenter", (e) => showTooltip(e, `<b>${s.label}</b> · ${g.label}<br>${tooltipFmt(v)}`));
+      rect.addEventListener("mousemove", moveTooltip);
+      rect.addEventListener("mouseleave", hideTooltip);
+      svg.appendChild(rect);
+
+      const valLbl = svgEl("text", { x: x + barW / 2, y: y - 6, class: "val-label", "text-anchor": "middle", "font-size": "10" });
+      valLbl.textContent = valueFmt(v);
+      svg.appendChild(valLbl);
     });
-    rect.addEventListener("mouseenter", (e) => showTooltip(e, `<b>${c.label}</b><br>${tooltipFmt(c.value)}`));
-    rect.addEventListener("mousemove", moveTooltip);
-    rect.addEventListener("mouseleave", hideTooltip);
-    svg.appendChild(rect);
 
-    const valLbl = svgEl("text", { x: cx, y: y - 7, class: "val-label", "text-anchor": "middle" });
-    valLbl.textContent = valueFmt(c.value);
-    svg.appendChild(valLbl);
-
-    const catLbl = svgEl("text", { x: cx, y: marginT + plotH + 18, class: "cat-label", "text-anchor": "middle" });
-    catLbl.textContent = c.label;
+    const catLbl = svgEl("text", { x: groupCenterX, y: marginT + plotH + 18, class: "cat-label", "text-anchor": "middle" });
+    catLbl.textContent = g.label;
     svg.appendChild(catLbl);
   });
 
@@ -646,46 +719,55 @@ function chartCard(parent, title, sub) {
 
 // ============ Build Appendix B ============
 (function buildAppendixB() {
-  const stratColor = { Flat: "var(--s-blue)", PostFilter: "var(--s-orange)", Routed: "var(--s-aqua)" };
+  const compareSeries = [
+    { key: "avg", label: "4개 엔진 평균", color: "var(--s-blue)" },
+    { key: "roi", label: "ROI-RAG만",    color: "var(--s-yellow)" },
+  ];
   const legend = document.getElementById("legend-b");
-  DATA.strategies.forEach(s => {
+  compareSeries.forEach(s => {
     const item = document.createElement("div"); item.className = "legend-item";
-    const sw = document.createElement("span"); sw.className = "legend-swatch"; sw.style.background = stratColor[s.key];
+    const sw = document.createElement("span"); sw.className = "legend-swatch"; sw.style.background = s.color;
     const txt = document.createElement("span"); txt.textContent = s.label;
     item.appendChild(sw); item.appendChild(txt); legend.appendChild(item);
   });
 
   const chartsB = document.getElementById("charts-b");
   const agg = DATA.strategyAgg;
+  const aggRoi = DATA.strategyAggRoi;
+  const getBasis = (stratKey, seriesKey, field) => (seriesKey === "roi" ? aggRoi : agg)[stratKey][field];
 
   // 1. 보안성
-  let card = chartCard(chartsB, "① 보안성 — Unauthorized Scope Exposure Rate", "권한/버전 범위 밖 청크가 Top-3에 포함된 비율 (낮을수록 좋음)");
-  renderCategoryBar(card, {
-    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].exposure, color: stratColor[s.key] })),
+  let card = chartCard(chartsB, "① 보안성 — Unauthorized Scope Exposure Rate", "권한/버전 범위 밖 청크가 Top-3에 포함된 비율 (낮을수록 좋음) — 4개 엔진 평균 vs ROI-RAG만");
+  renderCompareBar(card, {
+    groups: DATA.strategies, series: compareSeries,
+    getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "exposure"),
     yMax: 0.7, yTicks: [0, 0.175, 0.35, 0.525, 0.7],
     valueFmt: fmtPct0, tooltipFmt: fmtPct,
   });
 
   // 2. 응답성
-  card = chartCard(chartsB, "② 응답성 — 평균 검색 지연시간", "쿼리당 검색 전략 처리 시간, ms (낮을수록 좋음)");
-  renderCategoryBar(card, {
-    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].avgLatency, color: stratColor[s.key] })),
+  card = chartCard(chartsB, "② 응답성 — 평균 검색 지연시간", "쿼리당 검색 전략 처리 시간, ms (낮을수록 좋음) — 4개 엔진 평균 vs ROI-RAG만");
+  renderCompareBar(card, {
+    groups: DATA.strategies, series: compareSeries,
+    getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "avgLatency"),
     yMax: 90, yTicks: [0, 22.5, 45, 67.5, 90],
     valueFmt: (v) => Math.round(v) + "ms", tooltipFmt: fmtMs,
   });
 
   // 3. 확장성/운용성
-  card = chartCard(chartsB, "③ 확장성/운용성 — Index Operation Count", "4개 RAG 엔진 전체가 운영해야 하는 ChromaDB 컬렉션 총 개수");
-  renderCategoryBar(card, {
-    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].indexOps, color: stratColor[s.key] })),
+  card = chartCard(chartsB, "③ 확장성/운용성 — Index Operation Count", "운영해야 하는 ChromaDB 컬렉션 개수 — 4개 엔진 총합 vs ROI-RAG 단독 배포 시");
+  renderCompareBar(card, {
+    groups: DATA.strategies, series: compareSeries,
+    getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "indexOps"),
     yMax: 300, yTicks: [0, 75, 150, 225, 300],
     valueFmt: (v) => fmtNum(v), tooltipFmt: (v) => `${fmtNum(v)}개 컬렉션`,
   });
 
   // 4. 근거추적성
-  card = chartCard(chartsB, "④ 근거추적성 — Verifiable Citation Coverage", "반환된 청크 중 올바른 스코프로 검증 가능한 근거 비율 (높을수록 좋음)");
-  renderCategoryBar(card, {
-    categories: DATA.strategies.map(s => ({ label: s.label, value: agg[s.key].citation, color: stratColor[s.key] })),
+  card = chartCard(chartsB, "④ 근거추적성 — Verifiable Citation Coverage", "반환된 청크 중 올바른 스코프로 검증 가능한 근거 비율 (높을수록 좋음) — 4개 엔진 평균 vs ROI-RAG만");
+  renderCompareBar(card, {
+    groups: DATA.strategies, series: compareSeries,
+    getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "citation"),
     yMax: 1.0, yTicks: [0, 0.25, 0.5, 0.75, 1.0],
     valueFmt: fmtPct0, tooltipFmt: fmtPct,
   });

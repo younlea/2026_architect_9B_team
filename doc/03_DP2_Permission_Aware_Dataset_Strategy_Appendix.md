@@ -85,6 +85,52 @@ Top-3를 채웁니다. 즉 Prefetch-K=10은 Top-K=3의 "3배 여유"가 아니�
 경우가 흔한 값**이라는 뜻이며, DP2 §7.1이 제시한 Post-filter Drop Rate 목표(30% 이하)와 비교하면 현재 Prefetch-K=10은
 부족하다고 볼 수 있습니다(§2.6 참고).
 
+### 0.3 SWE-bench 데이터 구조
+
+SWE-bench는 실제 GitHub 이슈와 그 이슈를 해결한 PR(patch)로 구성된 벤치마크입니다. 본 백데이터는
+`swebench_issues` 테이블의 아래 필드를 그대로 사용합니다.
+
+| 필드 | 설명 | 본 평가에서의 역할 |
+|---|---|---|
+| `instance_id` | 이슈 고유 ID (예: `django__django-12262`) | 이슈 식별자 |
+| `repo` | 오픈소스 저장소 (예: `django/django`) | 권한/버전 스코프의 "프로젝트" 대리 지표 |
+| `version` | 해당 이슈가 발생한 저장소 버전 (예: `3.1`) | 권한/버전 스코프의 "버전" 대리 지표 |
+| `problem_statement` | 이슈 본문(자연어로 작성된 버그 설명/요구사항) | RAG 검색의 질의(query)로 그대로 사용 |
+| `patch` | 이슈를 해결한 실제 커밋의 diff | 정답 파일 목록(`answer_files`) 추출 소스 |
+| `answer_files` | `patch`에서 `diff --git a/{file}` 패턴으로 추출한 수정 파일 목록 | 검색 결과가 "정답"을 포함하는지 판정하는 정답 레이블(ground truth) |
+
+즉 "이 버그를 고치려면 어떤 코드를 봐야 하는가"라는 실제 개발자 질문(`problem_statement`)에 대해, RAG가 실제로
+수정된 파일(`answer_files`)을 Top-3 안에 찾아내는지를 측정하는 구조입니다. `repo`/`version`은 이슈 자체가
+"어떤 프로젝트, 어떤 버전에서 발생했는가"를 나타내는 필드이므로, 본 백데이터에서는 이를 DP2의 권한/버전 스코프
+대리 지표로 재사용했습니다(§0 상단 참고).
+
+### 0.4 평가 방법 (질의 → 검색 → 채점 흐름)
+
+1. 이슈의 `problem_statement`를 질의로 사용해 임베딩을 계산합니다(이슈당 1회, 12개 조합에 재사용).
+2. RAG 엔진(4종) × 검색 전략(3종) = 12개 조합 각각에서 Top-3 청크를 반환받습니다.
+3. 반환된 청크의 `file_path`를 `answer_files`와 대조해 RAGAS 스타일 지표(Hit@3, Precision@3, Recall@3, MRR)를
+   산출합니다 — **Appendix A**.
+4. 반환된 청크의 `repo`/`version` 메타데이터를 질의의 `repo`/`version`과 대조해 보안성/근거추적성 지표를
+   산출합니다 — **Appendix B**.
+5. 866건 전체(=12조합 × 866 = 10,392회 쿼리)에 대해 1~4를 반복한 뒤 평균을 냅니다.
+
+### 0.5 평가 용어 정리
+
+| 구분 | 용어 | 정의 | 방향 |
+|---|---|---|---|
+| 데이터 파라미터 | Top-K | 최종적으로 답변 근거로 사용하는 검색 결과 수 (본 평가: 3) | — |
+| 데이터 파라미터 | Prefetch-K | PostFilter가 필터링 전에 미리 가져오는 후보 수 (본 평가: 10) | — |
+| RAGAS (Appendix A) | Hit@3 | 정답 파일이 Top-3에 하나라도 포함되면 1, 아니면 0의 866건 평균 | 높을수록 좋음 |
+| RAGAS (Appendix A) | Context Precision@3 | Top-3 중 정답 파일을 포함하는 청크의 비율 | 높을수록 좋음 |
+| RAGAS (Appendix A) | Context Recall@3 | 전체 정답 파일 중 Top-3에서 회수된 비율 | 높을수록 좋음 |
+| RAGAS (Appendix A) | MRR | 정답 최초 등장 순위의 역수(1/r) 평균 | 높을수록 좋음 |
+| QA 지표 (Appendix B) | Unauthorized Scope Exposure Rate (노출률) | Top-3 중 질의 repo/version과 불일치하는 청크 비율 | 낮을수록 좋음 |
+| QA 지표 (Appendix B) | 평균/P95 지연 | 임베딩 계산을 제외한 검색 전략 자체의 처리 시간 | 낮을수록 좋음 |
+| QA 지표 (Appendix B) | Index Operation Count | 운영 중인 ChromaDB 컬렉션(DB) 총 개수 | 상황에 따라 다름 |
+| QA 지표 (Appendix B) | Post-filter Drop Rate | PostFilter가 Prefetch한 결과 중 폐기하는 비율 | 낮을수록 좋음 |
+| QA 지표 (Appendix B) | Verifiable Citation Coverage (인용 검증률) | 반환된 청크 중 repo/version이 일치해 근거로 신뢰 가능한 비율 | 높을수록 좋음 |
+| QA 지표 (Appendix B) | Scope Declared Rate (스코프 사전선언) | 검색 시점에 권한/버전 조건을 명시적으로 선언했는지 여부 | 높을수록 좋음 |
+
 ---
 
 ## 1. Appendix A. RAGAS 스타일 검색 품질 평가
@@ -170,7 +216,8 @@ Option A/B 중 어느 한쪽이 압도적이지 않으며**, DP2 §7.2가 "검�
 
 ## 2. Appendix B. RAG 검색 전략 선택 지표 — 보안성 / 응답성 / 확장성·운용성 / 근거추적성
 
-DP2 §7.0에서 정의한 4개 QA 축을 동일 실측 데이터로 계산했습니다. 모든 값은 4개 RAG 엔진의 평균입니다.
+DP2 §7.0에서 정의한 4개 QA 축을 동일 실측 데이터로 계산했습니다. §2.3 차트는 각 지표를 "4개 RAG 엔진 평균"과
+실제 도입을 검토 중인 "ROI-RAG만"으로 나란히 비교합니다(상세는 §2.7 참고).
 
 ### 2.1 지표 정의
 
@@ -199,9 +246,9 @@ Appendix A(§1.1)와 **동일한 866건 이슈 × 12개 조합** 실측 결과�
 
 ### 2.3 차트
 
-![① 보안성 / ② 응답성](assets/dp2_appendix/appendix_b_security_latency.png)
+![① 보안성 / ② 응답성 — 4개 엔진 평균 vs ROI-RAG만](assets/dp2_appendix/appendix_b_security_latency.png)
 
-![③ 확장성·운용성 / ④ 근거추적성](assets/dp2_appendix/appendix_b_indexops_citation.png)
+![③ 확장성·운용성 / ④ 근거추적성 — 4개 엔진 평균 vs ROI-RAG만](assets/dp2_appendix/appendix_b_indexops_citation.png)
 
 ### 2.4 전략별 실측 결과
 
