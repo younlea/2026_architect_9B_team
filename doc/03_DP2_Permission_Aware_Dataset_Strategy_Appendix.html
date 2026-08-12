@@ -206,6 +206,32 @@
     <div class="meta-row" id="meta-row"></div>
   </header>
 
+  <section class="appendix" style="margin-top:32px;">
+    <div class="appendix-tag">요약 슬라이드 (PPT 붙여넣기용)</div>
+    <div class="callout" style="font-size:14.5px;">
+      <div style="font-size:17px; font-weight:700; color:var(--text-primary); margin-bottom:4px;">
+        DP2 실측 검증 — 권한/버전 기반 검색 전략(Option A) 선택 근거
+      </div>
+      <div style="margin-bottom:12px; color:var(--text-secondary);">
+        SWE-bench PoC 866건 실측: Routed(Option A)가 보안성·응답성·검색품질에서 최우수, 운영 확장성은 트레이드오프로 확인
+      </div>
+      <ul>
+        <li>보안성: 권한/버전 범위 밖 노출률 <b>Flat 62.2% → Routed 0.21%</b> (약 300배 감소)</li>
+        <li>응답성: 평균 검색 지연 <b>72~76ms(Flat/PostFilter) → 20.8ms(Routed)</b> (약 3.5배 개선)</li>
+        <li>검색 품질(RAGAS 평균): Hit@3 <b>64.7% → 79.2%</b>, MRR <b>0.568 → 0.714</b> (Flat → Routed)</li>
+        <li>운영 트레이드오프: Routed는 ChromaDB 컬렉션 <b>276개</b> 운영 필요 (Flat/PostFilter는 4개) — Hybrid 전략으로 보완</li>
+      </ul>
+      <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); color:var(--text-primary); font-weight:600;">
+        → DP2 Option A(권한/버전 기반 Source Routing) 선택을 실측 데이터로 뒷받침. PostFilter(Option B)는 저위험·공통
+        모듈 대상 보조 전략으로 활용.
+      </div>
+      <div style="margin-top:8px; font-size:12px; color:var(--text-muted);">
+        SWE-bench 866건 전량 × 4개 RAG 엔진 × 3개 검색 전략(=12조합, 총 10,392회 쿼리) 실측. repo+version 경계를
+        권한/버전 스코프의 대리 지표로 사용.
+      </div>
+    </div>
+  </section>
+
   <!-- ============ Appendix A ============ -->
   <section class="appendix" id="appendix-a">
     <div class="appendix-tag">Appendix A</div>
@@ -272,6 +298,21 @@
       DP2 §7 Trade-off 평가에서 정의한 4개 QA 축을 같은 실측 데이터로 계산했습니다. 각 값은 4개 RAG 엔진의 평균이며,
       Flat = 통제 없는 통합 검색(baseline), PostFilter = DP2 Option B, Routed = DP2 Option A에 대응합니다.
     </p>
+
+    <div class="callout">
+      <b>평가 데이터 및 규모</b>
+      <div style="margin-top:6px;">Appendix A와 <b>동일한 866건 이슈 × 12개 조합</b> 실측 결과를 전략(Flat/PostFilter/Routed)
+      기준으로 재집계한 것입니다. 별도의 추가 측정이 아니라, 같은 원자료(<code>src/data/dp2_backdata.json</code>)를
+      다른 축으로 평균낸 값입니다.</div>
+      <ul style="margin-top:8px;">
+        <li>이슈 수: 866건 (SWE-bench Lite + Full 전량)</li>
+        <li>전략별 집계 대상: 4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 평균</li>
+        <li>전략별 쿼리 실행 수: 866건 × 4개 엔진 = <b>3,464회</b> (Flat/PostFilter/Routed 각각)</li>
+        <li>전체 쿼리 실행 수: 3,464회 × 3전략 = <b>10,392회</b></li>
+        <li>repo × version 조합: 69개 (Routed 파티션 수와 동일)</li>
+        <li>Index Operation Count 산정 기준: 4개 RAG 엔진 전체가 실제로 보유한 ChromaDB 컬렉션 수 — Flat/PostFilter 4개, Routed 276개</li>
+      </ul>
+    </div>
 
     <div class="legend-row" id="legend-b"></div>
     <div class="chart-grid" id="charts-b"></div>

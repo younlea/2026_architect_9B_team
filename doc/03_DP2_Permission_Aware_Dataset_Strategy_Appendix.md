@@ -6,6 +6,35 @@
 
 ---
 
+## 요약 슬라이드 (PPT 붙여넣기용)
+
+**슬라이드 제목**
+
+> DP2 실측 검증 — 권한/버전 기반 검색 전략(Option A) 선택 근거
+
+**부제 (한 줄 요약)**
+
+> SWE-bench PoC 866건 실측: Routed(Option A)가 보안성·응답성·검색품질에서 최우수, 운영 확장성은 트레이드오프로 확인
+
+**본문 불릿**
+
+- 보안성: 권한/버전 범위 밖 노출률 **Flat 62.2% → Routed 0.21%** (약 300배 감소)
+- 응답성: 평균 검색 지연 **72~76ms(Flat/PostFilter) → 20.8ms(Routed)** (약 3.5배 개선)
+- 검색 품질(RAGAS 평균): Hit@3 **64.7% → 79.2%**, MRR **0.568 → 0.714** (Flat → Routed)
+- 운영 트레이드오프: Routed는 ChromaDB 컬렉션 **276개** 운영 필요 (Flat/PostFilter는 4개) — Hybrid 전략으로 보완
+
+**결론 한 줄**
+
+> DP2 Option A(권한/버전 기반 Source Routing) 선택을 실측 데이터로 뒷받침. PostFilter(Option B)는 저위험·공통
+> 모듈 대상 보조 전략으로 활용.
+
+**하단 각주(발표 슬라이드용, 작게)**
+
+> SWE-bench 866건 전량 × 4개 RAG 엔진 × 3개 검색 전략(=12조합, 총 10,392회 쿼리) 실측. repo+version 경계를
+> 권한/버전 스코프의 대리 지표로 사용.
+
+---
+
 ## 0. 측정 방법
 
 | 항목 | 내용 |
@@ -118,18 +147,32 @@ DP2 §7.0에서 정의한 4개 QA 축을 동일 실측 데이터로 계산했습
 |---|---|---|---|
 | ① 보안성 | Unauthorized Scope Exposure Rate | 반환된 Top-3 청크 중 질의의 repo/version과 불일치하는 청크 비율 | 낮을수록 좋음 |
 | ② 응답성 | 평균/P95 검색 지연시간 | 임베딩 계산을 제외한, 전략 자체의 검색 처리 시간 | 낮을수록 좋음 |
-| ③ 확장성/운용성 | Index Operation Count | 4개 RAG 엔진 전체가 운영해야 하는 ChromaDB 컬렉션(인덱스) 총 개수 | 상황에 따라 다름 (§2.3 참고) |
+| ③ 확장성/운용성 | Index Operation Count | 4개 RAG 엔진 전체가 운영해야 하는 ChromaDB 컬렉션(인덱스) 총 개수 | 상황에 따라 다름 (§2.4 참고) |
 | ③ 보조 | Post-filter Drop Rate | PostFilter가 Prefetch한 결과 중 스코프 불일치로 폐기하는 비율 | 낮을수록 좋음 |
 | ④ 근거추적성 | Verifiable Citation Coverage | 반환된 청크 중 올바른 스코프로 검증 가능한(=repo/version이 일치하는) 근거 비율 | 높을수록 좋음 |
 | ④ 보조 | Scope Declared Rate | 검색 시점에 권한/버전 스코프 조건을 명시적으로 선언했는지 여부 | 높을수록 좋음 |
 
-### 2.2 차트
+### 2.2 평가 데이터 및 규모
+
+Appendix A(§1.1)와 **동일한 866건 이슈 × 12개 조합** 실측 결과를 전략(Flat/PostFilter/Routed) 기준으로 재집계한
+것입니다. 즉 별도의 추가 측정이 아니라, 같은 원자료(`src/data/dp2_backdata.json`)를 다른 축으로 평균낸 값입니다.
+
+| 항목 | 값 |
+|---|---|
+| 이슈 수 | 866건 (SWE-bench Lite + Full 전량) |
+| 전략별 집계 대상 | 4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 평균 |
+| 전략별 쿼리 실행 수 | 866건 × 4개 엔진 = **3,464회** (Flat/PostFilter/Routed 각각) |
+| 전체 쿼리 실행 수 | 3,464회 × 3전략 = **10,392회** |
+| repo × version 조합 | 69개 (Routed 파티션 수와 동일) |
+| Index Operation Count 산정 기준 | 4개 RAG 엔진 전체가 실제로 보유한 ChromaDB 컬렉션 수(§2.4) — Flat/PostFilter 4개, Routed 276개 |
+
+### 2.3 차트
 
 ![① 보안성 / ② 응답성](assets/dp2_appendix/appendix_b_security_latency.png)
 
 ![③ 확장성·운용성 / ④ 근거추적성](assets/dp2_appendix/appendix_b_indexops_citation.png)
 
-### 2.3 전략별 실측 결과
+### 2.4 전략별 실측 결과
 
 | 전략 | DP2 대응 | 노출률(①) | 평균 지연(②) | P95 지연(②) | Index 운영 수(③) | Post-filter Drop(③) | 인용 검증률(④) | 스코프 사전선언(④) |
 |---|---|---:|---:|---:|---:|---:|---:|---:|
@@ -165,7 +208,7 @@ DP2 §7.0에서 정의한 4개 QA 축을 동일 실측 데이터로 계산했습
   시점에 선언하므로 100%이고, Flat은 조건 없이 전체를 검색하므로 0%입니다. 이 값 자체는 노출률과 달리 사후 결과가
   아니라 "설계상 감사(Audit) 가능한 질의였는가"를 나타내는 정성적 신호입니다.
 
-### 2.4 해석 — DP2 Decision과의 정합성
+### 2.5 해석 — DP2 Decision과의 정합성
 
 1. **보안성 · 응답성**: Routed(Option A)가 노출률 0.21%, 평균 지연 20.8ms로 두 축 모두 실측 최우수입니다. DP2 §8.1이
    Option A를 우선 선택한 근거("보안성과 버전 정합성이 가장 명확하다")를 실측치로 뒷받침합니다. 특히 응답 속도는
@@ -185,7 +228,7 @@ DP2 §7.0에서 정의한 4개 QA 축을 동일 실측 데이터로 계산했습
    권한/버전 통제가 없으면 시스템을 사용할 수 없다"는 DP2 §1.4의 문제의식을 정량적으로 뒷받침하는 근거로 사용할 수
    있습니다.
 
-### 2.5 DP2 §7.1 KPI 표 대비 실측치 요약
+### 2.6 DP2 §7.1 KPI 표 대비 실측치 요약
 
 | KPI ([Expected] 원문 기준) | DP2 문서상 예상치 (Option A / Option B) | 본 PoC 실측치 (Routed / PostFilter) |
 |---|---|---|
