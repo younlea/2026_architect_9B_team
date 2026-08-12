@@ -368,6 +368,49 @@
     </div>
 
     <div class="callout" id="coldef-b"></div>
+
+    <div class="callout">
+      <b>ROI-RAG 단독 검증 — 4개 엔진 평균과의 일관성</b>
+      <div style="margin-top:6px;">
+        지금까지의 수치는 Legacy/BasicRAG/RaptorRAG/ROI-RAG <b>4개 엔진 평균</b>입니다. 실제 도입을 검토 중인
+        <b>ROI-RAG 하나만</b> 놓고 봐도 같은 패턴이 그대로 나타나는지를 아래에 별도로 정리했습니다. "RAG 방식과
+        무관하게 전략 선택의 결론이 성립한다"는 것과 "실제 채택할 ROI-RAG에서도 동일한 효과가 확인된다"는 것을
+        함께 보여주기 위한 표이며, ROI-RAG를 다른 RAG 방식과 비교/평가하려는 목적이 아닙니다.
+      </div>
+      <div class="table-scroll" style="margin-top:10px;">
+        <table class="data-table">
+          <thead><tr><th>지표</th><th>기준</th><th>Flat</th><th>PostFilter</th><th>Routed</th></tr></thead>
+          <tbody>
+            <tr><td>Hit@3</td><td>4개 엔진 평균</td><td>64.7%</td><td>74.5%</td><td>79.2%</td></tr>
+            <tr><td>Hit@3</td><td><b>ROI-RAG만</b></td><td>64.0%</td><td>73.8%</td><td>80.0%</td></tr>
+            <tr><td>Precision@3</td><td>4개 엔진 평균</td><td>38.6%</td><td>53.4%</td><td>46.9%</td></tr>
+            <tr><td>Precision@3</td><td><b>ROI-RAG만</b></td><td>36.1%</td><td>51.4%</td><td>44.8%</td></tr>
+            <tr><td>Recall@3</td><td>4개 엔진 평균</td><td>59.6%</td><td>69.8%</td><td>74.4%</td></tr>
+            <tr><td>Recall@3</td><td><b>ROI-RAG만</b></td><td>60.9%</td><td>71.8%</td><td>78.0%</td></tr>
+            <tr><td>MRR</td><td>4개 엔진 평균</td><td>0.568</td><td>0.688</td><td>0.714</td></tr>
+            <tr><td>MRR</td><td><b>ROI-RAG만</b></td><td>0.557</td><td>0.679</td><td>0.713</td></tr>
+            <tr><td>노출률(보안성)</td><td>4개 엔진 평균</td><td>62.2%</td><td>0.25%</td><td>0.21%</td></tr>
+            <tr><td>노출률(보안성)</td><td><b>ROI-RAG만</b></td><td>66.0%</td><td>0.0%</td><td>0.0%</td></tr>
+            <tr><td>평균 지연</td><td>4개 엔진 평균</td><td>72.0ms</td><td>75.6ms</td><td>20.8ms</td></tr>
+            <tr><td>평균 지연</td><td><b>ROI-RAG만</b></td><td>54.1ms</td><td>58.6ms</td><td>18.4ms</td></tr>
+            <tr><td>인용 검증률(근거추적성)</td><td>4개 엔진 평균</td><td>37.8%</td><td>99.75%</td><td>99.80%</td></tr>
+            <tr><td>인용 검증률(근거추적성)</td><td><b>ROI-RAG만</b></td><td>34.0%</td><td>100%</td><td>100%</td></tr>
+            <tr><td>Post-filter Drop</td><td>4개 엔진 평균</td><td>—</td><td>72.1%</td><td>—</td></tr>
+            <tr><td>Post-filter Drop</td><td><b>ROI-RAG만</b></td><td>—</td><td>75.1%</td><td>—</td></tr>
+            <tr><td>운영 DB(컬렉션) 수</td><td>4개 엔진 총합</td><td>4개</td><td>4개</td><td>276개</td></tr>
+            <tr><td>운영 DB(컬렉션) 수</td><td><b>ROI-RAG 단독 배포 시</b></td><td>1개</td><td>1개</td><td>69개</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:10px;">
+        <b>읽는 법</b>: 모든 지표에서 "4개 엔진 평균"과 "ROI-RAG만"의 값이 서로 오차범위 내(대부분 ±5%p, MRR은
+        ±0.01 수준)로 일치합니다. 즉 Routed가 보안성·응답성에서 최우수, PostFilter는 운영은 단순하지만 Drop Rate가
+        크다, Flat은 통제가 없어 위험하다는 결론은 특정 RAG 인덱싱 방식에 의존한 결과가 아니라 검색 전략
+        (Flat/PostFilter/Routed) 자체의 특성이며, <b>ROI-RAG를 채택해도 동일하게 유지됩니다.</b> 마지막 행(운영
+        DB 수)은 4개 엔진 총합이 아니라 ROI-RAG 하나만 실제 배포할 경우의 수치이며, 이 경우 Routed 도입 비용은
+        파티션 69개(=repo×version 조합 수)로 4개 엔진을 함께 돌릴 때의 276개보다 훨씬 현실적인 규모입니다.
+      </div>
+    </div>
   </section>
 
   <footer class="page-footer">
