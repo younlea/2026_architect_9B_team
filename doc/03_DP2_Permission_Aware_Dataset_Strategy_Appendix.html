@@ -814,8 +814,27 @@ function chartCard(parent, title, sub) {
       "권한 없는 소스가 실제로 답변 근거에 섞여 나온 비율"에 해당합니다. Flat은 스코프 조건이 없어 62.2%로 가장 높고,
       PostFilter·Routed는 결과를 스코프로 제한하므로 0%대입니다.</li>
       <li><b>평균 지연 / P95 지연(②)</b> — 임베딩 계산을 제외한 검색 전략 자체의 처리 시간(ms). 평균은 866건의 산술
-      평균, P95는 느린 쪽 5%를 제외한 체감 지연 상한선입니다. Routed는 이슈의 repo×version 파티션(작은 컬렉션)만
-      검색해 20.8ms로 가장 빠르고, Flat·PostFilter는 통합 컬렉션 전체를 매번 훑어 70ms대로 느립니다.</li>
+      평균입니다. <b>P95는 "느린 5%를 뺀 나머지의 평균"이 아니라, 866건을 느린 순서로 세웠을 때 상위 5%(가장 느린
+      쪽)와 하위 95%(그보다 빠른 쪽)를 가르는 경계값 그 자체</b>입니다. 즉 "쿼리의 95%가 이 값보다 빠르다"는
+      상한선이며, 느린 값을 걸러내고 평균 낸 것이 아니라 오히려 느린 쪽 끝자락의 값을 그대로 가져온 것이므로
+      평균보다 항상 크거나 같습니다.
+      <div class="table-scroll" style="margin-top:8px;">
+        <table class="data-table">
+          <thead><tr><th>전략</th><th>평균 지연</th><th>P95 지연</th><th>배율</th></tr></thead>
+          <tbody>
+            <tr><td>Flat</td><td>72.0ms</td><td>104.3ms</td><td>1.45배</td></tr>
+            <tr><td>PostFilter</td><td>75.6ms</td><td>117.8ms</td><td>1.56배</td></tr>
+            <tr><td>Routed</td><td>20.8ms</td><td>79.6ms</td><td><b>3.83배</b></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:8px;">Routed는 이슈의 repo×version 파티션(작은 컬렉션)만 검색해 평균 20.8ms로 가장
+      빠르지만, P95 배율은 오히려 가장 큽니다. Routed는 엔진당 69개의 서로 다른 파티션 컬렉션을 오가며 검색하는데,
+      프로세스가 특정 컬렉션을 처음 여는 순간에는 초기화 비용이 붙어 느리고 같은 컬렉션을 다시 조회할 때는 훨씬
+      빠릅니다. Flat·PostFilter는 통합 컬렉션 1개만 계속 재사용해 이 "첫 접근 페널티"가 한 번뿐이지만, Routed는
+      69개 컬렉션 각각에서 반복되어 꼬리가 두꺼워지고 P95가 평균보다 훨씬 크게 벌어집니다. Flat·PostFilter는
+      통합 컬렉션 전체를 매번 훑기 때문에 평균 자체는 70ms대로 느리며, PostFilter는 여기에 Top-10 Prefetch →
+      필터링 단계가 더해져 Flat보다도 약간 느립니다.</div></li>
       <li><b>Index 운영 수(③)</b> — 4개 RAG 엔진 전체가 실제 운영해야 하는 ChromaDB 컬렉션 총 개수. Flat/PostFilter는
       엔진당 통합 컬렉션 1개(4개 엔진 × 1 = 4), Routed는 repo×version 조합마다 파티션이 필요해 엔진당 69개 × 4 =
       276개입니다. 권한/버전 스코프를 세분화할수록 커지는 운영 부담이며, Routed의 보안성·응답성 우위에 대한
