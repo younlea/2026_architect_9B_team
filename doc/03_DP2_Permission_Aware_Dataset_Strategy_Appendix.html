@@ -216,18 +216,19 @@
         SWE-bench PoC 866건 실측: Routed(Option A)가 보안성·응답성·검색품질에서 최우수, 운영 확장성은 트레이드오프로 확인
       </div>
       <ul>
-        <li>보안성: 권한/버전 범위 밖 노출률 <b>Flat 62.2% → Routed 0.21%</b> (약 300배 감소)</li>
-        <li>응답성: 평균 검색 지연 <b>72~76ms(Flat/PostFilter) → 20.8ms(Routed)</b> (약 3.5배 개선)</li>
-        <li>검색 품질(RAGAS 평균): Hit@3 <b>64.7% → 79.2%</b>, MRR <b>0.568 → 0.714</b> (Flat → Routed)</li>
-        <li>운영 트레이드오프: Routed는 ChromaDB 컬렉션 <b>276개</b> 운영 필요 (Flat/PostFilter는 4개) — Hybrid 전략으로 보완</li>
+        <li>보안성: 권한/버전 범위 밖 노출률 <b>Flat 61.9% → Routed 0.27%</b> (약 230배 감소)</li>
+        <li>응답성: 평균 검색 지연 <b>76.5~81.0ms(Flat/PostFilter) → 21.4ms(Routed)</b> (약 3.7배 개선)</li>
+        <li>검색 품질(RAGAS 평균): Hit@3 <b>63.3% → 77.7%</b>, MRR <b>0.557 → 0.701</b> (Flat → Routed)</li>
+        <li>운영 트레이드오프: Routed는 ChromaDB 컬렉션 <b>207개</b> 운영 필요 (Flat/PostFilter는 3개) — Hybrid 전략으로 보완</li>
       </ul>
       <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border); color:var(--text-primary); font-weight:600;">
         → DP2 Option A(권한/버전 기반 Source Routing) 선택을 실측 데이터로 뒷받침. PostFilter(Option B)는 저위험·공통
         모듈 대상 보조 전략으로 활용.
       </div>
       <div style="margin-top:8px; font-size:12px; color:var(--text-muted);">
-        SWE-bench 866건 전량 × 4개 RAG 엔진 × 3개 검색 전략(=12조합, 총 10,392회 쿼리) 실측. repo+version 경계를
-        권한/버전 스코프의 대리 지표로 사용.
+        SWE-bench 866건 전량 × 3개 RAG 엔진(BasicRAG/RaptorRAG/ROI-RAG) × 3개 검색 전략(=9조합, 총 7,794회 쿼리)
+        실측 기준. Legacy는 RAG 구조 적용 이전 베이스라인이라 결론 검증에서 제외(Appendix A 원자료에만 참고용
+        포함). repo+version 경계를 권한/버전 스코프의 대리 지표로 사용.
       </div>
     </div>
   </section>
@@ -245,10 +246,13 @@
         있고, 인덱싱 시점에 <code>{repo}@{version}</code> 키가 처음 등장할 때마다 새 컬렉션(예:
         <code>sweb_basic_django_django_3_1</code>)을 만듭니다.</li>
         <li>866건 전체를 훑은 결과 고유 repo@version 조합은 <b>69개</b>였고, 이 69개가 그대로 파티션(DB) 개수가 됩니다.</li>
-        <li>4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 각각에 반복하므로, 엔진마다 69개씩, 총
-        <b>69 × 4 = 276개</b>의 파티션 컬렉션을 운영합니다(Index Operation Count와 동일 수치).</li>
-        <li>즉 "276개"는 임의로 정한 값이 아니라 <b>이 데이터셋의 권한/버전 스코프 다양성을 그대로 반영한 결과</b>이며,
-        실제 사내 환경에서는 (프로젝트 수 × Branch/Release 수)만큼 늘어납니다.</li>
+        <li>4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 각각에 반복하므로, PoC 전체로는 엔진마다 69개씩 총
+        <b>69 × 4 = 276개</b>의 파티션 컬렉션을 운영했습니다. 다만 Appendix B의 Index Operation Count는 Legacy를
+        제외한 3개 엔진 기준(69 × 3 = <b>207개</b>)으로 계산합니다 — Legacy는 실제 RAG 방식이 아니라 베이스라인이므로
+        결론 검증에서 제외하기 때문입니다.</li>
+        <li>즉 "276개"(PoC 전체) · "207개"(결론 검증 기준) 모두 임의로 정한 값이 아니라 <b>이 데이터셋의 권한/버전
+        스코프 다양성을 그대로 반영한 결과</b>이며, 실제 사내 환경에서는 (프로젝트 수 × Branch/Release 수)만큼
+        늘어납니다.</li>
       </ul>
     </div>
 
@@ -267,7 +271,7 @@
           </tbody>
         </table>
       </div>
-      <div style="margin-top:10px;">실측 결과 기준으로 이 10개 중 평균 <b>7.2개(72.1%)</b>가 필터 조건에 걸려
+      <div style="margin-top:10px;">실측 결과 기준으로 이 10개 중 평균 <b>7.2개(71.7%)</b>가 필터 조건에 걸려
       폐기되고, 나머지 약 2.8개 중에서 Top-3를 채웁니다. 즉 Prefetch-K=10은 Top-K=3의 "3배 여유"가 아니라
       실질적으로는 <b>10개 중 3개도 채 남지 않는 경우가 흔한 값</b>이라는 뜻이며, DP2가 제시한 Post-filter Drop
       Rate 목표(30% 이하)와 비교하면 현재 Prefetch-K=10은 부족하다고 볼 수 있습니다.</div>
@@ -358,6 +362,12 @@
       <div style="margin-top:8px;">repo 분포가 django(68%)에 크게 편중되어 있어 전략별 평균은 django 성향에 다소
       가중될 수 있으나, 4개 RAG 엔진 모두 동일한 866건·69개 파티션 구성을 사용하므로 엔진 간·전략 간 상대적 우열
       비교에는 영향을 주지 않습니다.</div>
+      <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--border);">
+        <b>Legacy는 "평균"에서 제외합니다.</b> Legacy는 RAG 구조를 적용하기 이전의 베이스라인(AST 청킹 + 직접
+        벡터 검색)이며, 실제 웹서비스가 제공하는 3가지 RAG 방식(BasicRAG/RaptorRAG/ROI-RAG) 중 하나가 아닙니다.
+        아래 표(§1.3 원자료)에는 비교 참고용으로 그대로 남겨두지만, "RAG 방식과 무관하게 전략 선택의 결론이
+        일관된다"를 검증하는 Appendix B 전체는 <b>BasicRAG/RaptorRAG/ROI-RAG 3개 엔진만 평균</b>에 사용합니다.
+      </div>
     </div>
 
     <div class="legend-row" id="legend-a"></div>
@@ -398,22 +408,26 @@
     <h2>RAG 검색 전략 선택 지표 — 보안성 · 응답성 · 확장성/운용성 · 근거추적성</h2>
     <p class="section-desc">
       DP2 §7 Trade-off 평가에서 정의한 4개 QA 축을 같은 실측 데이터로 계산했습니다. Flat = 통제 없는 통합 검색
-      (baseline), PostFilter = DP2 Option B, Routed = DP2 Option A에 대응합니다. 아래 차트는 각 지표를 "4개 RAG
-      엔진 평균"과 실제 도입을 검토 중인 "ROI-RAG만"으로 나란히 비교합니다(§2.7 참고).
+      (baseline), PostFilter = DP2 Option B, Routed = DP2 Option A에 대응합니다. 아래 차트는 각 지표를 "3개 RAG
+      엔진 평균(BasicRAG/RaptorRAG/ROI-RAG, Legacy 제외)"과 실제 도입을 검토 중인 "ROI-RAG만"으로 나란히
+      비교합니다(§2.7 참고).
     </p>
 
     <div class="callout">
       <b>평가 데이터 및 규모</b>
-      <div style="margin-top:6px;">Appendix A와 <b>동일한 866건 이슈 × 12개 조합</b> 실측 결과를 전략(Flat/PostFilter/Routed)
-      기준으로 재집계한 것입니다. 별도의 추가 측정이 아니라, 같은 원자료(<code>src/data/dp2_backdata.json</code>)를
-      다른 축으로 평균낸 값입니다.</div>
+      <div style="margin-top:6px;">Appendix A와 <b>동일한 866건 이슈 × 12개 조합</b> 실측 결과 중, <b>Legacy를
+      제외한 3개 RAG 엔진</b>(BasicRAG/RaptorRAG/ROI-RAG)의 결과만 전략(Flat/PostFilter/Routed) 기준으로 재집계한
+      것입니다. 별도의 추가 측정이 아니라, 같은 원자료(<code>src/data/dp2_backdata.json</code>)에서 Legacy 행을
+      제외하고 다른 축으로 평균낸 값입니다. Legacy를 빼는 이유는 Appendix A 안내와 동일합니다 — RAG 구조 적용
+      이전의 베이스라인이라 "RAG 방식과 무관하게 결론이 일관된다"를 검증하는 이 어펜딕스의 취지에 맞지
+      않기 때문입니다.</div>
       <ul style="margin-top:8px;">
         <li>이슈 수: 866건 (SWE-bench Lite + Full 전량)</li>
-        <li>전략별 집계 대상: 4개 RAG 엔진(Legacy/BasicRAG/RaptorRAG/ROIRAG) 평균</li>
-        <li>전략별 쿼리 실행 수: 866건 × 4개 엔진 = <b>3,464회</b> (Flat/PostFilter/Routed 각각)</li>
-        <li>전체 쿼리 실행 수: 3,464회 × 3전략 = <b>10,392회</b></li>
+        <li>전략별 집계 대상: 3개 RAG 엔진(BasicRAG/RaptorRAG/ROI-RAG) 평균 — Legacy 제외</li>
+        <li>전략별 쿼리 실행 수: 866건 × 3개 엔진 = <b>2,598회</b> (Flat/PostFilter/Routed 각각)</li>
+        <li>전체 쿼리 실행 수: 2,598회 × 3전략 = <b>7,794회</b></li>
         <li>repo × version 조합: 69개 (Routed 파티션 수와 동일)</li>
-        <li>Index Operation Count 산정 기준: 4개 RAG 엔진 전체가 실제로 보유한 ChromaDB 컬렉션 수 — Flat/PostFilter 4개, Routed 276개</li>
+        <li>Index Operation Count 산정 기준: 3개 RAG 엔진 전체가 실제로 보유한 ChromaDB 컬렉션 수 — Flat/PostFilter 3개, Routed 207개</li>
       </ul>
     </div>
 
@@ -424,19 +438,20 @@
 
     <div class="table-scroll">
       <table class="data-table" id="table-b">
-        <caption>전략별 QA 지표 실측 요약 (4개 RAG 엔진 평균, n=866 issues)</caption>
+        <caption>전략별 QA 지표 실측 요약 (3개 RAG 엔진 평균 — BasicRAG/RaptorRAG/ROI-RAG, n=866 issues)</caption>
       </table>
     </div>
 
     <div class="callout" id="coldef-b"></div>
 
     <div class="callout">
-      <b>ROI-RAG 단독 검증 — 4개 엔진 평균과의 일관성</b>
+      <b>ROI-RAG 단독 검증 — 3개 엔진 평균과의 일관성</b>
       <div style="margin-top:6px;">
-        지금까지의 수치는 Legacy/BasicRAG/RaptorRAG/ROI-RAG <b>4개 엔진 평균</b>입니다. 실제 도입을 검토 중인
-        <b>ROI-RAG 하나만</b> 놓고 봐도 같은 패턴이 그대로 나타나는지를 아래에 별도로 정리했습니다. "RAG 방식과
-        무관하게 전략 선택의 결론이 성립한다"는 것과 "실제 채택할 ROI-RAG에서도 동일한 효과가 확인된다"는 것을
-        함께 보여주기 위한 표이며, ROI-RAG를 다른 RAG 방식과 비교/평가하려는 목적이 아닙니다.
+        지금까지의 수치는 BasicRAG/RaptorRAG/ROI-RAG <b>3개 엔진 평균</b>입니다(Legacy는 RAG 구조 적용 이전
+        베이스라인이라 제외했습니다 — Appendix A 참고). 실제 도입을 검토 중인 <b>ROI-RAG 하나만</b> 놓고 봐도
+        같은 패턴이 그대로 나타나는지를 아래에 별도로 정리했습니다. "RAG 방식과 무관하게 전략 선택의 결론이
+        성립한다"는 것과 "실제 채택할 ROI-RAG에서도 동일한 효과가 확인된다"는 것을 함께 보여주기 위한 표이며,
+        ROI-RAG를 다른 RAG 방식과 비교/평가하려는 목적이 아닙니다.
       </div>
       <div class="table-scroll" style="margin-top:10px;">
         <table class="data-table">
@@ -448,9 +463,9 @@
             </tr>
           </thead>
           <tbody>
-            <tr><td rowspan="3" style="vertical-align:middle;"><b>4개 엔진 평균</b></td><td>Flat</td><td>64.7%</td><td>38.6%</td><td>59.6%</td><td>0.568</td><td>62.2%</td><td>72.0ms</td><td>37.8%</td><td>—</td><td>4개</td></tr>
-            <tr><td>PostFilter</td><td>74.5%</td><td>53.4%</td><td>69.8%</td><td>0.688</td><td>0.25%</td><td>75.6ms</td><td>99.75%</td><td>72.1%</td><td>4개</td></tr>
-            <tr><td>Routed</td><td>79.2%</td><td>46.9%</td><td>74.4%</td><td>0.714</td><td>0.21%</td><td>20.8ms</td><td>99.80%</td><td>—</td><td>276개</td></tr>
+            <tr><td rowspan="3" style="vertical-align:middle;"><b>3개 엔진 평균</b></td><td>Flat</td><td>63.3%</td><td>39.0%</td><td>58.6%</td><td>0.557</td><td>61.9%</td><td>76.5ms</td><td>38.1%</td><td>—</td><td>3개</td></tr>
+            <tr><td>PostFilter</td><td>73.2%</td><td>53.5%</td><td>68.9%</td><td>0.675</td><td>0.33%</td><td>81.0ms</td><td>99.67%</td><td>71.7%</td><td>3개</td></tr>
+            <tr><td>Routed</td><td>77.7%</td><td>48.1%</td><td>73.4%</td><td>0.701</td><td>0.27%</td><td>21.4ms</td><td>99.73%</td><td>—</td><td>207개</td></tr>
             <tr><td rowspan="3" style="vertical-align:middle;"><b>ROI-RAG만</b></td><td>Flat</td><td>64.0%</td><td>36.1%</td><td>60.9%</td><td>0.557</td><td>66.0%</td><td>54.1ms</td><td>34.0%</td><td>—</td><td>1개</td></tr>
             <tr><td>PostFilter</td><td>73.8%</td><td>51.4%</td><td>71.8%</td><td>0.679</td><td>0.0%</td><td>58.6ms</td><td>100%</td><td>75.1%</td><td>1개</td></tr>
             <tr><td>Routed</td><td>80.0%</td><td>44.8%</td><td>78.0%</td><td>0.713</td><td>0.0%</td><td>18.4ms</td><td>100%</td><td>—</td><td>69개</td></tr>
@@ -458,13 +473,16 @@
         </table>
       </div>
       <div style="margin-top:10px;">
-        <b>읽는 법</b>: 위 3행(4개 엔진 평균)과 아래 3행(ROI-RAG만)을 같은 전략끼리 세로로 비교하면, 모든 지표에서
-        값이 서로 오차범위 내(대부분 ±5%p, MRR은 ±0.01 수준)로 일치합니다. 즉 Routed가 보안성·응답성에서 최우수,
+        <b>읽는 법</b>: 위 3행(3개 엔진 평균)과 아래 3행(ROI-RAG만)을 같은 전략끼리 세로로 비교하면, 보안성·근거추적성·
+        MRR 등 대부분의 지표는 오차범위 내(±5%p 이내)로 일치합니다. 즉 Routed가 보안성·응답성에서 최우수,
         PostFilter는 운영은 단순하지만 Drop Rate가 크다, Flat은 통제가 없어 위험하다는 결론은 특정 RAG 인덱싱
         방식에 의존한 결과가 아니라 검색 전략(Flat/PostFilter/Routed) 자체의 특성이며, <b>ROI-RAG를 채택해도
-        동일하게 유지됩니다.</b> 운영 DB 수는 "평균"이 아니라 각 기준에서 실제로 필요한 컬렉션 개수이며,
-        "4개 엔진 평균" 행은 4개를 모두 운영할 때의 총합(Flat/PostFilter 4개, Routed 276개), "ROI-RAG만" 행은
-        ROI-RAG 하나만 실제 배포할 경우의 수치(Flat/PostFilter 1개, Routed 69개)입니다.
+        동일하게 유지됩니다.</b> 다만 <b>평균 지연은 예외</b>로, Flat/PostFilter에서 3개 엔진 평균과 ROI-RAG만의
+        차이가 약 20ms로 다른 지표보다 큽니다 — 3개 엔진 평균에는 RaptorRAG의 무거운 지연(123~129ms)이 섞여
+        있기 때문이며, 검색 전략 선택과는 무관한 RAG 엔진 자체의 처리 비용 차이입니다. 운영 DB 수는 "평균"이
+        아니라 각 기준에서 실제로 필요한 컬렉션 개수이며, "3개 엔진 평균" 행은 3개를 모두 운영할 때의 총합
+        (Flat/PostFilter 3개, Routed 207개), "ROI-RAG만" 행은 ROI-RAG 하나만 실제 배포할 경우의 수치
+        (Flat/PostFilter 1개, Routed 69개)입니다.
       </div>
     </div>
   </section>
@@ -513,13 +531,14 @@ const DATA = {
     "ROIRAG+PostFilter": { hit_at_k: 0.7379, context_precision: 0.5139, context_recall: 0.7176, mrr: 0.6790, avg_latency_ms: 58.637 },
     "ROIRAG+Routed":     { hit_at_k: 0.8002, context_precision: 0.4480, context_recall: 0.7798, mrr: 0.7129, avg_latency_ms: 18.428 },
   },
-  // Appendix B: strategy-level averages across the 4 engines
+  // Appendix B: strategy-level averages across 3 engines (BasicRAG/RaptorRAG/ROIRAG) -- Legacy excluded, it's a
+  // pre-RAG baseline, not one of the product's 3 RAG methods
   strategyAgg: {
-    Flat:       { exposure: 0.6217, avgLatency: 71.96, p95Latency: 104.29, citation: 0.3783, scopeDeclared: 0.0,  indexOps: 4,   dropRate: null },
-    PostFilter: { exposure: 0.0025, avgLatency: 75.60, p95Latency: 117.80, citation: 0.9975, scopeDeclared: 1.0,  indexOps: 4,   dropRate: 0.7211 },
-    Routed:     { exposure: 0.0021, avgLatency: 20.76, p95Latency: 79.61,  citation: 0.9980, scopeDeclared: 1.0,  indexOps: 276, dropRate: null },
+    Flat:       { exposure: 0.6188, avgLatency: 76.51, p95Latency: 110.33, citation: 0.3812, scopeDeclared: 0.0,  indexOps: 3,   dropRate: null },
+    PostFilter: { exposure: 0.0033, avgLatency: 81.03, p95Latency: 126.40, citation: 0.9967, scopeDeclared: 1.0,  indexOps: 3,   dropRate: 0.7169 },
+    Routed:     { exposure: 0.0027, avgLatency: 21.37, p95Latency: 79.84,  citation: 0.9973, scopeDeclared: 1.0,  indexOps: 207, dropRate: null },
   },
-  // Appendix B: ROI-RAG only (same 866 issues, single engine) — for consistency check against the 4-engine average
+  // Appendix B: ROI-RAG only (same 866 issues, single engine) — for consistency check against the 3-engine average
   strategyAggRoi: {
     Flat:       { exposure: 0.6601, avgLatency: 54.10,  citation: 0.3399, indexOps: 1,  dropRate: null },
     PostFilter: { exposure: 0.0,    avgLatency: 58.637, citation: 1.0,    indexOps: 1,  dropRate: 0.7509 },
@@ -720,7 +739,7 @@ function chartCard(parent, title, sub) {
 // ============ Build Appendix B ============
 (function buildAppendixB() {
   const compareSeries = [
-    { key: "avg", label: "4개 엔진 평균", color: "var(--s-blue)" },
+    { key: "avg", label: "3개 엔진 평균", color: "var(--s-blue)" },
     { key: "roi", label: "ROI-RAG만",    color: "var(--s-yellow)" },
   ];
   const legend = document.getElementById("legend-b");
@@ -737,7 +756,7 @@ function chartCard(parent, title, sub) {
   const getBasis = (stratKey, seriesKey, field) => (seriesKey === "roi" ? aggRoi : agg)[stratKey][field];
 
   // 1. 보안성
-  let card = chartCard(chartsB, "① 보안성 — Unauthorized Scope Exposure Rate", "권한/버전 범위 밖 청크가 Top-3에 포함된 비율 (낮을수록 좋음) — 4개 엔진 평균 vs ROI-RAG만");
+  let card = chartCard(chartsB, "① 보안성 — Unauthorized Scope Exposure Rate", "권한/버전 범위 밖 청크가 Top-3에 포함된 비율 (낮을수록 좋음) — 3개 엔진 평균 vs ROI-RAG만");
   renderCompareBar(card, {
     groups: DATA.strategies, series: compareSeries,
     getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "exposure"),
@@ -746,7 +765,7 @@ function chartCard(parent, title, sub) {
   });
 
   // 2. 응답성
-  card = chartCard(chartsB, "② 응답성 — 평균 검색 지연시간", "쿼리당 검색 전략 처리 시간, ms (낮을수록 좋음) — 4개 엔진 평균 vs ROI-RAG만");
+  card = chartCard(chartsB, "② 응답성 — 평균 검색 지연시간", "쿼리당 검색 전략 처리 시간, ms (낮을수록 좋음) — 3개 엔진 평균 vs ROI-RAG만");
   renderCompareBar(card, {
     groups: DATA.strategies, series: compareSeries,
     getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "avgLatency"),
@@ -755,7 +774,7 @@ function chartCard(parent, title, sub) {
   });
 
   // 3. 확장성/운용성
-  card = chartCard(chartsB, "③ 확장성/운용성 — Index Operation Count", "운영해야 하는 ChromaDB 컬렉션 개수 — 4개 엔진 총합 vs ROI-RAG 단독 배포 시");
+  card = chartCard(chartsB, "③ 확장성/운용성 — Index Operation Count", "운영해야 하는 ChromaDB 컬렉션 개수 — 3개 엔진 총합 vs ROI-RAG 단독 배포 시");
   renderCompareBar(card, {
     groups: DATA.strategies, series: compareSeries,
     getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "indexOps"),
@@ -764,7 +783,7 @@ function chartCard(parent, title, sub) {
   });
 
   // 4. 근거추적성
-  card = chartCard(chartsB, "④ 근거추적성 — Verifiable Citation Coverage", "반환된 청크 중 올바른 스코프로 검증 가능한 근거 비율 (높을수록 좋음) — 4개 엔진 평균 vs ROI-RAG만");
+  card = chartCard(chartsB, "④ 근거추적성 — Verifiable Citation Coverage", "반환된 청크 중 올바른 스코프로 검증 가능한 근거 비율 (높을수록 좋음) — 3개 엔진 평균 vs ROI-RAG만");
   renderCompareBar(card, {
     groups: DATA.strategies, series: compareSeries,
     getValue: (stratKey, seriesKey) => getBasis(stratKey, seriesKey, "citation"),
@@ -777,14 +796,14 @@ function chartCard(parent, title, sub) {
   callout.innerHTML = `
     <b>해석 — DP2 Decision과의 정합성</b>
     <ul>
-      <li><b>보안성/응답성</b>: Routed(Option A)가 노출률 0.21%, 평균 지연 20.8ms로 두 축 모두 실측 최우수 — DP2가 Option A를 우선
+      <li><b>보안성/응답성</b>: Routed(Option A)가 노출률 0.27%, 평균 지연 21.4ms로 두 축 모두 실측 최우수 — DP2가 Option A를 우선
       선택한 근거(§8.1 "보안성과 버전 정합성이 가장 명확하다")를 뒷받침합니다.</li>
-      <li><b>확장성/운용성</b>: 그러나 Routed는 파티션 컬렉션을 276개(엔진당 69개, repo×version 조합 수에 비례) 운영해야 해
-      Flat/PostFilter(4개) 대비 운영 부담이 큽니다 — DP2 §7.2 "Source Scope가 늘어날수록 운영 복잡도가 증가"와 일치합니다.</li>
-      <li><b>근거추적성</b>: PostFilter도 사후 필터링만으로 노출률 0.25%, 인용 검증률 99.75%까지 낮출 수 있었지만, 이 과정에서
-      Prefetch된 결과의 <b>72.1%를 폐기(Drop)</b>하는 비효율이 발생 — DP2 §6.4에서 지적한 "Top-K 결과가 제거 대상으로 채워지는" 리스크가
+      <li><b>확장성/운용성</b>: 그러나 Routed는 파티션 컬렉션을 207개(엔진당 69개, 3개 엔진 × repo×version 조합 수) 운영해야 해
+      Flat/PostFilter(3개) 대비 운영 부담이 큽니다 — DP2 §7.2 "Source Scope가 늘어날수록 운영 복잡도가 증가"와 일치합니다.</li>
+      <li><b>근거추적성</b>: PostFilter도 사후 필터링만으로 노출률 0.33%, 인용 검증률 99.67%까지 낮출 수 있었지만, 이 과정에서
+      Prefetch된 결과의 <b>71.7%를 폐기(Drop)</b>하는 비효율이 발생 — DP2 §6.4에서 지적한 "Top-K 결과가 제거 대상으로 채워지는" 리스크가
       실측으로 확인됩니다.</li>
-      <li>Flat(무통제 베이스라인)은 노출률 62.2%, 근거추적성 37.8%로 두 지표 모두 최하위 — "권한/버전 통제가 없으면 검색 정확도와
+      <li>Flat(무통제 베이스라인)은 노출률 61.9%, 근거추적성 38.1%로 두 지표 모두 최하위 — "권한/버전 통제가 없으면 검색 정확도와
       무관하게 시스템을 사용할 수 없다"는 DP2 §1.4의 문제의식을 정량적으로 뒷받침합니다.</li>
     </ul>
   `;
@@ -811,7 +830,7 @@ function chartCard(parent, title, sub) {
     <ul>
       <li><b>노출률(①)</b> — Unauthorized Scope Exposure Rate. Top-3 청크 중 해당 이슈의 repo/version과 불일치하는
       (다른 프로젝트·버전 소스) 청크 비율. SWE-bench의 repo+version 경계를 권한/버전 스코프의 대리 지표로 사용했으므로,
-      "권한 없는 소스가 실제로 답변 근거에 섞여 나온 비율"에 해당합니다. Flat은 스코프 조건이 없어 62.2%로 가장 높고,
+      "권한 없는 소스가 실제로 답변 근거에 섞여 나온 비율"에 해당합니다. Flat은 스코프 조건이 없어 61.9%로 가장 높고,
       PostFilter·Routed는 결과를 스코프로 제한하므로 0%대입니다.</li>
       <li><b>평균 지연 / P95 지연(②)</b> — 임베딩 계산을 제외한 검색 전략 자체의 처리 시간(ms). 평균은 866건의 산술
       평균입니다. <b>P95는 "느린 5%를 뺀 나머지의 평균"이 아니라, 866건을 느린 순서로 세웠을 때 상위 5%(가장 느린
@@ -822,28 +841,29 @@ function chartCard(parent, title, sub) {
         <table class="data-table">
           <thead><tr><th>전략</th><th>평균 지연</th><th>P95 지연</th><th>배율</th></tr></thead>
           <tbody>
-            <tr><td>Flat</td><td>72.0ms</td><td>104.3ms</td><td>1.45배</td></tr>
-            <tr><td>PostFilter</td><td>75.6ms</td><td>117.8ms</td><td>1.56배</td></tr>
-            <tr><td>Routed</td><td>20.8ms</td><td>79.6ms</td><td><b>3.83배</b></td></tr>
+            <tr><td>Flat</td><td>76.5ms</td><td>110.3ms</td><td>1.44배</td></tr>
+            <tr><td>PostFilter</td><td>81.0ms</td><td>126.4ms</td><td>1.56배</td></tr>
+            <tr><td>Routed</td><td>21.4ms</td><td>79.8ms</td><td><b>3.74배</b></td></tr>
           </tbody>
         </table>
       </div>
-      <div style="margin-top:8px;">Routed는 이슈의 repo×version 파티션(작은 컬렉션)만 검색해 평균 20.8ms로 가장
+      <div style="margin-top:8px;">Routed는 이슈의 repo×version 파티션(작은 컬렉션)만 검색해 평균 21.4ms로 가장
       빠르지만, P95 배율은 오히려 가장 큽니다. Routed는 엔진당 69개의 서로 다른 파티션 컬렉션을 오가며 검색하는데,
       프로세스가 특정 컬렉션을 처음 여는 순간에는 초기화 비용이 붙어 느리고 같은 컬렉션을 다시 조회할 때는 훨씬
       빠릅니다. Flat·PostFilter는 통합 컬렉션 1개만 계속 재사용해 이 "첫 접근 페널티"가 한 번뿐이지만, Routed는
       69개 컬렉션 각각에서 반복되어 꼬리가 두꺼워지고 P95가 평균보다 훨씬 크게 벌어집니다. Flat·PostFilter는
-      통합 컬렉션 전체를 매번 훑기 때문에 평균 자체는 70ms대로 느리며, PostFilter는 여기에 Top-10 Prefetch →
-      필터링 단계가 더해져 Flat보다도 약간 느립니다.</div></li>
-      <li><b>Index 운영 수(③)</b> — 4개 RAG 엔진 전체가 실제 운영해야 하는 ChromaDB 컬렉션 총 개수. Flat/PostFilter는
-      엔진당 통합 컬렉션 1개(4개 엔진 × 1 = 4), Routed는 repo×version 조합마다 파티션이 필요해 엔진당 69개 × 4 =
-      276개입니다. 권한/버전 스코프를 세분화할수록 커지는 운영 부담이며, Routed의 보안성·응답성 우위에 대한
-      트레이드오프로 읽어야 합니다.</li>
+      통합 컬렉션 전체를 매번 훑기 때문에 평균 자체는 70~80ms대로 느리며, PostFilter는 여기에 Top-10 Prefetch →
+      필터링 단계가 더해져 Flat보다도 약간 느립니다. (참고: RaptorRAG의 임베딩 계산이 3개 엔진 중 가장 무거워
+      평균 지연을 다소 끌어올립니다.)</div></li>
+      <li><b>Index 운영 수(③)</b> — 3개 RAG 엔진(BasicRAG/RaptorRAG/ROI-RAG) 전체가 실제 운영해야 하는 ChromaDB
+      컬렉션 총 개수. Flat/PostFilter는 엔진당 통합 컬렉션 1개(3개 엔진 × 1 = 3), Routed는 repo×version 조합마다
+      파티션이 필요해 엔진당 69개 × 3개 엔진 = 207개입니다. 권한/버전 스코프를 세분화할수록 커지는 운영 부담이며,
+      Routed의 보안성·응답성 우위에 대한 트레이드오프로 읽어야 합니다.</li>
       <li><b>Post-filter Drop(③ 보조)</b> — PostFilter가 Top-10을 Prefetch한 뒤 repo/version 불일치로 폐기하는 비율.
-      72.1%는 "Prefetch한 10개 중 평균 7.2개가 스코프 불일치로 버려진다"는 뜻으로, 검색 자원 낭비를 정량화한
+      71.7%는 "Prefetch한 10개 중 평균 7.2개가 스코프 불일치로 버려진다"는 뜻으로, 검색 자원 낭비를 정량화한
       값입니다. Flat·Routed는 별도 폐기 단계가 없어 해당 없음(—)입니다.</li>
       <li><b>인용 검증률(④)</b> — Verifiable Citation Coverage. 반환된 청크 중 repo/version이 질의 스코프와 일치해
-      Citation으로 그대로 사용 가능한 비율(≈ 100% − 노출률). Flat은 37.8%로, Top-3 중 절반 이상이 실제로는 다른
+      Citation으로 그대로 사용 가능한 비율(≈ 100% − 노출률). Flat은 38.1%로, Top-3 중 절반 이상이 실제로는 다른
       프로젝트/버전 코드라 근거로 쓸 수 없다는 뜻입니다.</li>
       <li><b>스코프 사전선언(④ 보조)</b> — Scope Declared Rate. 검색 실행 전에 repo/version 범위를 시스템이 명시적으로
       선언했는지 여부. Routed는 라우팅 키를, PostFilter는 필터 조건을 검색 시점에 선언해 100%이고, Flat은 조건 없이
