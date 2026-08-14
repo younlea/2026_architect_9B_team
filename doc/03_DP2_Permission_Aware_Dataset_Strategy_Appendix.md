@@ -41,9 +41,10 @@
 | 항목 | 내용 |
 |---|---|
 | 데이터 소스 | SWE-bench Lite/Full 이슈 **866건** (전량), `swebench_issues` 테이블 |
-| RAG 인덱싱 방식 | Legacy(AST 청킹) / BasicRAG / RaptorRAG / ROIRAG — 4종 |
+| RAG 인덱싱 방식 | Legacy(AST 청킹) / BasicRAG / RaptorRAG / ROIRAG — 측정은 4종, **결론 검증(§1.4·Appendix B)에는
+Legacy를 제외한 BasicRAG/RaptorRAG/ROIRAG 3종만 사용**(§1.1 참고) |
 | 검색 전략 | Flat(통합 DB 무조건 검색) / PostFilter(Option B) / Routed(Option A) — 3종 |
-| 조합 수 | 4 × 3 = 12 |
+| 조합 수 | 4 × 3 = 12 (원시 측정) / 3 × 3 = 9 (결론 검증 기준) |
 | Top-K / Prefetch-K | 3 / 10 (`backend/rag/swebench_rag_engines.py`와 동일) |
 | 측정 로직 | `backend/routers/swebench.py`의 `/api/swebench/evaluate` 및 `swebench_rag_engines.retrieve()`와 동일한
 컬렉션 선택·필터·라우팅 로직을 재현하여 직접 측정 (임베딩은 이슈당 1회만 계산 후 재사용) |
@@ -111,12 +112,16 @@ SWE-bench는 실제 GitHub 이슈와 그 이슈를 해결한 PR(patch)로 구성
 ### 0.4 평가 방법 (질의 → 검색 → 채점 흐름)
 
 1. 이슈의 `problem_statement`를 질의로 사용해 임베딩을 계산합니다(이슈당 1회, 12개 조합에 재사용).
-2. RAG 엔진(4종) × 검색 전략(3종) = 12개 조합 각각에서 Top-3 청크를 반환받습니다.
+2. RAG 엔진(Legacy 포함 4종) × 검색 전략(3종) = 12개 조합 각각에서 Top-3 청크를 반환받습니다. **Legacy는 RAG
+   구조 적용 이전의 베이스라인**이라, 이후 결론 검증(3~5단계의 "평균")에는 **BasicRAG/RaptorRAG/ROI-RAG 3종만**
+   사용합니다(§1.1 참고).
 3. 반환된 청크의 `file_path`를 `answer_files`와 대조해 RAGAS 스타일 지표(Hit@3, Precision@3, Recall@3, MRR)를
-   산출합니다 — **Appendix A**.
+   산출합니다 — **Appendix A**. Appendix A의 조합별 원자료 표(§1.3)에는 Legacy를 포함한 4종을 모두 싣고,
+   전략별 평균(§1.4)은 3종만 사용합니다.
 4. 반환된 청크의 `repo`/`version` 메타데이터를 질의의 `repo`/`version`과 대조해 보안성/근거추적성 지표를
-   산출합니다 — **Appendix B**.
-5. 866건 전체(=12조합 × 866 = 10,392회 쿼리)에 대해 1~4를 반복한 뒤 평균을 냅니다.
+   산출합니다 — **Appendix B**. Appendix B는 처음부터 끝까지 **3종 평균**만 사용합니다.
+5. 866건 전체에 대해 1~4를 반복합니다. 원시 측정은 4개 엔진 × 3개 전략 × 866건 = **10,392회** 쿼리(Appendix A
+   전체 원자료), 이 중 결론 검증에 쓰는 3개 엔진 기준은 3 × 3 × 866 = **7,794회**(Appendix B 전체)입니다.
 
 ### 0.5 평가 용어 정리
 
